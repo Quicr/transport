@@ -1,0 +1,46 @@
+cmake_minimum_required(VERSION 3.17)
+
+project(quicr-transport
+        VERSION 1.0.0.0
+        DESCRIPTION "transport lib for QUICR project"
+        LANGUAGES CXX)
+
+find_package(Threads REQUIRED)
+find_package(PkgConfig REQUIRED)
+
+# Bring in dependencies
+add_subdirectory(dependencies)
+
+find_package(OpenSSL REQUIRED)
+message(STATUS "root: ${OPENSSL_ROOT_DIR}")
+message(STATUS "OpenSSL_VERSION: ${OPENSSL_VERSION}")
+message(STATUS "OpenSSL_INCLUDE_DIR: ${OPENSSL_INCLUDE_DIR}")
+message(STATUS "OpenSSL_LIBRARIES: ${OPENSSL_LIBRARIES}")
+
+add_library(quicr-transport
+        src/transport.cpp
+        src/transport_udp.cpp
+        )
+target_link_libraries(quicr-transport)
+target_include_directories(quicr-transport PUBLIC include src)
+set_target_properties(quicr-transport
+        PROPERTIES
+        CXX_STANDARD 17
+        CXX_STANDARD_REQUIRED YES
+        CXX_EXTENSIONS OFF)
+target_compile_options(quicr-transport
+        PRIVATE
+            $<$<OR:$<C_COMPILER_ID:Clang>,$<C_COMPILER_ID:AppleClang>,$<C_COMPILER_ID:GNU>>: -Wpedantic -Wextra -Wall>
+            $<$<C_COMPILER_ID:MSVC>: >)
+
+if(MSVC)
+    target_compile_definitions(quicr-transport _CRT_SECURE_NO_WARNINGS)
+endif()
+
+
+
+###
+### Applications
+###
+
+add_subdirectory(cmd)
