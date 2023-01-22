@@ -9,8 +9,7 @@ CLANG_FORMAT=clang-format -i
 
 .PHONY: all test clean cclean format
 
-all: ${BUILD_DIR}
-	cmake --build ${BUILD_DIR} --target forty_bytes 
+all: ${BUILD_DIR} client server
 
 ${BUILD_DIR}: CMakeLists.txt
 	cmake -B${BUILD_DIR} -DCMAKE_BUILD_TYPE=Debug .
