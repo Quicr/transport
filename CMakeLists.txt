@@ -9,7 +9,7 @@ find_package(Threads REQUIRED)
 find_package(PkgConfig REQUIRED)
 
 # Bring in dependencies
-add_subdirectory(dependencies)
+add_subdirectory( contrib/picoquic )
 
 find_package(OpenSSL REQUIRED)
 message(STATUS "root: ${OPENSSL_ROOT_DIR}")
