@@ -37,8 +37,6 @@ if(MSVC)
     target_compile_definitions(quicr-transport _CRT_SECURE_NO_WARNINGS)
 endif()
 
-
-
 ###
 ### Applications
 ###
