@@ -11,7 +11,8 @@ Single threaded, aysnc and queued transport api for QUICR
 - set path to find it ```export
   PKG_CONFIG_PATH="/opt/homebrew/opt/openssl@3/lib/pkgconfig"```
 2. Clone the repos 
-   ``` git clone git@github.com:Quicr/transport.git ```
+   ``` git clone git@github.com:Quicr/transport.git  ```
+   ``` cd transport ```
    ``` git submodule update --init --recursive ```
 3. In the same parent directory,  run 
     - make all
