@@ -1,0 +1,4 @@
+[submodule "contrib/picoquic"]
+	path = contrib/picoquic
+	url = git@github.com:Quicr/picoquic.git
+	branch = main

@@ -9,8 +9,9 @@ find_package(Threads REQUIRED)
 find_package(PkgConfig REQUIRED)
 
 # Bring in dependencies
-add_subdirectory(dependencies)
-
+set( PICOQUIC_FETCH_PTLS Off )
+add_subdirectory( contrib/picoquic )
+  
 find_package(OpenSSL REQUIRED)
 message(STATUS "root: ${OPENSSL_ROOT_DIR}")
 message(STATUS "OpenSSL_VERSION: ${OPENSSL_VERSION}")
@@ -22,7 +23,7 @@ add_library(quicr-transport
         src/transport_udp.cpp
         )
 target_link_libraries(quicr-transport)
-target_include_directories(quicr-transport PUBLIC include src)
+target_include_directories(quicr-transport PUBLIC include src )
 set_target_properties(quicr-transport
         PROPERTIES
         CXX_STANDARD 17
@@ -36,8 +37,6 @@ target_compile_options(quicr-transport
 if(MSVC)
     target_compile_definitions(quicr-transport _CRT_SECURE_NO_WARNINGS)
 endif()
-
-
 
 ###
 ### Applications
