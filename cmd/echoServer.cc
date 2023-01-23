@@ -19,25 +19,28 @@ to_hex(const std::vector<uint8_t>& data)
 }
 
 struct Delegate : public ITransport::TransportDelegate {
-
+    void on_connection_status(const TransportStatus status) {}
+    void on_new_connection(const TransportContextId &context_id) {}
+    void on_recv_notify(TransportContextId &tcid) {}
 };
 
 int main()
 {
     Delegate d;
     auto server = ITransport::make_server_transport(1234, d);
-    uint64_t tcid =  server->connect();
+    uint64_t tcid = server->start();
+    uint64_t msid = 0; /* unused */
     while (1)
     {
 
-        auto data = server->dequeue(tcid);
+        auto data = server->dequeue(tcid, msid);
         if (!data.has_value()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
             continue;
         }
 
         std::clog << "Received " << to_hex(data.value()) << "\n";
-        server->enqueue(tcid, data.value());
+        server->enqueue(tcid, msid, std::move(data.value()));
     }
 
     return 0;
