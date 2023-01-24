@@ -7,6 +7,23 @@
 
 namespace qtransport {
 
+///
+/// Logger
+///
+enum struct LogLevel : uint8_t {
+  fatal = 1,
+  error = 2,
+  info = 3,
+  warn = 4,
+  debug = 5,
+};
+
+struct LogHandler {
+  // log() provides logs to the application.  The default implementation is a
+  // noop; the inputs are ignored.
+  virtual void log(LogLevel /*level*/, const std::string & /*message*/) {}
+};
+
 using TransportContextId = uint64_t;
 using MediaStreamId = uint64_t;
 
@@ -69,9 +86,10 @@ public:
   /* Factory APIs */
   static std::shared_ptr<ITransport>
   make_client_transport(const std::string &server, uint16_t port,
-                        TransportDelegate &delegate);
+                        TransportDelegate &delegate, LogHandler &logger);
   static std::shared_ptr<ITransport>
-  make_server_transport(uint16_t port, TransportDelegate &delegate);
+  make_server_transport(uint16_t port, TransportDelegate &delegate,
+                        LogHandler &logger);
 
 public:
   virtual ~ITransport() = default;
