@@ -24,12 +24,8 @@ namespace qtransport {
 
 class UDPTransport : public ITransport {
 public:
-  // Server Socket
-  UDPTransport(const std::string &server_name_in, uint16_t server_port_in,
-               ITransport::TransportDelegate &delegate_in);
-
-  // Client Socket
-  UDPTransport(uint16_t sfuPort_in, ITransport::TransportDelegate &delegate_in);
+  UDPTransport(const TransportRemote &server, TransportDelegate &delegate,
+               bool isServerMode, LogHandler &logger);
 
   virtual ~UDPTransport();
 
@@ -37,35 +33,40 @@ public:
 
   TransportContextId start() override;
 
-  void close() override;
+  void close(const TransportContextId &context_id) override;
+  void closeMediaStream(const TransportContextId &context_id,
+                        MediaStreamId mStreamId) override;
 
-  MediaStreamId createMediaStream(const TransportContextId &tcid,
+  MediaStreamId createMediaStream(const TransportContextId &context_id,
                                   bool use_reliable_transport) override;
 
-  Error enqueue(const TransportContextId &tcid, const MediaStreamId &msid,
-                std::vector<uint8_t> &&bytes) override;
+  TransportError enqueue(const TransportContextId &context_id,
+                         const MediaStreamId &mStreamId,
+                         std::vector<uint8_t> &&bytes) override;
 
   std::optional<std::vector<uint8_t>>
-  dequeue(const TransportContextId &tcid, const MediaStreamId &msid) override;
+  dequeue(const TransportContextId &context_id,
+          const MediaStreamId &mStreamId) override;
 
 private:
   TransportContextId connect_client();
   TransportContextId connect_server();
 
-  struct Remote {
+  struct Addr {
     socklen_t addr_len;
     struct sockaddr_storage addr;
   };
 
   int fd; // UDP socket
-  bool m_isServer;
-  std::string server_name;
-  uint16_t server_port;
-  struct sockaddr_storage server_sockaddr;
-  socklen_t server_sockaddr_len;
-  ITransport::TransportDelegate &delegate;
+  bool isServerMode;
+
+  TransportRemote serverInfo;
+  Addr serverAddr;
+
+  TransportDelegate &delegate;
+
   TransportContextId transport_context_id{0};
-  std::map<TransportContextId, Remote> remote_contexts = {};
+  std::map<TransportContextId, Addr> remote_contexts = {};
 };
 
 } // namespace qtransport

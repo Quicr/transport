@@ -23,13 +23,16 @@ to_hex(const std::vector<uint8_t>& data)
 
 
 struct Delegate : public ITransport::TransportDelegate {
-    void on_connection_status(const TransportStatus status) {}
-    void on_new_connection(const TransportContextId &context_id) {}
-    void on_recv_notify(TransportContextId &tcid) {}
+    void on_connection_status(const TransportContextId &context_id, const TransportStatus status) {}
+    void on_new_connection(const TransportContextId &context_id, const TransportRemote &remote) {}
+    void on_recv_notify(const TransportContextId &context_id) {}
+		void onNewMediaStream(const TransportContextId &context_id, const MediaStreamId &mStreamId) {}
 };
 
 Delegate d;
-auto client = ITransport::make_client_transport("127.0.0.1", 1234, d);
+TransportRemote server = TransportRemote{"127.0.0.1", 1234, TransportProtocol::UDP};
+LogHandler logger;
+auto client = ITransport::make_client_transport(server, d, logger);
 auto tcid = client->start();
 void read_loop() {
 	std::cout << "Client read loop init\n";

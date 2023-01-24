@@ -1,4 +1,5 @@
 #include <cassert>
+#include <fcntl.h>
 #include <iostream>
 #include <string.h> // memcpy
 #include <thread>
@@ -22,7 +23,9 @@
 
 using namespace qtransport;
 
-UDPTransport::~UDPTransport() { close(); }
+UDPTransport::~UDPTransport() {
+  // TODO: Close all media streams and connections
+}
 
 TransportStatus UDPTransport::status() const {
   return (fd > 0) ? TransportStatus::Ready : TransportStatus::Disconnected;
@@ -36,7 +39,7 @@ UDPTransport::createMediaStream(const qtransport::TransportContextId &tcid,
 
 TransportContextId UDPTransport::start() {
 
-  if (m_isServer) {
+  if (isServerMode) {
     return connect_server();
   } else {
     connect_client();
@@ -45,25 +48,30 @@ TransportContextId UDPTransport::start() {
   return 0;
 }
 
-void UDPTransport::close() {
+void UDPTransport::closeMediaStream(const TransportContextId &context_id,
+                                    const MediaStreamId mStreamId) {}
+
+void UDPTransport::close(const TransportContextId &context_id) {
+  // TODO Free/close connection and media streams
+
   if (fd > 0) {
     ::close(fd);
   }
   fd = 0;
 }
 
-Error UDPTransport::enqueue(const TransportContextId &tcid,
-                            const MediaStreamId &msid,
-                            std::vector<uint8_t> &&bytes) {
+TransportError UDPTransport::enqueue(const TransportContextId &context_id,
+                                     const MediaStreamId &mStreamId,
+                                     std::vector<uint8_t> &&bytes) {
   if (bytes.empty()) {
-    return Error::None;
+    return TransportError::None;
   }
 
-  if (remote_contexts.count(tcid) == 0) {
-    return Error::None;
+  if (remote_contexts.count(context_id) == 0) {
+    return TransportError::None;
   }
 
-  auto &r = remote_contexts.at(tcid);
+  auto &r = remote_contexts.at(context_id);
 
   int numSent = sendto(fd, bytes.data(), bytes.size(), 0 /*flags*/,
                        (struct sockaddr *)&r.addr, sizeof(sockaddr_in));
@@ -87,12 +95,12 @@ Error UDPTransport::enqueue(const TransportContextId &tcid,
     assert(0); // TODO
   }
 
-  return Error::None;
+  return TransportError::None;
 }
 
 std::optional<std::vector<uint8_t>>
-UDPTransport::dequeue(const TransportContextId &tcid,
-                      const MediaStreamId & /*msid*/) {
+UDPTransport::dequeue(const TransportContextId &context_id,
+                      const MediaStreamId & /* smStreamId */) {
 
   const int dataSize = 1500;
   std::vector<uint8_t> buffer;
@@ -131,23 +139,29 @@ UDPTransport::dequeue(const TransportContextId &tcid,
 
   buffer.resize(rLen);
   // save the remote address
-  if (m_isServer) {
-    if (remote_contexts.count(tcid) == 0) {
-      Remote r;
+  if (isServerMode) {
+    if (remote_contexts.count(context_id) == 0) {
+      Addr r;
       r.addr_len = remoteAddrLen;
       memcpy(&(r.addr), &remoteAddr, remoteAddrLen);
-      remote_contexts[tcid] = r;
+      remote_contexts[context_id] = r;
     }
   }
   return buffer;
 }
 
-UDPTransport::UDPTransport(const std::string &server_name_in,
-                           uint16_t server_port_in,
-                           ITransport::TransportDelegate &delegate_in)
-    : m_isServer(false), server_name(std::move(server_name_in)),
-      server_port(server_port_in), delegate(delegate_in) {}
+UDPTransport::UDPTransport(const TransportRemote &server,
+                           TransportDelegate &delegate, bool isServerMode,
+                           LogHandler &logger)
+    : delegate(delegate) {
 
+  this->isServerMode = isServerMode;
+  serverInfo = server;
+}
+
+///
+/// Client
+///
 TransportContextId UDPTransport::connect_client() {
   // create a Client
 #if defined(_WIN32)
@@ -164,11 +178,8 @@ TransportContextId UDPTransport::connect_client() {
   }
 
   // make socket non blocking IO
-  struct timeval timeOut;
-  timeOut.tv_sec = 0;
-  timeOut.tv_usec = 2000; // 2 ms
-  int err = setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeOut,
-                       sizeof(timeOut));
+  int flags = fcntl(fd, F_GETFL);
+  int err = fcntl(fd, F_SETFL, flags | O_NONBLOCK);
   if (err) {
     assert(0); // TODO
   }
@@ -182,15 +193,17 @@ TransportContextId UDPTransport::connect_client() {
     assert(0);
   }
 
-  std::string sPort = std::to_string(htons(server_port));
+  std::string sPort = std::to_string(htons(serverInfo.port));
   struct addrinfo hints = {}, *address_list = NULL;
   hints.ai_family = AF_INET;
   hints.ai_socktype = SOCK_DGRAM;
   hints.ai_protocol = IPPROTO_UDP;
-  err = getaddrinfo(server_name.c_str(), sPort.c_str(), &hints, &address_list);
+  err = getaddrinfo(serverInfo.host_or_ip.c_str(), sPort.c_str(), &hints,
+                    &address_list);
   if (err) {
     assert(0);
   }
+
   struct addrinfo *item = nullptr, *found_addr = nullptr;
   for (item = address_list; item != nullptr; item = item->ai_next) {
     if (item->ai_family == AF_INET && item->ai_socktype == SOCK_DGRAM &&
@@ -199,31 +212,23 @@ TransportContextId UDPTransport::connect_client() {
       break;
     }
   }
+
   if (found_addr == nullptr) {
     assert(0);
   }
 
-  struct sockaddr_in *ipv4 = (struct sockaddr_in *)&server_sockaddr;
+  struct sockaddr_in *ipv4 = (struct sockaddr_in *)&serverAddr.addr;
   memcpy(ipv4, found_addr->ai_addr, found_addr->ai_addrlen);
-  ipv4->sin_port = htons(server_port);
-  server_sockaddr_len = sizeof(server_sockaddr);
+  ipv4->sin_port = htons(serverInfo.port);
+  serverAddr.addr_len = sizeof(serverAddr.addr);
 
-  Remote r = {};
-  r.addr_len = sizeof(server_sockaddr);
-  ;
-  memcpy(&(r.addr), &server_sockaddr, sizeof(server_sockaddr));
-
-  remote_contexts[transport_context_id] = r;
+  remote_contexts[transport_context_id] = serverAddr;
   return transport_context_id;
 }
 
 ///
 /// Server
 ///
-
-UDPTransport::UDPTransport(uint16_t server_port_in,
-                           ITransport::TransportDelegate &delegate_in)
-    : server_port(server_port_in), m_isServer(true), delegate(delegate_in) {}
 
 TransportContextId UDPTransport::connect_server() {
 #if defined(_WIN32)
@@ -247,18 +252,15 @@ TransportContextId UDPTransport::connect_server() {
   }
 
   // make socket non blocking IO
-  struct timeval timeout;
-  timeout.tv_sec = 0;
-  timeout.tv_usec = 2000; // 2 ms
-  err = setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&timeout,
-                   sizeof(timeout));
+  int flags = fcntl(fd, F_GETFL);
+  err = fcntl(fd, F_SETFL, flags | O_NONBLOCK);
   if (err) {
     assert(0); // TODO
   }
 
   struct sockaddr_in srv_addr;
   memset((char *)&srv_addr, 0, sizeof(srv_addr));
-  srv_addr.sin_port = htons(server_port);
+  srv_addr.sin_port = htons(serverInfo.port);
   srv_addr.sin_family = AF_INET;
   srv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
 
@@ -269,6 +271,7 @@ TransportContextId UDPTransport::connect_server() {
 
   remote_contexts[transport_context_id] = {};
   transport_context_id += 1;
-  std::cout << "UdpSocket: port " << server_port << ", fd " << fd << std::endl;
+  std::cout << "UdpSocket: port " << serverInfo.port << ", fd " << fd
+            << std::endl;
   return transport_context_id;
 }
