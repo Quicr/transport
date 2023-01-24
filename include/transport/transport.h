@@ -3,22 +3,24 @@
 #include <mutex>
 #include <optional>
 #include <queue>
-#include <vector>
 #include <sys/socket.h>
+#include <vector>
 
 namespace qtransport {
 
-using TransportContextId = uint64_t;      ///< Context Id is a 64bit number that is used as a key to maps
-using MediaStreamId = uint64_t;           ///< Media stream Id is a 64bit number that is used as a key to maps
+using TransportContextId =
+    uint64_t; ///< Context Id is a 64bit number that is used as a key to maps
+using MediaStreamId = uint64_t; ///< Media stream Id is a 64bit number that is
+                                ///< used as a key to maps
 
 /**
  * Transport status/state values
  */
 enum class TransportStatus : uint8_t {
-	Ready = 0,
-	Connecting,
-	RemoteRequestClose,
-	Disconnected
+  Ready = 0,
+  Connecting,
+  RemoteRequestClose,
+  Disconnected
 };
 
 /**
@@ -29,18 +31,15 @@ enum class TransportError : uint8_t {
   UnknownError,
   PeerDisconnected,
   PeerUnreachable,
-	CannotResolveHostname,
-	InvalidIpv4Address,
-	InvalidIpv6Address
+  CannotResolveHostname,
+  InvalidIpv4Address,
+  InvalidIpv6Address
 };
 
 /**
  *
  */
-enum class TransportProtocol {
-	UDP=0,
-	QUIC
-};
+enum class TransportProtocol { UDP = 0, QUIC };
 
 /**
  * @brief Remote/Destination endpoint address info.
@@ -48,21 +47,20 @@ enum class TransportProtocol {
  * @details Remote destination is either a client or server hostname/ip and port
  */
 struct TransportRemote {
-	std::string       host_or_ip;   // IPv4/v6 or FQDN (user input)
-	uint16_t          port;         // Port (user input)
-	TransportProtocol proto;        // Protocol to use for the transport
-
+  std::string host_or_ip;  // IPv4/v6 or FQDN (user input)
+  uint16_t port;           // Port (user input)
+  TransportProtocol proto; // Protocol to use for the transport
 };
 
 /**
  * Transport configuration parameters
  */
 struct TransportConfig {
-	// Nothing yet
+  // Nothing yet
 };
 
 /**
- * @brief IP Transport interface
+ * @brief ITransport interface
  *
  * @details A single threaded, async transport interface.
  * 	The transport implementations own the queues
@@ -85,41 +83,46 @@ public:
    * @brief Async Callback API on the transport
    */
   class TransportDelegate {
-	public:
+  public:
     virtual ~TransportDelegate() = default;
 
     /**
      * @brief Event notification for connection status changes
      *
      * @details Called when the connection changes state/status
-		 *
+     *
      * @param[in] context_id  Transport context Id
      * @param[in] status 			Transport Status value
      */
     virtual void on_connection_status(const TransportContextId &context_id,
-																			const TransportStatus status) = 0;
+                                      const TransportStatus status) = 0;
 
     /**
      * @brief Report arrival of a new connection
      *
-     * @details Called when new connection is received. This is only used in server mode.
+     * @details Called when new connection is received. This is only used in
+     * server mode.
      *
-     * @param[in] context_id	Transport context identifier mapped to the connection
-     * @param[in] remote			Transport information for the connection
+     * @param[in] context_id	Transport context identifier mapped to the
+     * connection
+     * @param[in] remote			Transport information for the
+     * connection
      */
     virtual void on_new_connection(const TransportContextId &context_id,
-																	 const TransportRemote remote) = 0;
+                                   const TransportRemote &remote) = 0;
 
-	  /**
+    /**
      * @brief Report arrival of a new media stream
      *
-     * @details Called when new connection is received. This is only used in server mode.
+     * @details Called when new connection is received. This is only used in
+     * server mode.
      *
-     * @param[in] context_id	Transport context identifier mapped to the connection
+     * @param[in] context_id	Transport context identifier mapped to the
+     * connection
      * @param[in] mStreamId		A new media stream id created
      */
-	  virtual void onNewMediaStream(const TransportContextId &context_id,
-																	const MediaStreamId mStreamId) = 0;
+    virtual void onNewMediaStream(const TransportContextId &context_id,
+                                  const MediaStreamId &mStreamId) = 0;
 
     /**
      * @brief Event reporting transport has some data over
@@ -128,36 +131,37 @@ public:
      * @details Applications must invoke ITransport::deqeue() to obtain
      * 		the data by passing the transport context id
      *
-     * @param[in] context_id 	Transport context identifier mapped to the connection
+     * @param[in] context_id 	Transport context identifier mapped to the
+     * connection
      */
     virtual void on_recv_notify(const TransportContextId &context_id) = 0;
   };
 
   /* Factory APIs */
 
-	/**
-	 * @brief Create a new client transport based on the remote (server) host/ip
-	 *
-	 * @param[in] server			Transport remote server information
-	 * @param[in] delegate		Implemented callback methods
-	 *
-	 * @return shared_ptr for the under lining transport.
-	 */
+  /**
+   * @brief Create a new client transport based on the remote (server) host/ip
+   *
+   * @param[in] server			Transport remote server information
+   * @param[in] delegate		Implemented callback methods
+   *
+   * @return shared_ptr for the under lining transport.
+   */
   static std::shared_ptr<ITransport>
-  make_client_transport(TransportRemote &server,
-                        TransportDelegate &delegate);
+  make_client_transport(TransportRemote &server, TransportDelegate &delegate);
 
-	/**
-	 * @brief Create a new server transport based on the remote (server) ip and port
-	 *
-	 * @param[in] server			Transport remote server information
-	 * @param[in] delegate		Implemented callback methods
-	 *
-	 * @return shared_ptr for the under lining transport.
-	 */
+  /**
+   * @brief Create a new server transport based on the remote (server) ip and
+   * port
+   *
+   * @param[in] server			Transport remote server information
+   * @param[in] delegate		Implemented callback methods
+   *
+   * @return shared_ptr for the under lining transport.
+   */
   static std::shared_ptr<ITransport>
   make_server_transport(const TransportRemote &server,
-												TransportDelegate &delegate);
+                        TransportDelegate &delegate);
 
 public:
   virtual ~ITransport() = default;
@@ -165,9 +169,9 @@ public:
   /**
    * @brief Status of the transport
    *
-   * @details Return the status of the transport. In server mode, the transport will
-   *    reflect the status of the listening socket. In client mode it will reflect
-   *    the status of the server connection.
+   * @details Return the status of the transport. In server mode, the transport
+   * will reflect the status of the listening socket. In client mode it will
+   * reflect the status of the server connection.
    */
   virtual TransportStatus status() const = 0;
 
@@ -175,8 +179,8 @@ public:
    * @brief Setup the transport connection
    *
    * @details In server mode this will create the listening socket and will
-   * 		start listening on the socket for new connections. In client mode
-   * 		this will initiate a connection to the remote/server.
+   * 		start listening on the socket for new connections. In client
+   * mode this will initiate a connection to the remote/server.
    *
    * @return TransportContextId: identifying the connection
    */
@@ -187,7 +191,8 @@ public:
    *
    * @todo change to generic stream
    *
-   * @param[in] context_id							Identifying the connection
+   * @param[in] context_id							Identifying
+   * the connection
    * @param[in] use_reliable_transport 	Indicates a reliable stream is
    *                                 		preferred for transporting data
    *
@@ -196,20 +201,22 @@ public:
   virtual MediaStreamId createMediaStream(const TransportContextId &context_id,
                                           bool use_reliable_transport) = 0;
 
-	/**
-	 * @brief Close a transport context
-	 */
+  /**
+   * @brief Close a transport context
+   */
   virtual void close(const TransportContextId &context_id) = 0;
 
-	/**
-	 * @brief Close/end a media stream within context
- 	 */
-	virtual void closeMediaStream(const TransportContextId &context_id, MediaStreamId mStreamId) = 0;
+  /**
+   * @brief Close/end a media stream within context
+   */
+  virtual void closeMediaStream(const TransportContextId &context_id,
+                                MediaStreamId mStreamId) = 0;
 
-	/**
+  /**
    * @brief Enqueue application data within the transport
    *
-   * @details Add data to the transport queue. Data enqueued will be transmitted when available.
+   * @details Add data to the transport queue. Data enqueued will be transmitted
+   * when available.
    *
    * @todo is priority missing?
    *
@@ -226,14 +233,16 @@ public:
   /**
    * @brief Dequeue application data from transport queue
    *
-   * @details Data received by the transport will be queued and made available to the caller
-   * 		using this method.  An empty return will be
+   * @details Data received by the transport will be queued and made available
+   * to the caller using this method.  An empty return will be
    *
    * @param[in] context_id		Identifying the connection
-   * @param[in] mStreamId			Media stream Id to receive data from
+   * @param[in] mStreamId			Media stream Id to receive data
+   * from
    */
   virtual std::optional<std::vector<uint8_t>>
-  dequeue(const TransportContextId &context_id, const MediaStreamId &mStreamId) = 0;
+  dequeue(const TransportContextId &context_id,
+          const MediaStreamId &mStreamId) = 0;
 };
 
 } // namespace qtransport
