@@ -6,12 +6,15 @@
 #include <sys/socket.h>
 #include <vector>
 
+#include "logger.h"
+
 namespace qtransport {
 
 using TransportContextId =
     uint64_t; ///< Context Id is a 64bit number that is used as a key to maps
 using MediaStreamId = uint64_t; ///< Media stream Id is a 64bit number that is
                                 ///< used as a key to maps
+
 
 /**
  * Transport status/state values
@@ -28,6 +31,7 @@ enum class TransportStatus : uint8_t {
  */
 enum class TransportError : uint8_t {
   None = 0,
+	QueueFull,
   UnknownError,
   PeerDisconnected,
   PeerUnreachable,
@@ -144,11 +148,14 @@ public:
    *
    * @param[in] server			Transport remote server information
    * @param[in] delegate		Implemented callback methods
+   * @param[in] logger			Transport log handler
    *
    * @return shared_ptr for the under lining transport.
    */
   static std::shared_ptr<ITransport>
-  make_client_transport(TransportRemote &server, TransportDelegate &delegate);
+  make_client_transport(const TransportRemote &server,
+                        TransportDelegate &delegate,
+												LogHandler &logger);
 
   /**
    * @brief Create a new server transport based on the remote (server) ip and
@@ -156,12 +163,14 @@ public:
    *
    * @param[in] server			Transport remote server information
    * @param[in] delegate		Implemented callback methods
+   * @param[in] logger			Transport log handler
    *
    * @return shared_ptr for the under lining transport.
    */
   static std::shared_ptr<ITransport>
   make_server_transport(const TransportRemote &server,
-                        TransportDelegate &delegate);
+                        TransportDelegate &delegate,
+                        LogHandler &logger);
 
 public:
   virtual ~ITransport() = default;
@@ -191,8 +200,8 @@ public:
    *
    * @todo change to generic stream
    *
-   * @param[in] context_id							Identifying
-   * the connection
+   * @param[in] context_id
+   * Identifying the connection
    * @param[in] use_reliable_transport 	Indicates a reliable stream is
    *                                 		preferred for transporting data
    *
