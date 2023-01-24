@@ -102,11 +102,24 @@ public:
     /**
      * @brief Report arrival of a new connection
      *
+     * @details Called when new connection is received. This is only used in server mode.
+     *
      * @param[in] context_id	Transport context identifier mapped to the connection
      * @param[in] remote			Transport information for the connection
      */
     virtual void on_new_connection(const TransportContextId &context_id,
 																	 const TransportRemote remote) = 0;
+
+	  /**
+     * @brief Report arrival of a new media stream
+     *
+     * @details Called when new connection is received. This is only used in server mode.
+     *
+     * @param[in] context_id	Transport context identifier mapped to the connection
+     * @param[in] mStreamId		A new media stream id created
+     */
+	  virtual void onNewMediaStream(const TransportContextId &context_id,
+																	const MediaStreamId mStreamId) = 0;
 
     /**
      * @brief Event reporting transport has some data over
@@ -159,43 +172,68 @@ public:
   virtual TransportStatus status() const = 0;
 
   /**
-   * @brief Setup the underlying transport connection
+   * @brief Setup the transport connection
    *
    * @details In server mode this will create the listening socket and will
-   * 		start
+   * 		start listening on the socket for new connections. In client mode
+   * 		this will initiate a connection to the remote/server.
    *
    * @return TransportContextId: identifying the connection
    */
   virtual TransportContextId start() = 0;
 
   /**
-   * @brief Setup the underlying transport connection
-   * @param TransportContextId: identifying the connection
-   * @param use_reliable_transport : indicates a reliable stream is
-   *                                 preferred for transporting data
-   * @return MediaStreamId : o identifying the connection
+   * @brief Create a media stream in the context
+   *
+   * @todo change to generic stream
+   *
+   * @param[in] context_id							Identifying the connection
+   * @param[in] use_reliable_transport 	Indicates a reliable stream is
+   *                                 		preferred for transporting data
+   *
+   * @return MediaStreamId identifying the stream via the connection
    */
-  virtual MediaStreamId createMediaStream(const TransportContextId &tcid,
+  virtual MediaStreamId createMediaStream(const TransportContextId &context_id,
                                           bool use_reliable_transport) = 0;
 
-  virtual void close() = 0;
+	/**
+	 * @brief Close a transport context
+	 */
+  virtual void close(const TransportContextId &context_id) = 0;
 
-  /**
-   * @brief Enqueue application data with the transport
-   * The data will be moved from the application and enqueud
-   * to the transport queue. The Transport sends the data
-   * whenever the credits to transmit data is available
-   * by the specific transport implementation
+	/**
+	 * @brief Close/end a media stream within context
+ 	 */
+	virtual void closeMediaStream(const TransportContextId &context_id, MediaStreamId mStreamId) = 0;
+
+	/**
+   * @brief Enqueue application data within the transport
+   *
+   * @details Add data to the transport queue. Data enqueued will be transmitted when available.
+   *
+   * @todo is priority missing?
+   *
+   * @param[in] context_id	Identifying the connection
+   * @param[in] mStreamId	  Media stream Id to send data on
+   * @param[in] bytes				Data to send/write
+   *
+   * @returns TransportError is returned indicating status of the operation
    */
-  virtual TransportError enqueue(const TransportContextId &tcid,
-                                 const MediaStreamId &msid,
+  virtual TransportError enqueue(const TransportContextId &context_id,
+                                 const MediaStreamId &mStreamId,
                                  std::vector<uint8_t> &&bytes) = 0;
 
   /**
-   * @brief Dequeue any queued application data, may be empty
+   * @brief Dequeue application data from transport queue
+   *
+   * @details Data received by the transport will be queued and made available to the caller
+   * 		using this method.  An empty return will be
+   *
+   * @param[in] context_id		Identifying the connection
+   * @param[in] mStreamId			Media stream Id to receive data from
    */
   virtual std::optional<std::vector<uint8_t>>
-  dequeue(const TransportContextId &tcid, const MediaStreamId &msid) = 0;
+  dequeue(const TransportContextId &context_id, const MediaStreamId &mStreamId) = 0;
 };
 
 } // namespace qtransport
