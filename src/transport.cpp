@@ -6,7 +6,7 @@ namespace qtransport {
 std::shared_ptr<ITransport>
 ITransport::make_client_transport(const TransportRemote &server,
                                   TransportDelegate &delegate,
-																	LogHandler &logger) {
+                                  LogHandler &logger) {
 
   switch (server.proto) {
   case TransportProtocol::UDP:

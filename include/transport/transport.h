@@ -3,7 +3,6 @@
 #include <mutex>
 #include <optional>
 #include <queue>
-#include <sys/socket.h>
 #include <vector>
 
 #include "logger.h"
@@ -14,7 +13,6 @@ using TransportContextId =
     uint64_t; ///< Context Id is a 64bit number that is used as a key to maps
 using MediaStreamId = uint64_t; ///< Media stream Id is a 64bit number that is
                                 ///< used as a key to maps
-
 
 /**
  * Transport status/state values
@@ -31,7 +29,7 @@ enum class TransportStatus : uint8_t {
  */
 enum class TransportError : uint8_t {
   None = 0,
-	QueueFull,
+  QueueFull,
   UnknownError,
   PeerDisconnected,
   PeerUnreachable,
@@ -154,8 +152,7 @@ public:
    */
   static std::shared_ptr<ITransport>
   make_client_transport(const TransportRemote &server,
-                        TransportDelegate &delegate,
-												LogHandler &logger);
+                        TransportDelegate &delegate, LogHandler &logger);
 
   /**
    * @brief Create a new server transport based on the remote (server) ip and
@@ -169,8 +166,7 @@ public:
    */
   static std::shared_ptr<ITransport>
   make_server_transport(const TransportRemote &server,
-                        TransportDelegate &delegate,
-                        LogHandler &logger);
+                        TransportDelegate &delegate, LogHandler &logger);
 
 public:
   virtual ~ITransport() = default;
