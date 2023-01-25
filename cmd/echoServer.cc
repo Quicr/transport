@@ -20,7 +20,7 @@ to_hex(const std::vector<uint8_t>& data)
 
 struct Delegate : public ITransport::TransportDelegate {
 private:
-	std::shared_ptr<ITransport> *server;
+	std::shared_ptr<ITransport> server;
 	uint64_t msgcount;
 
 public:
@@ -28,7 +28,7 @@ public:
 		msgcount = 0;
 	}
 
-	void setServerTransport(std::shared_ptr<ITransport> *server) {
+	void setServerTransport(std::shared_ptr<ITransport> server) {
 		this->server = server;
 	}
 
@@ -46,12 +46,12 @@ public:
 						  << " : Data available" << std::endl;
 
 		while (true) {
-			auto data = server->operator->()->dequeue(context_id, mStreamId);
+			auto data = server->dequeue(context_id, mStreamId);
 
 			if (data.has_value()) {
 				msgcount++;
 				std::cout << "  RecvMsg (" << msgcount << ") : " << to_hex(data.value()) << std::endl;
-				server->operator->()->enqueue(context_id, mStreamId, std::move(data.value()));
+				server->enqueue(context_id, mStreamId, std::move(data.value()));
 			} else {
 				break;
 			}
@@ -70,7 +70,7 @@ int main()
     uint64_t tcid = server->start();
     uint64_t msid = 0; /* unused */
 
-		d.setServerTransport(&server);
+		d.setServerTransport(server);
 
     while (1)
     {

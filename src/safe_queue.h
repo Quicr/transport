@@ -26,7 +26,7 @@ public:
    * @param limit     Limit number of messages in queue before push blocks. Zero
    *                  is unlimited.
    */
-  safeQueue(uint32_t limit = 0) { this->limit = limit; }
+  safeQueue(uint32_t limit = 1000) { this->limit = limit; }
 
   ~safeQueue() {}
 
@@ -38,7 +38,7 @@ public:
    * that the queue is full.
    */
   bool push(T const &elem) {
-    if (limit and size() >= limit) {
+    if (limit && size() >= limit) {
       return false;
     }
 
@@ -55,7 +55,7 @@ public:
   std::optional<T> pop() {
     std::lock_guard<std::mutex> lock(mutex);
     if (queue.empty()) {
-      return {};
+      return std::nullopt;
     }
 
     auto elem = queue.front();

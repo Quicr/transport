@@ -313,18 +313,18 @@ UDPTransport::dequeue(const TransportContextId &context_id,
 
   if (remote_contexts.count(context_id) == 0) {
     // Invalid context id
-    return {};
+    return std::nullopt;
   }
 
   if (dequeue_data_map[context_id].count(context_id) == 0) {
     // Invalid stream Id
-    return {};
+    return std::nullopt;
   }
 
   auto &dq = dequeue_data_map[context_id][mstreamId];
 
   if (dq.size() <= 0) {
-    return {};
+    return std::nullopt;
   }
 
   return dq.pop().value().data;

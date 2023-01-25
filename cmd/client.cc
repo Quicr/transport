@@ -24,7 +24,7 @@ to_hex(const std::vector<uint8_t>& data)
 
 struct Delegate : public ITransport::TransportDelegate {
 private:
-	std::shared_ptr<ITransport> *client;
+	std::shared_ptr<ITransport> client;
 	uint64_t msgcount;
 	TransportContextId tcid;
 
@@ -34,7 +34,7 @@ public:
 		tcid = 0;
 	}
 
-	void setClientTransport(std::shared_ptr<ITransport> *client) {
+	void setClientTransport(std::shared_ptr<ITransport> client) {
 		this->client = client;
 	}
 
@@ -54,7 +54,7 @@ public:
 	              << " : Data available" << std::endl;
 
 			while (true) {
-				auto data = client->operator->()->dequeue(context_id, mStreamId);
+				auto data = client->dequeue(context_id, mStreamId);
 
 				if (data.has_value()) {
 					msgcount++;
@@ -75,7 +75,7 @@ auto client = ITransport::make_client_transport(server, d, logger);
 auto tcid = client->start();
 
 int main() {
-	d.setClientTransport(&client);
+	d.setClientTransport(client);
 	const uint8_t forty_bytes[] = {0,1,2,3,4,5,6,7,8,9,0,1,2,3,4,5,6,7,8,9,0,1,2,3,4,5,6,7,8,9,0,1,2,3,4,5,6,7,8,9};
 	//while(!transportManager.transport_ready()) {
 	//	std::this_thread::sleep_for(std::chrono::seconds (2));
