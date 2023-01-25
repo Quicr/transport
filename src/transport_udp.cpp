@@ -39,6 +39,7 @@ MediaStreamId UDPTransport::createMediaStream(
     bool use_reliable_transport) {
 
   return last_media_stream_id++;
+
 }
 
 TransportContextId UDPTransport::start() {
