@@ -46,7 +46,7 @@ TransportContextId UDPTransport::start() {
   if (isServerMode) {
     return connect_server();
   } else {
-    connect_client();
+    return connect_client();
   }
 
   return 0;
