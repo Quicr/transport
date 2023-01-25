@@ -34,7 +34,7 @@ TransportStatus UDPTransport::status() const {
 MediaStreamId
 UDPTransport::createMediaStream(const qtransport::TransportContextId &tcid,
                                 bool use_reliable_transport) {
-  throw std::runtime_error("not supported");
+  return 0x0;
 }
 
 TransportContextId UDPTransport::start() {
