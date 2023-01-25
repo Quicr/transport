@@ -34,6 +34,8 @@ enum class TransportError : uint8_t {
   PeerDisconnected,
   PeerUnreachable,
   CannotResolveHostname,
+  InvalidContextId,
+  InvalidStreamId,
   InvalidIpv4Address,
   InvalidIpv6Address
 };
@@ -123,8 +125,8 @@ public:
      * connection
      * @param[in] mStreamId		A new media stream id created
      */
-    virtual void onNewMediaStream(const TransportContextId &context_id,
-                                  const MediaStreamId &mStreamId) = 0;
+    virtual void on_new_media_stream(const TransportContextId &context_id,
+                                     const MediaStreamId &mStreamId) = 0;
 
     /**
      * @brief Event reporting transport has some data over
@@ -135,8 +137,11 @@ public:
      *
      * @param[in] context_id 	Transport context identifier mapped to the
      * connection
+     * @param[in] mStreamId		Media stream id that the data was received
+     * on
      */
-    virtual void on_recv_notify(const TransportContextId &context_id) = 0;
+    virtual void on_recv_notify(const TransportContextId &context_id,
+                                const MediaStreamId &mStreamId) = 0;
   };
 
   /* Factory APIs */
@@ -244,6 +249,8 @@ public:
    * @param[in] context_id		Identifying the connection
    * @param[in] mStreamId			Media stream Id to receive data
    * from
+   *
+   * @returns std::nullopt if there is no data
    */
   virtual std::optional<std::vector<uint8_t>>
   dequeue(const TransportContextId &context_id,

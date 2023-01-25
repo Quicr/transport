@@ -19,10 +19,46 @@ to_hex(const std::vector<uint8_t>& data)
 }
 
 struct Delegate : public ITransport::TransportDelegate {
-	void on_connection_status(const TransportContextId &context_id, const TransportStatus status) {}
-	void on_new_connection(const TransportContextId &context_id, const TransportRemote &remote) {}
-	void on_recv_notify(const TransportContextId &context_id) {}
-	void onNewMediaStream(const TransportContextId &context_id, const MediaStreamId &mStreamId) {}
+private:
+	std::shared_ptr<ITransport> *server;
+	uint64_t msgcount;
+
+public:
+	Delegate() {
+		msgcount = 0;
+	}
+
+	void setServerTransport(std::shared_ptr<ITransport> *server) {
+		this->server = server;
+	}
+
+	void on_connection_status(const TransportContextId &context_id, const TransportStatus status) {
+		std::cout << "Connection state change context: " << context_id << ", " << int(status) << std::endl;
+	}
+
+	void on_new_connection(const TransportContextId &context_id, const TransportRemote &remote) {
+		std::cout << "New connection cid: " << context_id
+				<< " from " << remote.host_or_ip << ":" << remote.port << std::endl;
+	}
+
+	void on_recv_notify(const TransportContextId &context_id, const MediaStreamId &mStreamId) {
+		std::cout << "cid: " << context_id << " msid: " << mStreamId
+						  << " : Data available" << std::endl;
+
+		while (true) {
+			auto data = server->operator->()->dequeue(context_id, mStreamId);
+
+			if (data.has_value()) {
+				msgcount++;
+				std::cout << "  RecvMsg (" << msgcount << ") : " << to_hex(data.value()) << std::endl;
+				server->operator->()->enqueue(context_id, mStreamId, std::move(data.value()));
+			} else {
+				break;
+			}
+		}
+	}
+
+	void on_new_media_stream(const TransportContextId &context_id, const MediaStreamId &mStreamId) {}
 };
 
 int main()
@@ -33,17 +69,12 @@ int main()
 	auto server = ITransport::make_server_transport(serverIp, d, logger);
     uint64_t tcid = server->start();
     uint64_t msid = 0; /* unused */
+
+		d.setServerTransport(&server);
+
     while (1)
     {
-
-        auto data = server->dequeue(tcid, msid);
-        if (!data.has_value()) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            continue;
-        }
-
-        std::clog << "Received " << to_hex(data.value()) << "\n";
-        server->enqueue(tcid, msid, std::move(data.value()));
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
     return 0;

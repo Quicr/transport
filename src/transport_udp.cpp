@@ -1,22 +1,16 @@
 #include <cassert>
-#include <fcntl.h>
 #include <iostream>
 #include <string.h> // memcpy
 #include <thread>
 #include <unistd.h>
 
-#if defined(__linux) || defined(__APPLE__)
 #include <arpa/inet.h>
 #include <netdb.h>
-#endif
 #if defined(__linux__)
 #include <net/ethernet.h>
 #include <netpacket/packet.h>
 #elif defined(__APPLE__)
 #include <net/if_dl.h>
-#elif defined(_WIN32)
-#include <winsock2.h>
-#include <ws2tcpip.h>
 #endif
 
 #include "transport_udp.h"
@@ -27,14 +21,24 @@ UDPTransport::~UDPTransport() {
   // TODO: Close all media streams and connections
 }
 
+UDPTransport::UDPTransport(const TransportRemote &server,
+                           TransportDelegate &delegate, bool isServerMode,
+                           LogHandler &logger)
+    : delegate(delegate) {
+
+  this->isServerMode = isServerMode;
+  serverInfo = server;
+}
+
 TransportStatus UDPTransport::status() const {
   return (fd > 0) ? TransportStatus::Ready : TransportStatus::Disconnected;
 }
 
-MediaStreamId
-UDPTransport::createMediaStream(const qtransport::TransportContextId &tcid,
-                                bool use_reliable_transport) {
-  throw std::runtime_error("not supported");
+MediaStreamId UDPTransport::createMediaStream(
+    const qtransport::TransportContextId &context_id,
+    bool use_reliable_transport) {
+
+  return last_media_stream_id++;
 }
 
 TransportContextId UDPTransport::start() {
@@ -49,15 +53,228 @@ TransportContextId UDPTransport::start() {
 }
 
 void UDPTransport::closeMediaStream(const TransportContextId &context_id,
-                                    const MediaStreamId mStreamId) {}
+                                    const MediaStreamId mStreamId) {
+
+  if (dequeue_data_map[context_id].count(mStreamId) > 0) {
+    dequeue_data_map[context_id].erase(mStreamId);
+  }
+}
 
 void UDPTransport::close(const TransportContextId &context_id) {
-  // TODO Free/close connection and media streams
 
-  if (fd > 0) {
-    ::close(fd);
+  if (not isServerMode) {
+    if (fd > 0) {
+      ::close(fd);
+    }
+    fd = 0;
+
+  } else {
+    addrKey ak;
+
+    addr_to_key(remote_contexts[context_id].addr, ak);
+
+    remote_addrs.erase(ak);
+    remote_contexts.erase(context_id);
+    dequeue_data_map.erase(context_id);
   }
-  fd = 0;
+}
+
+void UDPTransport::addr_to_key(sockaddr_storage &addr, addrKey &key) {
+
+  key.port = 0;
+  key.ip_lo = 0;
+  key.ip_hi = 0;
+
+  switch (addr.ss_family) {
+  case AF_INET: {
+    sockaddr_in *s = (sockaddr_in *)&addr;
+
+    key.port = s->sin_port;
+    key.ip_lo = s->sin_addr.s_addr;
+    break;
+  }
+  default: {
+    // IPv6
+    sockaddr_in6 *s = (sockaddr_in6 *)&addr;
+
+    key.port = s->sin6_port;
+
+    key.ip_hi = (uint64_t)&s->sin6_addr;
+    key.ip_lo = (uint64_t)&s->sin6_addr + 8;
+    break;
+  }
+  }
+}
+
+void UDPTransport::addr_to_remote(sockaddr_storage &addr,
+                                  TransportRemote &remote) {
+  char ip[INET6_ADDRSTRLEN];
+
+  remote.proto = TransportProtocol::UDP;
+
+  switch (addr.ss_family) {
+  case AF_INET: {
+    sockaddr_in *s = (sockaddr_in *)&addr;
+
+    remote.port = s->sin_port;
+    inet_ntop(AF_INET, &s->sin_addr, ip, sizeof(ip));
+  }
+  default: {
+    // IPv6
+    sockaddr_in6 *s = (sockaddr_in6 *)&addr;
+
+    remote.port = s->sin6_port;
+    inet_ntop(AF_INET6, &s->sin6_addr, ip, sizeof(ip));
+  }
+  }
+}
+
+/*
+ * Blocking socket writer. This should be called in its own thread
+ *
+ * Writer will perform the following:
+ *  - loop reads data from fd_write_queue and writes it to the socket
+ */
+void UDPTransport::fd_writer(const bool &stop) {
+  std::cout << "Starting transport writer thread" << std::endl;
+
+  while (not stop) {
+    auto cd = fd_write_queue.pop();
+
+    if (cd) {
+      if (dequeue_data_map.count(cd->mStreamId) == 0 or
+          remote_contexts.count(cd->contextId) == 0) {
+        // Drop/ignore connection data since the connection or media stream no
+        // longer exists
+        continue;
+      }
+
+      auto &r = remote_contexts.at(cd->contextId);
+
+      int numSent =
+          sendto(fd, cd.value().data.data(), cd.value().data.size(),
+                 0 /*flags*/, (struct sockaddr *)&r.addr, sizeof(sockaddr_in));
+
+      if (numSent < 0) {
+        int e = errno;
+        std::cerr << "sending on UDP socket got error: " << strerror(e)
+                  << std::endl;
+        assert(0); // TODO
+
+      } else if (numSent != (int)cd.value().data.size()) {
+        assert(0); // TODO
+      }
+
+    } else {
+      std::this_thread::sleep_for(std::chrono::microseconds(10));
+    }
+  }
+}
+
+/*
+ * Blocking socket FD reader. This should be called in its own thread.
+ *
+ * Reader will perform the following:
+ *  - Receive data from socket
+ *  - Lookup addr in map to find context and name info
+ *  - If context doesn't exist, then it's a new connection and the delegate will
+ * be called after creating new context
+ *  - Create connData and send to queue
+ *  - Call on_recv_notify() delegate to notify of new data available. This is
+ * not called again if there is still pending data to be dequeued for the same
+ * mediaStreamId
+ */
+void UDPTransport::fd_reader(const bool &stop) {
+  std::cout << "Starting transport reader thread" << std::endl;
+
+  const int dataSize = 9000; // TODO Add config var to set this value, can be up
+                             // to 64k with gso/ip frags
+
+  struct sockaddr_storage remoteAddr;
+  memset(&remoteAddr, 0, sizeof(remoteAddr));
+  socklen_t remoteAddrLen = sizeof(remoteAddr);
+
+  while (not stop) {
+    std::vector<uint8_t> buffer;
+    buffer.resize(dataSize);
+
+    int rLen = recvfrom(fd, buffer.data(), buffer.size(), 0 /*flags*/,
+                        (struct sockaddr *)&remoteAddr, &remoteAddrLen);
+
+    if (rLen < 0) {
+      int e = errno;
+      if (e == EAGAIN) {
+        // timeout on read
+        continue;
+
+      } else {
+        std::cerr << "reading from UDP socket got error: " << strerror(e)
+                  << std::endl;
+        assert(0); // TODO
+      }
+    }
+
+    if (rLen == 0) {
+      continue;
+    }
+
+    buffer.resize(rLen);
+
+    connData cd;
+    cd.data = buffer;
+    cd.mStreamId = 0;
+
+    addrKey ra_key;
+    addr_to_key(remoteAddr, ra_key);
+
+    if (remote_addrs.count(ra_key) == 0) {
+      if (isServerMode) {
+        // New remote address/connection
+        TransportRemote remote;
+        addr_to_remote(remoteAddr, remote);
+
+        Addr r;
+        r.addr_len = remoteAddrLen;
+        memcpy(&(r.addr), &remoteAddr, remoteAddrLen);
+
+        ++last_context_id;
+        ++last_media_stream_id;
+
+        remote_contexts[last_context_id] = r;
+        remote_addrs[ra_key] = {last_context_id, last_media_stream_id};
+
+        cd.contextId = last_context_id;
+        cd.mStreamId = last_media_stream_id;
+
+        // Create dequeue
+        dequeue_data_map[last_context_id][last_media_stream_id].setLimit(50000);
+
+        cd.contextId = last_context_id;
+
+        // Notify caller that there is a new connection
+        delegate.on_new_connection(last_context_id, std::move(remote));
+
+      } else {
+        // Client mode doesn't support creating connections based on received
+        // packets
+        continue;
+      }
+    } else {
+      auto sctx = remote_addrs[ra_key];
+      cd.contextId = sctx.tcid;
+      cd.mStreamId = sctx.msid;
+    }
+
+    // Add data to caller queue for processing
+    auto &dq = dequeue_data_map[cd.contextId][cd.mStreamId];
+
+    dq.push(cd);
+
+    if (dq.size() < 2) {
+      // Notify the caller that there is data to process
+      delegate.on_recv_notify(cd.contextId, cd.mStreamId);
+    }
+  }
 }
 
 TransportError UDPTransport::enqueue(const TransportContextId &context_id,
@@ -68,31 +285,23 @@ TransportError UDPTransport::enqueue(const TransportContextId &context_id,
   }
 
   if (remote_contexts.count(context_id) == 0) {
-    return TransportError::None;
+    // Invalid context id
+    return TransportError::InvalidContextId;
   }
 
-  auto &r = remote_contexts.at(context_id);
+  if (dequeue_data_map[context_id].count(context_id) == 0) {
+    // Invalid stream Id
+    return TransportError::InvalidStreamId;
+  }
 
-  int numSent = sendto(fd, bytes.data(), bytes.size(), 0 /*flags*/,
-                       (struct sockaddr *)&r.addr, sizeof(sockaddr_in));
-  if (numSent < 0) {
-#if defined(_WIN32)
-    int error = WSAGetLastError();
-    if (error == WSAETIMEDOUT) {
-      return false;
-    } else {
-      std::cerr << "sending on UDP socket got error: " << WSAGetLastError()
-                << std::endl;
-      assert(0);
-    }
-#else
-    int e = errno;
-    std::cerr << "sending on UDP socket got error: " << strerror(e)
-              << std::endl;
-    assert(0); // TODO
-#endif
-  } else if (numSent != (int)bytes.size()) {
-    assert(0); // TODO
+  connData cd;
+  cd.data = bytes;
+  cd.contextId = context_id;
+  cd.mStreamId = mStreamId; // Always use stream ID 0 since UDP does not have
+                            // multiple streams
+
+  if (not fd_write_queue.push(cd)) {
+    return TransportError::QueueFull;
   }
 
   return TransportError::None;
@@ -100,95 +309,38 @@ TransportError UDPTransport::enqueue(const TransportContextId &context_id,
 
 std::optional<std::vector<uint8_t>>
 UDPTransport::dequeue(const TransportContextId &context_id,
-                      const MediaStreamId & /* smStreamId */) {
+                      const MediaStreamId &mstreamId) {
 
-  const int dataSize = 1500;
-  std::vector<uint8_t> buffer;
-  buffer.resize(dataSize);
-  struct sockaddr_storage remoteAddr;
-  memset(&remoteAddr, 0, sizeof(remoteAddr));
-  socklen_t remoteAddrLen = sizeof(remoteAddr);
-  int rLen = recvfrom(fd, buffer.data(), buffer.size(), 0 /*flags*/,
-                      (struct sockaddr *)&remoteAddr, &remoteAddrLen);
-  if (rLen < 0) {
-#if defined(_WIN32)
-    int error = WSAGetLastError();
-    if (error == WSAETIMEDOUT) {
-      return false;
-    } else {
-      std::cerr << "reading from UDP socket got error: " << WSAGetLastError()
-                << std::endl;
-      assert(0);
-    }
-#else
-    int e = errno;
-    if (e == EAGAIN) {
-      // timeout on read
-      return std::nullopt;
-    } else {
-      std::cerr << "reading from UDP socket got error: " << strerror(e)
-                << std::endl;
-      assert(0); // TODO
-    }
-#endif
+  if (remote_contexts.count(context_id) == 0) {
+    // Invalid context id
+    return {};
   }
 
-  if (rLen == 0) {
-    return std::nullopt;
+  if (dequeue_data_map[context_id].count(context_id) == 0) {
+    // Invalid stream Id
+    return {};
   }
 
-  buffer.resize(rLen);
-  // save the remote address
-  if (isServerMode) {
-    if (remote_contexts.count(context_id) == 0) {
-      Addr r;
-      r.addr_len = remoteAddrLen;
-      memcpy(&(r.addr), &remoteAddr, remoteAddrLen);
-      remote_contexts[context_id] = r;
-    }
+  auto &dq = dequeue_data_map[context_id][mstreamId];
+
+  if (dq.size() <= 0) {
+    return {};
   }
-  return buffer;
+
+  return dq.pop().value().data;
 }
 
-UDPTransport::UDPTransport(const TransportRemote &server,
-                           TransportDelegate &delegate, bool isServerMode,
-                           LogHandler &logger)
-    : delegate(delegate) {
-
-  this->isServerMode = isServerMode;
-  serverInfo = server;
-}
-
-///
-/// Client
-///
 TransportContextId UDPTransport::connect_client() {
-  // create a Client
-#if defined(_WIN32)
-  WSADATA wsaData;
-  int wsa_err = WSAStartup(MAKEWORD(2, 2), &wsaData);
-  if (wsa_err) {
-    assert(0);
-  }
-#endif
-
   fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
   if (fd == -1) {
     throw std::runtime_error("socket() failed");
-  }
-
-  // make socket non blocking IO
-  int flags = fcntl(fd, F_GETFL);
-  int err = fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-  if (err) {
-    assert(0); // TODO
   }
 
   struct sockaddr_in srvAddr;
   srvAddr.sin_family = AF_INET;
   srvAddr.sin_addr.s_addr = htonl(INADDR_ANY);
   srvAddr.sin_port = 0;
-  err = bind(fd, (struct sockaddr *)&srvAddr, sizeof(srvAddr));
+  int err = bind(fd, (struct sockaddr *)&srvAddr, sizeof(srvAddr));
   if (err) {
     assert(0);
   }
@@ -220,24 +372,33 @@ TransportContextId UDPTransport::connect_client() {
   struct sockaddr_in *ipv4 = (struct sockaddr_in *)&serverAddr.addr;
   memcpy(ipv4, found_addr->ai_addr, found_addr->ai_addrlen);
   ipv4->sin_port = htons(serverInfo.port);
-  serverAddr.addr_len = sizeof(serverAddr.addr);
+  serverAddr.addr_len = sizeof(sockaddr_in);
 
-  remote_contexts[transport_context_id] = serverAddr;
-  return transport_context_id;
+  addrKey sa_key;
+  addr_to_key(serverAddr.addr, sa_key);
+
+  ++last_context_id;
+  ++last_media_stream_id;
+
+  remote_contexts[last_context_id] = serverAddr;
+  remote_addrs[sa_key] = {last_context_id, last_media_stream_id};
+
+  // Create dequeue
+  dequeue_data_map[last_context_id][last_media_stream_id].setLimit(50000);
+
+  // Notify caller that the connection is now ready
+  delegate.on_connection_status(last_context_id, TransportStatus::Ready);
+
+  bool stop = false;
+  std::thread fd_reader_thr(&UDPTransport::fd_reader, this, stop);
+  std::thread fd_writer_thr(&UDPTransport::fd_writer, this, stop);
+
+  fd_reader_thr.detach();
+  fd_writer_thr.detach();
+  return last_context_id;
 }
 
-///
-/// Server
-///
-
 TransportContextId UDPTransport::connect_server() {
-#if defined(_WIN32)
-  WSADATA wsaData;
-  int wsa_err = WSAStartup(MAKEWORD(2, 2), &wsaData);
-  if (wsa_err) {
-    assert(0);
-  }
-#endif
   fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
   if (fd < 0) {
     assert(0); // TODO
@@ -248,13 +409,6 @@ TransportContextId UDPTransport::connect_server() {
   int err =
       setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (const char *)&one, sizeof(one));
   if (err != 0) {
-    assert(0); // TODO
-  }
-
-  // make socket non blocking IO
-  int flags = fcntl(fd, F_GETFL);
-  err = fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-  if (err) {
     assert(0); // TODO
   }
 
@@ -269,9 +423,14 @@ TransportContextId UDPTransport::connect_server() {
     assert(0); // TODO
   }
 
-  remote_contexts[transport_context_id] = {};
-  transport_context_id += 1;
   std::cout << "UdpSocket: port " << serverInfo.port << ", fd " << fd
             << std::endl;
-  return transport_context_id;
+
+  bool stop = false;
+  std::thread fd_reader_thr(&UDPTransport::fd_reader, this, stop);
+  std::thread fd_writer_thr(&UDPTransport::fd_writer, this, stop);
+  fd_reader_thr.detach();
+  fd_writer_thr.detach();
+
+  return last_context_id;
 }
