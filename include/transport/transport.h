@@ -137,8 +137,8 @@ public:
      *
      * @param[in] context_id 	Transport context identifier mapped to the
      * connection
-     * @param[in] mStreamId		Media stream id that the data was received
-     * on
+     * @param[in] mStreamId		Media stream id that the data was
+     * received on
      */
     virtual void on_recv_notify(const TransportContextId &context_id,
                                 const MediaStreamId &mStreamId) = 0;
