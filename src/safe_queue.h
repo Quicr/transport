@@ -45,7 +45,7 @@ public:
     std::lock_guard<std::mutex> lock(mutex);
 
     queue.push(elem);
-    return true
+    return true;
   }
 
   /**
