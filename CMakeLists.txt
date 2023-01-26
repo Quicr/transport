@@ -22,6 +22,7 @@ add_library(quicr-transport
         src/transport.cpp
         src/transport_udp.cpp
         )
+
 target_link_libraries(quicr-transport)
 target_include_directories(quicr-transport PUBLIC include src )
 set_target_properties(quicr-transport
@@ -29,6 +30,7 @@ set_target_properties(quicr-transport
         CXX_STANDARD 17
         CXX_STANDARD_REQUIRED YES
         CXX_EXTENSIONS OFF)
+
 target_compile_options(quicr-transport
         PRIVATE
             $<$<OR:$<C_COMPILER_ID:Clang>,$<C_COMPILER_ID:AppleClang>,$<C_COMPILER_ID:GNU>>: -Wpedantic -Wextra -Wall>
