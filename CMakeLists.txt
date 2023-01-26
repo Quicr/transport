@@ -12,11 +12,11 @@ find_package(PkgConfig REQUIRED)
 set( PICOQUIC_FETCH_PTLS Off )
 #add_subdirectory( contrib/picoquic )
   
-find_package(OpenSSL REQUIRED)
-message(STATUS "root: ${OPENSSL_ROOT_DIR}")
-message(STATUS "OpenSSL_VERSION: ${OPENSSL_VERSION}")
-message(STATUS "OpenSSL_INCLUDE_DIR: ${OPENSSL_INCLUDE_DIR}")
-message(STATUS "OpenSSL_LIBRARIES: ${OPENSSL_LIBRARIES}")
+#find_package(OpenSSL REQUIRED)
+#message(STATUS "root: ${OPENSSL_ROOT_DIR}")
+#message(STATUS "OpenSSL_VERSION: ${OPENSSL_VERSION}")
+#message(STATUS "OpenSSL_INCLUDE_DIR: ${OPENSSL_INCLUDE_DIR}")
+#message(STATUS "OpenSSL_LIBRARIES: ${OPENSSL_LIBRARIES}")
 
 add_library(quicr-transport
         src/transport.cpp
