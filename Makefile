@@ -12,8 +12,7 @@ CLANG_FORMAT=clang-format -i
 all: ${BUILD_DIR} client server
 
 ${BUILD_DIR}: CMakeLists.txt
-	cmake -B${BUILD_DIR} -DCMAKE_BUILD_TYPE=Debug .
-
+	cmake -B${BUILD_DIR} -DBUILD_TESTING=TRUE -DCMAKE_BUILD_TYPE=Debug .
 
 client: ${BUILD_DIR} cmd/client.cc
 	cmake --build ${BUILD_DIR} --target client
