@@ -5,6 +5,14 @@ project(quicr-transport
         DESCRIPTION "transport lib for QUICR project"
         LANGUAGES CXX)
 
+
+if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
+    option(QTRANSPORT_BUILD_TESTS "Build tests for quicr transport" ON)
+else()
+    option(QTRANSPORT_BUILD_TESTS "Build tests for quicr trasnsport" OFF)
+endif()
+
+
 find_package(Threads REQUIRED)
 find_package(PkgConfig REQUIRED)
 
@@ -44,4 +52,6 @@ endif()
 ### Applications
 ###
 
-add_subdirectory(cmd)
+if(BUILD_TESTING AND QTRANSPORT_BUILD_TESTS)
+  add_subdirectory(cmd)
+endif()
