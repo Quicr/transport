@@ -118,6 +118,7 @@ void UDPTransport::addr_to_remote(sockaddr_storage &addr,
 
     remote.port = s->sin_port;
     inet_ntop(AF_INET, &s->sin_addr, ip, sizeof(ip));
+    break;
   }
   default: {
     // IPv6
@@ -125,6 +126,7 @@ void UDPTransport::addr_to_remote(sockaddr_storage &addr,
 
     remote.port = s->sin6_port;
     inet_ntop(AF_INET6, &s->sin6_addr, ip, sizeof(ip));
+    break;
   }
   }
 }
