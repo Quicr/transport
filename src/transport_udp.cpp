@@ -34,11 +34,20 @@ TransportStatus UDPTransport::status() const {
   return (fd > 0) ? TransportStatus::Ready : TransportStatus::Disconnected;
 }
 
+/*
+ * UDP doesn't support multiple streams for clients.  This will return the same
+ * stream ID used for the context
+ */
 MediaStreamId UDPTransport::createMediaStream(
     const qtransport::TransportContextId &context_id,
     bool use_reliable_transport) {
 
-  return last_media_stream_id++;
+  if (remote_contexts.count(context_id) == 0) {
+    return 0; // Error
+  }
+
+  auto addr = remote_contexts[context_id];
+  return remote_addrs[addr.key].msid;
 }
 
 TransportContextId UDPTransport::start() {
@@ -236,6 +245,7 @@ void UDPTransport::fd_reader(const bool &stop) {
         addr_to_remote(remoteAddr, remote);
 
         Addr r;
+        r.key = ra_key;
         r.addr_len = remoteAddrLen;
         memcpy(&(r.addr), &remoteAddr, remoteAddrLen);
 
@@ -243,7 +253,10 @@ void UDPTransport::fd_reader(const bool &stop) {
         ++last_media_stream_id;
 
         remote_contexts[last_context_id] = r;
-        remote_addrs[ra_key] = {last_context_id, last_media_stream_id};
+        remote_addrs[ra_key] = {
+            last_context_id,
+            last_media_stream_id,
+        };
 
         cd.contextId = last_context_id;
         cd.mStreamId = last_media_stream_id;
