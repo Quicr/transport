@@ -4,6 +4,7 @@
 #include <iomanip>
 
 #include <transport/transport.h>
+#include "cmdLogger.h"
 
 using namespace qtransport;
 
@@ -22,9 +23,10 @@ struct Delegate : public ITransport::TransportDelegate {
 private:
 	std::shared_ptr<ITransport> server;
 	uint64_t msgcount;
+	cmdLogger &logger;
 
 public:
-	Delegate() {
+	Delegate(cmdLogger &logger) : logger(logger) {
 		msgcount = 0;
 	}
 
@@ -33,24 +35,32 @@ public:
 	}
 
 	void on_connection_status(const TransportContextId &context_id, const TransportStatus status) {
-		std::cout << "Connection state change context: " << context_id << ", " << int(status) << std::endl;
+		std::stringstream s_log;
+		s_log << "Connection state change context: " << context_id << ", " << int(status);
+		logger.log(LogLevel::info, s_log.str());
 	}
 
 	void on_new_connection(const TransportContextId &context_id, const TransportRemote &remote) {
-		std::cout << "New connection cid: " << context_id
-				<< " from " << remote.host_or_ip << ":" << remote.port << std::endl;
+		std::stringstream s_log;
+		s_log << "New connection cid: " << context_id
+				<< " from " << remote.host_or_ip << ":" << remote.port;
+		logger.log(LogLevel::info, s_log.str());
 	}
 
 	void on_recv_notify(const TransportContextId &context_id, const MediaStreamId &mStreamId) {
-		std::cout << "cid: " << context_id << " msid: " << mStreamId
-						  << " : Data available" << std::endl;
+		std::stringstream s_log;
 
 		while (true) {
 			auto data = server->dequeue(context_id, mStreamId);
 
 			if (data.has_value()) {
 				msgcount++;
-				std::cout << "  RecvMsg (" << msgcount << ") : " << to_hex(data.value()) << std::endl;
+
+				s_log.str(std::string());
+				s_log << "cid: " << context_id << " msid: " << mStreamId
+					 << "  RecvMsg (" << msgcount << ") : " << to_hex(data.value());
+				logger.log(LogLevel::info, s_log.str());
+
 				server->enqueue(context_id, mStreamId, std::move(data.value()));
 			} else {
 				break;
@@ -63,9 +73,9 @@ public:
 
 int main()
 {
-	Delegate d;
+	cmdLogger logger;
+	Delegate d(logger);
 	TransportRemote serverIp = TransportRemote{"127.0.0.1", 1234, TransportProtocol::UDP};
-	LogHandler logger;
 	auto server = ITransport::make_server_transport(serverIp, d, logger);
     uint64_t tcid = server->start();
     uint64_t msid = 0; /* unused */
@@ -74,7 +84,7 @@ int main()
 
     while (1)
     {
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      std::this_thread::sleep_for(std::chrono::seconds (5));
     }
 
     return 0;

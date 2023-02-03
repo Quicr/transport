@@ -92,6 +92,7 @@ private:
     MediaStreamId msid;
   };
 
+  LogHandler &logger;
   int fd; // UDP socket
   bool isServerMode;
 

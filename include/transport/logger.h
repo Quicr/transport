@@ -6,17 +6,32 @@ namespace qtransport {
 /**
  * @brief Transport logger level
  */
-enum struct LogLevel : uint8_t {
+enum class LogLevel : uint8_t {
   fatal = 1,
-  error = 2,
-  info = 3,
-  warn = 4,
-  debug = 5,
+  error,
+  warn,
+  info,
+  debug,
 };
 
-struct LogHandler {
-  // log() provides logs to the application.  The default implementation is a
-  // noop; the inputs are ignored.
+/**
+ * @brief Transport log handler
+ *
+ * @details Transport log handler defines callback methods that can be
+ * implemented by the application.
+ */
+class LogHandler {
+public:
+  /**
+   * @brief Transport log callback
+   *
+   * @details Applications can implement this method to receive log messages
+   * from the transport. This is optional.
+   *
+   * @param level			Severity level as defined by
+   * qtransport::LogLevel enum
+   * @param message 	Log messages to log
+   */
   virtual void log(LogLevel /*level*/, const std::string & /*message*/) {}
 };
 } // namespace qtransport
