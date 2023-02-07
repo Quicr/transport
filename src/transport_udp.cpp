@@ -153,6 +153,8 @@ void UDPTransport::fd_writer(const bool &stop) {
 
       auto &r = remote_contexts.at(cd->contextId);
 
+      std::cerr << "sendto size " << cd.value().data.size() << std::endl;
+
       int numSent =
           sendto(fd, cd.value().data.data(), cd.value().data.size(),
                  0 /*flags*/, (struct sockaddr *)&r.addr, sizeof(sockaddr_in));
@@ -166,6 +168,7 @@ void UDPTransport::fd_writer(const bool &stop) {
       } else if (numSent != (int)cd.value().data.size()) {
         assert(0); // TODO
       }
+      std::cerr << "sendto sent size " << numSent << std::endl;
 
     } else {
       std::this_thread::sleep_for(std::chrono::microseconds(10));
@@ -189,7 +192,7 @@ void UDPTransport::fd_writer(const bool &stop) {
 void UDPTransport::fd_reader(const bool &stop) {
   std::cout << "Starting transport reader thread" << std::endl;
 
-  const int dataSize = 9000; // TODO Add config var to set this value, can be up
+  const int dataSize = 65535; // TODO Add config var to set this value, can be up
                              // to 64k with gso/ip frags
 
   struct sockaddr_storage remoteAddr;
@@ -219,6 +222,8 @@ void UDPTransport::fd_reader(const bool &stop) {
     if (rLen == 0) {
       continue;
     }
+
+    std::cerr << "recvfrom size = " << rLen << std::endl;
 
     buffer.resize(rLen);
 
@@ -371,6 +376,18 @@ TransportContextId UDPTransport::connect_client() {
     assert(0);
   }
 
+  size_t snd_rcv_max = 65535;
+
+  err = setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &snd_rcv_max, sizeof(snd_rcv_max));
+  if (err != 0) {
+    assert(0); // TODO
+  }
+
+  err = setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &snd_rcv_max, sizeof(snd_rcv_max));
+  if (err != 0) {
+    assert(0); // TODO
+  }
+
   struct sockaddr_in *ipv4 = (struct sockaddr_in *)&serverAddr.addr;
   memcpy(ipv4, found_addr->ai_addr, found_addr->ai_addrlen);
   ipv4->sin_port = htons(serverInfo.port);
@@ -406,10 +423,23 @@ TransportContextId UDPTransport::connect_server() {
     assert(0); // TODO
   }
 
+
   // set for re-use
   int one = 1;
   int err =
       setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (const char *)&one, sizeof(one));
+  if (err != 0) {
+    assert(0); // TODO
+  }
+
+  size_t snd_rcv_max = 65535;
+
+  err = setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &snd_rcv_max, sizeof(snd_rcv_max));
+  if (err != 0) {
+    assert(0); // TODO
+  }
+
+  err = setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &snd_rcv_max, sizeof(snd_rcv_max));
   if (err != 0) {
     assert(0); // TODO
   }
