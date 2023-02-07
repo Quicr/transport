@@ -5,6 +5,8 @@
 
 #include <transport/transport.h>
 
+#include "cmdLogger.h"
+
 using namespace qtransport;
 
 bool done = false;
@@ -27,9 +29,10 @@ private:
 	std::shared_ptr<ITransport> client;
 	uint64_t msgcount;
 	TransportContextId tcid;
+	cmdLogger &logger;
 
 public:
-	Delegate() {
+	Delegate(cmdLogger &logger) : logger(logger) {
 		msgcount = 0;
 		tcid = 0;
 	}
@@ -44,21 +47,26 @@ public:
 
     void on_connection_status(const TransportContextId &context_id, const TransportStatus status) {
 			tcid = context_id;
-			std::cout << "Connection state change context: " << context_id << ", " << int(status) << std::endl;
+			std::stringstream s_log;
+			s_log << "Connection state change context: " << context_id << ", " << int(status);
+			logger.log(LogLevel::info, s_log.str());
+
 		}
     void on_new_connection(const TransportContextId &context_id, const TransportRemote &remote) {
 		}
 
     void on_recv_notify(const TransportContextId &context_id, const MediaStreamId &mStreamId) {
-	    std::cout << "cid: " << context_id << " msid: " << mStreamId
-	              << " : Data available" << std::endl;
+			std::stringstream s_log;
 
 			while (true) {
 				auto data = client->dequeue(context_id, mStreamId);
 
 				if (data.has_value()) {
 					msgcount++;
-					std::cout << "  RecvMsg (" << msgcount << ") : " << to_hex(data.value()) << std::endl;
+					s_log.str(std::string());
+					s_log << "cid: " << context_id << " msid: " << mStreamId
+							  << "  RecvMsg (" << msgcount << ") : " << to_hex(data.value());
+					logger.log(LogLevel::info, s_log.str());
 				} else {
 					break;
 				}
@@ -68,9 +76,10 @@ public:
 		void on_new_media_stream(const TransportContextId &context_id, const MediaStreamId &mStreamId) {}
 };
 
-Delegate d;
+cmdLogger logger;
+Delegate d(logger);
 TransportRemote server = TransportRemote{"127.0.0.1", 1234, TransportProtocol::UDP};
-LogHandler logger;
+
 auto client = ITransport::make_client_transport(server, d, logger);
 auto tcid = client->start();
 
@@ -80,7 +89,7 @@ int main() {
 	//while(!transportManager.transport_ready()) {
 	//	std::this_thread::sleep_for(std::chrono::seconds (2));
 	//}
-	std::cout << "Transport is ready" << std::endl;
+	logger.log(LogLevel::info, "Transport is ready");
 
 	// Send forty_bytes packet 10 seconds with 50 ms apart
 	while (true) {
@@ -91,10 +100,16 @@ int main() {
 			break;
 	}
 
+	std::stringstream s_log;
   while(true)
 	{
   	auto data = bytes(forty_bytes, forty_bytes+ sizeof(forty_bytes));
-		std::cout<< "sending: " << to_hex(data) << std::endl;
+
+		s_log.str("");
+
+		s_log << "sending: " << to_hex(data);
+		logger.log(LogLevel::info, s_log.str());
+
 		client->enqueue(tcid,1, std::move(data));
 		std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 	}
