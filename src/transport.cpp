@@ -13,10 +13,13 @@ ITransport::make_client_transport(const TransportRemote &server,
     return std::make_shared<UDPTransport>(server, delegate, false, logger);
 
   case TransportProtocol::QUIC:
-    assert(0); // TODO  - add handling of protocol not yet implemented
+    logger.log(LogLevel::error, "QUIC not implemented yet");
+		throw std::runtime_error("make_client_transport: QUIC not implemented");
     break;
+
   default:
-    assert(0); // TODO  - add handling of invalid protocol
+    logger.log(LogLevel::error, "Protocol not implemented");
+		  throw std::runtime_error("make_client_transport: Protocol not implemented");
     break;
   }
 
@@ -32,10 +35,13 @@ ITransport::make_server_transport(const TransportRemote &server,
     return std::make_shared<UDPTransport>(server, delegate, true, logger);
 
   case TransportProtocol::QUIC:
-    assert(0); // TODO  - add handling of protocol not yet implemented
+    logger.log(LogLevel::error, "QUIC not implemented yet");
+		  throw std::runtime_error("make_server_transport: QUIC not implemented");
     break;
   default:
-    assert(0); // TODO  - add handling of invalid protocol
+    logger.log(LogLevel::error, "Protocol not implemented");
+
+		  throw std::runtime_error("make_server_transport: Protocol not implemented");
     break;
   }
 

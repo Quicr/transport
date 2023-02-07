@@ -84,6 +84,7 @@ private:
   struct Addr {
     socklen_t addr_len;
     struct sockaddr_storage addr;
+    addrKey key;
   };
 
   struct AddrStream {
@@ -91,6 +92,7 @@ private:
     MediaStreamId msid;
   };
 
+  LogHandler &logger;
   int fd; // UDP socket
   bool isServerMode;
 

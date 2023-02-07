@@ -44,7 +44,11 @@ public:
 
     std::lock_guard<std::mutex> lock(mutex);
 
+    if (size() == 0)
+      empty_block_mutex.unlock();
+
     queue.push(elem);
+
     return true;
   }
 
@@ -62,7 +66,30 @@ public:
     auto elem = queue.front();
     queue.pop();
 
+    // Lock empty lock to trigger blocking of threads using block_pop()
+    if (size() == 0) {
+      empty_block_mutex.try_lock();
+    }
+
     return elem;
+  }
+
+  /**
+   * @brief Block waiting for data in queue, then remove the first object from
+   * queue (oldest object)
+   *
+   * @details This will block if the queue is empty. Due to concurrency, it's
+   * possible that when unblocked the queue might still be empty. In this case,
+   * try again.
+   *
+   * @return std::nullopt if queue is empty, otherwise reference to object
+   */
+  std::optional<T> block_pop() {
+
+    empty_block_mutex.lock();
+    empty_block_mutex.unlock();
+
+    return pop();
   }
 
   /**
@@ -72,25 +99,13 @@ public:
    */
   size_t size() { return queue.size(); }
 
-  /**
-   * @brief Block/Wait till queue is not full
-   *
-   * @return true if not
-   */
-  bool wait() {
-    while (size() >= limit - (limit > 2) ? 2 : 0) {
-      usleep(1000);
-    }
-
-    return true;
-  }
-
   void setLimit(uint32_t limit) { this->limit = limit; }
 
 private:
-  std::mutex mutex;    // read/write lock
-  uint32_t limit;      // Limit of number of messages in queue
-  std::queue<T> queue; // Queue
+  std::mutex empty_block_mutex; // Blocking mutex for when the queue is empty
+  std::mutex mutex;             // read/write lock
+  uint32_t limit;               // Limit of number of messages in queue
+  std::queue<T> queue;          // Queue
 };
 
 } /* namespace qtransport */
