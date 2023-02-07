@@ -153,8 +153,6 @@ void UDPTransport::fd_writer(const bool &stop) {
 
       auto &r = remote_contexts.at(cd->contextId);
 
-      std::cerr << "sendto size " << cd.value().data.size() << std::endl;
-
       int numSent =
           sendto(fd, cd.value().data.data(), cd.value().data.size(),
                  0 /*flags*/, (struct sockaddr *)&r.addr, sizeof(sockaddr_in));
@@ -168,7 +166,6 @@ void UDPTransport::fd_writer(const bool &stop) {
       } else if (numSent != (int)cd.value().data.size()) {
         assert(0); // TODO
       }
-      std::cerr << "sendto sent size " << numSent << std::endl;
 
     } else {
       std::this_thread::sleep_for(std::chrono::microseconds(10));
@@ -222,8 +219,6 @@ void UDPTransport::fd_reader(const bool &stop) {
     if (rLen == 0) {
       continue;
     }
-
-    std::cerr << "recvfrom size = " << rLen << std::endl;
 
     buffer.resize(rLen);
 
