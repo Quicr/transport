@@ -18,20 +18,26 @@
 
 using namespace qtransport;
 
-UDPTransport::~UDPTransport() {
+UDPTransport::~UDPTransport()
+{
   // TODO: Close all media streams and connections
 }
 
-UDPTransport::UDPTransport(const TransportRemote &server,
-                           TransportDelegate &delegate, bool isServerMode,
-                           LogHandler &logger)
-    : delegate(delegate), logger(logger) {
+UDPTransport::UDPTransport(const TransportRemote& server,
+                           TransportDelegate& delegate,
+                           bool isServerMode,
+                           LogHandler& logger)
+  : delegate(delegate)
+  , logger(logger)
+{
 
   this->isServerMode = isServerMode;
   serverInfo = server;
 }
 
-TransportStatus UDPTransport::status() const {
+TransportStatus
+UDPTransport::status() const
+{
   return (fd > 0) ? TransportStatus::Ready : TransportStatus::Disconnected;
 }
 
@@ -39,9 +45,11 @@ TransportStatus UDPTransport::status() const {
  * UDP doesn't support multiple streams for clients.  This will return the same
  * stream ID used for the context
  */
-MediaStreamId UDPTransport::createMediaStream(
-    const qtransport::TransportContextId &context_id,
-    bool use_reliable_transport) {
+MediaStreamId
+UDPTransport::createMediaStream(
+  const qtransport::TransportContextId& context_id,
+  bool use_reliable_transport)
+{
 
   if (remote_contexts.count(context_id) == 0) {
     std::stringstream err;
@@ -54,7 +62,9 @@ MediaStreamId UDPTransport::createMediaStream(
   return remote_addrs[addr.key].msid;
 }
 
-TransportContextId UDPTransport::start() {
+TransportContextId
+UDPTransport::start()
+{
 
   if (isServerMode) {
     return connect_server();
@@ -65,15 +75,19 @@ TransportContextId UDPTransport::start() {
   return 0;
 }
 
-void UDPTransport::closeMediaStream(const TransportContextId &context_id,
-                                    const MediaStreamId mStreamId) {
+void
+UDPTransport::closeMediaStream(const TransportContextId& context_id,
+                               const MediaStreamId mStreamId)
+{
 
   if (dequeue_data_map[context_id].count(mStreamId) > 0) {
     dequeue_data_map[context_id].erase(mStreamId);
   }
 }
 
-void UDPTransport::close(const TransportContextId &context_id) {
+void
+UDPTransport::close(const TransportContextId& context_id)
+{
 
   if (not isServerMode) {
     if (fd > 0) {
@@ -92,55 +106,58 @@ void UDPTransport::close(const TransportContextId &context_id) {
   }
 }
 
-void UDPTransport::addr_to_key(sockaddr_storage &addr, addrKey &key) {
+void
+UDPTransport::addr_to_key(sockaddr_storage& addr, addrKey& key)
+{
 
   key.port = 0;
   key.ip_lo = 0;
   key.ip_hi = 0;
 
   switch (addr.ss_family) {
-  case AF_INET: {
-    sockaddr_in *s = (sockaddr_in *)&addr;
+    case AF_INET: {
+      sockaddr_in* s = (sockaddr_in*)&addr;
 
-    key.port = s->sin_port;
-    key.ip_lo = s->sin_addr.s_addr;
-    break;
-  }
-  default: {
-    // IPv6
-    sockaddr_in6 *s = (sockaddr_in6 *)&addr;
+      key.port = s->sin_port;
+      key.ip_lo = s->sin_addr.s_addr;
+      break;
+    }
+    default: {
+      // IPv6
+      sockaddr_in6* s = (sockaddr_in6*)&addr;
 
-    key.port = s->sin6_port;
+      key.port = s->sin6_port;
 
-    key.ip_hi = (uint64_t)&s->sin6_addr;
-    key.ip_lo = (uint64_t)&s->sin6_addr + 8;
-    break;
-  }
+      key.ip_hi = (uint64_t)&s->sin6_addr;
+      key.ip_lo = (uint64_t)&s->sin6_addr + 8;
+      break;
+    }
   }
 }
 
-void UDPTransport::addr_to_remote(sockaddr_storage &addr,
-                                  TransportRemote &remote) {
+void
+UDPTransport::addr_to_remote(sockaddr_storage& addr, TransportRemote& remote)
+{
   char ip[INET6_ADDRSTRLEN];
 
   remote.proto = TransportProtocol::UDP;
 
   switch (addr.ss_family) {
-  case AF_INET: {
-    sockaddr_in *s = (sockaddr_in *)&addr;
+    case AF_INET: {
+      sockaddr_in* s = (sockaddr_in*)&addr;
 
-    remote.port = s->sin_port;
-    inet_ntop(AF_INET, &s->sin_addr, ip, sizeof(ip));
-    break;
-  }
-  default: {
-    // IPv6
-    sockaddr_in6 *s = (sockaddr_in6 *)&addr;
+      remote.port = s->sin_port;
+      inet_ntop(AF_INET, &s->sin_addr, ip, sizeof(ip));
+      break;
+    }
+    default: {
+      // IPv6
+      sockaddr_in6* s = (sockaddr_in6*)&addr;
 
-    remote.port = s->sin6_port;
-    inet_ntop(AF_INET6, &s->sin6_addr, ip, sizeof(ip));
-    break;
-  }
+      remote.port = s->sin6_port;
+      inet_ntop(AF_INET6, &s->sin6_addr, ip, sizeof(ip));
+      break;
+    }
   }
 }
 
@@ -150,7 +167,9 @@ void UDPTransport::addr_to_remote(sockaddr_storage &addr,
  * Writer will perform the following:
  *  - loop reads data from fd_write_queue and writes it to the socket
  */
-void UDPTransport::fd_writer(const bool &stop) {
+void
+UDPTransport::fd_writer(const bool& stop)
+{
 
   logger.log(LogLevel::info, "Starting transport writer thread");
 
@@ -165,11 +184,14 @@ void UDPTransport::fd_writer(const bool &stop) {
         continue;
       }
 
-      auto &r = remote_contexts.at(cd->contextId);
+      auto& r = remote_contexts.at(cd->contextId);
 
-      int numSent =
-          sendto(fd, cd.value().data.data(), cd.value().data.size(),
-                 0 /*flags*/, (struct sockaddr *)&r.addr, sizeof(sockaddr_in));
+      int numSent = sendto(fd,
+                           cd.value().data.data(),
+                           cd.value().data.size(),
+                           0 /*flags*/,
+                           (struct sockaddr*)&r.addr,
+                           sizeof(sockaddr_in));
 
       if (numSent < 0) {
         std::stringstream err;
@@ -197,7 +219,9 @@ void UDPTransport::fd_writer(const bool &stop) {
  * not called again if there is still pending data to be dequeued for the same
  * mediaStreamId
  */
-void UDPTransport::fd_reader(const bool &stop) {
+void
+UDPTransport::fd_reader(const bool& stop)
+{
   logger.log(LogLevel::info, "Starting transport reader thread");
 
   const int dataSize = 65535; // TODO Add config var to set this value.  Sizes
@@ -210,8 +234,12 @@ void UDPTransport::fd_reader(const bool &stop) {
     std::vector<uint8_t> buffer;
     buffer.resize(dataSize);
 
-    int rLen = recvfrom(fd, buffer.data(), buffer.size(), 0 /*flags*/,
-                        (struct sockaddr *)&remoteAddr, &remoteAddrLen);
+    int rLen = recvfrom(fd,
+                        buffer.data(),
+                        buffer.size(),
+                        0 /*flags*/,
+                        (struct sockaddr*)&remoteAddr,
+                        &remoteAddrLen);
 
     if (rLen < 0) {
       if (errno == EAGAIN) {
@@ -254,8 +282,8 @@ void UDPTransport::fd_reader(const bool &stop) {
 
         remote_contexts[last_context_id] = r;
         remote_addrs[ra_key] = {
-            last_context_id,
-            last_media_stream_id,
+          last_context_id,
+          last_media_stream_id,
         };
 
         cd.contextId = last_context_id;
@@ -281,7 +309,7 @@ void UDPTransport::fd_reader(const bool &stop) {
     }
 
     // Add data to caller queue for processing
-    auto &dq = dequeue_data_map[cd.contextId][cd.mStreamId];
+    auto& dq = dequeue_data_map[cd.contextId][cd.mStreamId];
 
     dq.push(cd);
 
@@ -292,9 +320,11 @@ void UDPTransport::fd_reader(const bool &stop) {
   }
 }
 
-TransportError UDPTransport::enqueue(const TransportContextId &context_id,
-                                     const MediaStreamId &mStreamId,
-                                     std::vector<uint8_t> &&bytes) {
+TransportError
+UDPTransport::enqueue(const TransportContextId& context_id,
+                      const MediaStreamId& mStreamId,
+                      std::vector<uint8_t>&& bytes)
+{
   if (bytes.empty()) {
     return TransportError::None;
   }
@@ -322,8 +352,9 @@ TransportError UDPTransport::enqueue(const TransportContextId &context_id,
 }
 
 std::optional<std::vector<uint8_t>>
-UDPTransport::dequeue(const TransportContextId &context_id,
-                      const MediaStreamId &mstreamId) {
+UDPTransport::dequeue(const TransportContextId& context_id,
+                      const MediaStreamId& mstreamId)
+{
 
   if (remote_contexts.count(context_id) == 0) {
     std::stringstream err;
@@ -341,7 +372,7 @@ UDPTransport::dequeue(const TransportContextId &context_id,
     return std::nullopt;
   }
 
-  auto &dq = dequeue_data_map[context_id][mstreamId];
+  auto& dq = dequeue_data_map[context_id][mstreamId];
 
   if (dq.size() <= 0) {
     return std::nullopt;
@@ -350,7 +381,9 @@ UDPTransport::dequeue(const TransportContextId &context_id,
   return dq.pop().value().data;
 }
 
-TransportContextId UDPTransport::connect_client() {
+TransportContextId
+UDPTransport::connect_client()
+{
   std::stringstream s_log;
 
   fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -358,11 +391,32 @@ TransportContextId UDPTransport::connect_client() {
     throw std::runtime_error("socket() failed");
   }
 
+	// TODO: Add config for this value
+  size_t snd_rcv_max = 65535;
+
+  int err =
+    setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &snd_rcv_max, sizeof(snd_rcv_max));
+  if (err != 0) {
+    s_log << "client_connect: Unable to set send buffer size: "
+          << strerror(errno);
+    logger.log(LogLevel::fatal, s_log.str());
+    throw std::runtime_error(s_log.str());
+  }
+
+  err =
+    setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &snd_rcv_max, sizeof(snd_rcv_max));
+  if (err != 0) {
+    s_log << "client_connect: Unable to set receive buffer size: "
+          << strerror(errno);
+    logger.log(LogLevel::fatal, s_log.str());
+    throw std::runtime_error(s_log.str());
+  }
+
   struct sockaddr_in srvAddr;
   srvAddr.sin_family = AF_INET;
   srvAddr.sin_addr.s_addr = htonl(INADDR_ANY);
   srvAddr.sin_port = 0;
-  int err = bind(fd, (struct sockaddr *)&srvAddr, sizeof(srvAddr));
+  err = bind(fd, (struct sockaddr*)&srvAddr, sizeof(srvAddr));
   if (err) {
     s_log << "client_connect: Unable to bind to socket: " << strerror(errno);
     logger.log(LogLevel::fatal, s_log.str());
@@ -374,8 +428,8 @@ TransportContextId UDPTransport::connect_client() {
   hints.ai_family = AF_INET;
   hints.ai_socktype = SOCK_DGRAM;
   hints.ai_protocol = IPPROTO_UDP;
-  err = getaddrinfo(serverInfo.host_or_ip.c_str(), sPort.c_str(), &hints,
-                    &address_list);
+  err = getaddrinfo(
+    serverInfo.host_or_ip.c_str(), sPort.c_str(), &hints, &address_list);
   if (err) {
     strerror(1);
     s_log << "client_connect: Unable to resolve remote ip address: "
@@ -398,7 +452,7 @@ TransportContextId UDPTransport::connect_client() {
     throw std::runtime_error("client_connect: No IP address found");
   }
 
-  struct sockaddr_in *ipv4 = (struct sockaddr_in *)&serverAddr.addr;
+  struct sockaddr_in* ipv4 = (struct sockaddr_in*)&serverAddr.addr;
   memcpy(ipv4, found_addr->ai_addr, found_addr->ai_addrlen);
   ipv4->sin_port = htons(serverInfo.port);
   serverAddr.addr_len = sizeof(sockaddr_in);
@@ -406,11 +460,13 @@ TransportContextId UDPTransport::connect_client() {
   addrKey sa_key;
   addr_to_key(serverAddr.addr, sa_key);
 
+  serverAddr.key = sa_key;
+
   ++last_context_id;
   ++last_media_stream_id;
 
   remote_contexts[last_context_id] = serverAddr;
-  remote_addrs[sa_key] = {last_context_id, last_media_stream_id};
+  remote_addrs[sa_key] = { last_context_id, last_media_stream_id };
 
   // Create dequeue
   dequeue_data_map[last_context_id][last_media_stream_id].setLimit(50000);
@@ -427,7 +483,9 @@ TransportContextId UDPTransport::connect_client() {
   return last_context_id;
 }
 
-TransportContextId UDPTransport::connect_server() {
+TransportContextId
+UDPTransport::connect_server()
+{
   std::stringstream s_log;
 
   fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -440,20 +498,41 @@ TransportContextId UDPTransport::connect_server() {
   // set for re-use
   int one = 1;
   int err =
-      setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (const char *)&one, sizeof(one));
+    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (const char*)&one, sizeof(one));
   if (err != 0) {
     s_log << "connect_server: setsockopt error: " << strerror(errno);
     logger.log(LogLevel::fatal, s_log.str());
     throw std::runtime_error(s_log.str());
   }
 
+	// TODO: Add config for this value
+  size_t snd_rcv_max = 65535;
+
+  err =
+    setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &snd_rcv_max, sizeof(snd_rcv_max));
+  if (err != 0) {
+    s_log << "client_connect: Unable to set send buffer size: "
+          << strerror(errno);
+    logger.log(LogLevel::fatal, s_log.str());
+    throw std::runtime_error(s_log.str());
+  }
+
+  err =
+    setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &snd_rcv_max, sizeof(snd_rcv_max));
+  if (err != 0) {
+    s_log << "client_connect: Unable to set receive buffer size: "
+          << strerror(errno);
+    logger.log(LogLevel::fatal, s_log.str());
+    throw std::runtime_error(s_log.str());
+  }
+
   struct sockaddr_in srv_addr;
-  memset((char *)&srv_addr, 0, sizeof(srv_addr));
+  memset((char*)&srv_addr, 0, sizeof(srv_addr));
   srv_addr.sin_port = htons(serverInfo.port);
   srv_addr.sin_family = AF_INET;
   srv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
 
-  err = bind(fd, (struct sockaddr *)&srv_addr, sizeof(srv_addr));
+  err = bind(fd, (struct sockaddr*)&srv_addr, sizeof(srv_addr));
   if (err < 0) {
     s_log << "connect_server: unable to bind to socket: " << strerror(errno);
     logger.log(LogLevel::fatal, s_log.str());

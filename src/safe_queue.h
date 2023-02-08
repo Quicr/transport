@@ -18,7 +18,9 @@ namespace qtransport {
  *
  * @todo Implement any operators or methods needed
  */
-template <typename T> class safeQueue {
+template<typename T>
+class safeQueue
+{
 public:
   /**
    * @brief safeQueue constructor
@@ -37,7 +39,8 @@ public:
    * @return True if successfully pushed, false if not.  The cause for false is
    * that the queue is full.
    */
-  bool push(T const &elem) {
+  bool push(T const& elem)
+  {
     if (limit && size() >= limit) {
       return false;
     }
@@ -57,7 +60,8 @@ public:
    *
    * @return std::nullopt if queue is empty, otherwise reference to object
    */
-  std::optional<T> pop() {
+  std::optional<T> pop()
+  {
     std::lock_guard<std::mutex> lock(mutex);
     if (queue.empty()) {
       return std::nullopt;
@@ -84,7 +88,8 @@ public:
    *
    * @return std::nullopt if queue is empty, otherwise reference to object
    */
-  std::optional<T> block_pop() {
+  std::optional<T> block_pop()
+  {
 
     empty_block_mutex.lock();
     empty_block_mutex.unlock();

@@ -19,36 +19,44 @@
 
 namespace qtransport {
 
-struct addrKey {
+struct addrKey
+{
   uint64_t ip_hi;
   uint64_t ip_lo;
   uint16_t port;
 
-  addrKey() {
+  addrKey()
+  {
     ip_hi = 0;
     ip_lo = 0;
     port = 0;
   }
 
-  bool operator==(const addrKey &o) const {
+  bool operator==(const addrKey& o) const
+  {
     return ip_hi == o.ip_hi && ip_lo == o.ip_lo && port == o.port;
   }
 
-  bool operator<(const addrKey &o) const {
+  bool operator<(const addrKey& o) const
+  {
     return std::tie(ip_hi, ip_lo, port) < std::tie(o.ip_hi, o.ip_lo, o.port);
   }
 };
 
-struct connData {
+struct connData
+{
   TransportContextId contextId;
   MediaStreamId mStreamId;
   std::vector<uint8_t> data;
 };
 
-class UDPTransport : public ITransport {
+class UDPTransport : public ITransport
+{
 public:
-  UDPTransport(const TransportRemote &server, TransportDelegate &delegate,
-               bool isServerMode, LogHandler &logger);
+  UDPTransport(const TransportRemote& server,
+               TransportDelegate& delegate,
+               bool isServerMode,
+               LogHandler& logger);
 
   virtual ~UDPTransport();
 
@@ -56,43 +64,45 @@ public:
 
   TransportContextId start() override;
 
-  void close(const TransportContextId &context_id) override;
-  void closeMediaStream(const TransportContextId &context_id,
+  void close(const TransportContextId& context_id) override;
+  void closeMediaStream(const TransportContextId& context_id,
                         MediaStreamId mStreamId) override;
 
-  MediaStreamId createMediaStream(const TransportContextId &context_id,
+  MediaStreamId createMediaStream(const TransportContextId& context_id,
                                   bool use_reliable_transport) override;
 
-  TransportError enqueue(const TransportContextId &context_id,
-                         const MediaStreamId &mStreamId,
-                         std::vector<uint8_t> &&bytes) override;
+  TransportError enqueue(const TransportContextId& context_id,
+                         const MediaStreamId& mStreamId,
+                         std::vector<uint8_t>&& bytes) override;
 
-  std::optional<std::vector<uint8_t>>
-  dequeue(const TransportContextId &context_id,
-          const MediaStreamId &mStreamId) override;
+  std::optional<std::vector<uint8_t>> dequeue(
+    const TransportContextId& context_id,
+    const MediaStreamId& mStreamId) override;
 
 private:
   TransportContextId connect_client();
   TransportContextId connect_server();
 
-  void addr_to_remote(sockaddr_storage &addr, TransportRemote &remote);
-  void addr_to_key(sockaddr_storage &addr, addrKey &key);
+  void addr_to_remote(sockaddr_storage& addr, TransportRemote& remote);
+  void addr_to_key(sockaddr_storage& addr, addrKey& key);
 
-  void fd_reader(const bool &stop);
-  void fd_writer(const bool &stop);
+  void fd_reader(const bool& stop);
+  void fd_writer(const bool& stop);
 
-  struct Addr {
+  struct Addr
+  {
     socklen_t addr_len;
     struct sockaddr_storage addr;
     addrKey key;
   };
 
-  struct AddrStream {
+  struct AddrStream
+  {
     TransportContextId tcid;
     MediaStreamId msid;
   };
 
-  LogHandler &logger;
+  LogHandler& logger;
   int fd; // UDP socket
   bool isServerMode;
 
@@ -103,12 +113,12 @@ private:
   // NOTE: this is a map supporting multiple streams, but UDP does not have that
   // right now.
   std::map<TransportContextId, std::map<MediaStreamId, safeQueue<connData>>>
-      dequeue_data_map;
+    dequeue_data_map;
 
-  TransportDelegate &delegate;
+  TransportDelegate& delegate;
 
-  TransportContextId last_context_id{0};
-  MediaStreamId last_media_stream_id{0};
+  TransportContextId last_context_id{ 0 };
+  MediaStreamId last_media_stream_id{ 0 };
   std::map<TransportContextId, Addr> remote_contexts = {};
   std::map<addrKey, AddrStream> remote_addrs = {};
 };

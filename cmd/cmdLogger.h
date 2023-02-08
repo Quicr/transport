@@ -4,9 +4,10 @@
 
 namespace qtransport {
 
-class cmdLogger : public LogHandler {
+class cmdLogger : public LogHandler
+{
 public:
-  void log(LogLevel level, const std::string &string) override;
+  void log(LogLevel level, const std::string& string) override;
 
 private:
   std::mutex mutex;
