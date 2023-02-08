@@ -6,7 +6,8 @@ namespace qtransport {
 /**
  * @brief Transport logger level
  */
-enum class LogLevel : uint8_t {
+enum class LogLevel : uint8_t
+{
   fatal = 1,
   error,
   warn,
@@ -20,7 +21,8 @@ enum class LogLevel : uint8_t {
  * @details Transport log handler defines callback methods that can be
  * implemented by the application.
  */
-class LogHandler {
+class LogHandler
+{
 public:
   /**
    * @brief Transport log callback
@@ -32,6 +34,6 @@ public:
    * qtransport::LogLevel enum
    * @param message 	Log messages to log
    */
-  virtual void log(LogLevel /*level*/, const std::string & /*message*/) {}
+  virtual void log(LogLevel /*level*/, const std::string& /*message*/) {}
 };
 } // namespace qtransport
