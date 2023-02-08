@@ -391,7 +391,8 @@ UDPTransport::connect_client()
     throw std::runtime_error("socket() failed");
   }
 
-  size_t snd_rcv_max = 64 * 1024;
+	// TODO: Add config for this value
+  size_t snd_rcv_max = 65535;
 
   int err =
     setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &snd_rcv_max, sizeof(snd_rcv_max));
@@ -504,7 +505,8 @@ UDPTransport::connect_server()
     throw std::runtime_error(s_log.str());
   }
 
-  size_t snd_rcv_max = 64 * 1024;
+	// TODO: Add config for this value
+  size_t snd_rcv_max = 65535;
 
   err =
     setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &snd_rcv_max, sizeof(snd_rcv_max));
