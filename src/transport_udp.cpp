@@ -25,7 +25,7 @@ UDPTransport::~UDPTransport()
   // Stop threads
   stop = true;
 
-  // Push empty data to allwo write queue to not block
+  // Push empty data to allow write queue to not block
   connData cd = { .contextId = 0, .mStreamId = 0, .data = {} };
   fd_write_queue.push(cd);
 
