@@ -3,6 +3,7 @@
 
 #include <cassert>
 #include <cstdint>
+#include <list>
 #include <map>
 #include <mutex>
 #include <queue>
@@ -86,8 +87,11 @@ private:
   void addr_to_remote(sockaddr_storage& addr, TransportRemote& remote);
   void addr_to_key(sockaddr_storage& addr, addrKey& key);
 
-  void fd_reader(const bool& stop);
-  void fd_writer(const bool& stop);
+  void fd_reader();
+  void fd_writer();
+
+  bool stop;
+  std::list<std::thread*> running_threads;
 
   struct Addr
   {
