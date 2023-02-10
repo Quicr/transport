@@ -21,6 +21,21 @@ using namespace qtransport;
 UDPTransport::~UDPTransport()
 {
   // TODO: Close all media streams and connections
+
+  // Stop threads
+  stop = true;
+
+  // Push empty data to allwo write queue to not block
+  connData cd = { .contextId = 0, .mStreamId = 0, .data = {} };
+  fd_write_queue.push(cd);
+
+  // Close socket fd
+  ::close(fd);
+
+  logger.log(LogLevel::info, "Closing transport threads");
+  for (auto thr : running_threads) {
+    thr->join();
+  }
 }
 
 UDPTransport::UDPTransport(const TransportRemote& server,
@@ -31,6 +46,7 @@ UDPTransport::UDPTransport(const TransportRemote& server,
   , logger(logger)
 {
 
+  stop = false;
   this->isServerMode = isServerMode;
   serverInfo = server;
 }
@@ -168,7 +184,7 @@ UDPTransport::addr_to_remote(sockaddr_storage& addr, TransportRemote& remote)
  *  - loop reads data from fd_write_queue and writes it to the socket
  */
 void
-UDPTransport::fd_writer(const bool& stop)
+UDPTransport::fd_writer()
 {
 
   logger.log(LogLevel::info, "Starting transport writer thread");
@@ -197,10 +213,11 @@ UDPTransport::fd_writer(const bool& stop)
         std::stringstream err;
         err << "Error sending on UDP socket: " << strerror(errno);
         logger.log(LogLevel::error, err.str());
-        assert(0); // TODO
+
+        continue;
 
       } else if (numSent != (int)cd.value().data.size()) {
-        assert(0); // TODO
+        continue;
       }
     }
   }
@@ -220,7 +237,7 @@ UDPTransport::fd_writer(const bool& stop)
  * mediaStreamId
  */
 void
-UDPTransport::fd_reader(const bool& stop)
+UDPTransport::fd_reader()
 {
   logger.log(LogLevel::info, "Starting transport reader thread");
 
@@ -250,6 +267,7 @@ UDPTransport::fd_reader(const bool& stop)
         std::stringstream err;
         err << "Error reading from UDP socket: " << strerror(errno);
         logger.log(LogLevel::error, err.str());
+        continue;
       }
     }
 
@@ -391,7 +409,7 @@ UDPTransport::connect_client()
     throw std::runtime_error("socket() failed");
   }
 
-	// TODO: Add config for this value
+  // TODO: Add config for this value
   size_t snd_rcv_max = 65535;
 
   int err =
@@ -474,12 +492,10 @@ UDPTransport::connect_client()
   // Notify caller that the connection is now ready
   delegate.on_connection_status(last_context_id, TransportStatus::Ready);
 
-  bool stop = false;
-  std::thread fd_reader_thr(&UDPTransport::fd_reader, this, stop);
-  std::thread fd_writer_thr(&UDPTransport::fd_writer, this, stop);
+  running_threads.push_back(new std::thread(&UDPTransport::fd_reader, this));
 
-  fd_reader_thr.detach();
-  fd_writer_thr.detach();
+  running_threads.push_back(new std::thread(&UDPTransport::fd_writer, this));
+
   return last_context_id;
 }
 
@@ -505,7 +521,7 @@ UDPTransport::connect_server()
     throw std::runtime_error(s_log.str());
   }
 
-	// TODO: Add config for this value
+  // TODO: Add config for this value
   size_t snd_rcv_max = 65535;
 
   err =
@@ -543,11 +559,8 @@ UDPTransport::connect_server()
   s_log << "connect_server: port: " << serverInfo.port << " fd: " << fd;
   logger.log(LogLevel::info, s_log.str());
 
-  bool stop = false;
-  std::thread fd_reader_thr(&UDPTransport::fd_reader, this, stop);
-  std::thread fd_writer_thr(&UDPTransport::fd_writer, this, stop);
-  fd_reader_thr.detach();
-  fd_writer_thr.detach();
+  running_threads.push_back(new std::thread(&UDPTransport::fd_reader, this));
+  running_threads.push_back(new std::thread(&UDPTransport::fd_writer, this));
 
   return last_context_id;
 }
