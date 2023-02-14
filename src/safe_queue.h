@@ -28,7 +28,11 @@ public:
    * @param limit     Limit number of messages in queue before push blocks. Zero
    *                  is unlimited.
    */
-  safeQueue(uint32_t limit = 1000) { this->limit = limit; }
+  safeQueue(uint32_t limit = 1000)
+  {
+    this->limit = limit;
+    empty_block_mutex.try_lock();
+  }
 
   ~safeQueue() {}
 

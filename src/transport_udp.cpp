@@ -329,6 +329,7 @@ UDPTransport::fd_reader()
     // Add data to caller queue for processing
     auto& dq = dequeue_data_map[cd.contextId][cd.mStreamId];
 
+    // TODO: Notify caller that packets are being dropped on queue full
     dq.push(cd);
 
     if (dq.size() < 2) {
