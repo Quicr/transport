@@ -247,13 +247,12 @@ UDPTransport::fd_reader()
   memset(&remoteAddr, 0, sizeof(remoteAddr));
   socklen_t remoteAddrLen = sizeof(remoteAddr);
 
-  while (not stop) {
-    std::vector<uint8_t> buffer;
-    buffer.resize(dataSize);
+  uint8_t data[dataSize];
 
+  while (not stop) {
     int rLen = recvfrom(fd,
-                        buffer.data(),
-                        buffer.size(),
+                        data,
+                        dataSize,
                         0 /*flags*/,
                         (struct sockaddr*)&remoteAddr,
                         &remoteAddrLen);
@@ -275,7 +274,7 @@ UDPTransport::fd_reader()
       continue;
     }
 
-    buffer.resize(rLen);
+    std::vector<uint8_t> buffer (data, data + rLen);
 
     connData cd;
     cd.data = buffer;
@@ -411,7 +410,7 @@ UDPTransport::connect_client()
   }
 
   // TODO: Add config for this value
-  size_t snd_rcv_max = 65535;
+  size_t snd_rcv_max = 2000000;
 
   int err =
     setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &snd_rcv_max, sizeof(snd_rcv_max));
@@ -523,7 +522,7 @@ UDPTransport::connect_server()
   }
 
   // TODO: Add config for this value
-  size_t snd_rcv_max = 65535;
+  size_t snd_rcv_max = 2000000;
 
   err =
     setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &snd_rcv_max, sizeof(snd_rcv_max));
