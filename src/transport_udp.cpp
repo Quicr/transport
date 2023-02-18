@@ -193,8 +193,8 @@ UDPTransport::fd_writer()
     auto cd = fd_write_queue.block_pop();
 
     if (cd) {
-      if (dequeue_data_map.count(cd->mStreamId) == 0 or
-          remote_contexts.count(cd->contextId) == 0) {
+      if ((dequeue_data_map.count(cd->contextId) == 0 || dequeue_data_map[cd->contextId].count(cd->mStreamId) == 0)
+          || remote_contexts.count(cd->contextId) == 0) {
         // Drop/ignore connection data since the connection or media stream no
         // longer exists
         continue;
@@ -247,13 +247,12 @@ UDPTransport::fd_reader()
   memset(&remoteAddr, 0, sizeof(remoteAddr));
   socklen_t remoteAddrLen = sizeof(remoteAddr);
 
-  while (not stop) {
-    std::vector<uint8_t> buffer;
-    buffer.resize(dataSize);
+  uint8_t data[dataSize];
 
+  while (not stop) {
     int rLen = recvfrom(fd,
-                        buffer.data(),
-                        buffer.size(),
+                        data,
+                        dataSize,
                         0 /*flags*/,
                         (struct sockaddr*)&remoteAddr,
                         &remoteAddrLen);
@@ -264,7 +263,7 @@ UDPTransport::fd_reader()
         continue;
 
       } else {
-        std::stringstream err;
+        std::ostringstream err;
         err << "Error reading from UDP socket: " << strerror(errno);
         logger.log(LogLevel::error, err.str());
         continue;
@@ -275,7 +274,7 @@ UDPTransport::fd_reader()
       continue;
     }
 
-    buffer.resize(rLen);
+    std::vector<uint8_t> buffer (data, data + rLen);
 
     connData cd;
     cd.data = buffer;
@@ -353,7 +352,7 @@ UDPTransport::enqueue(const TransportContextId& context_id,
     return TransportError::InvalidContextId;
   }
 
-  if (dequeue_data_map[context_id].count(context_id) == 0) {
+  if (dequeue_data_map[context_id].count(mStreamId) == 0) {
     // Invalid stream Id
     return TransportError::InvalidStreamId;
   }
@@ -383,7 +382,7 @@ UDPTransport::dequeue(const TransportContextId& context_id,
     return std::nullopt;
   }
 
-  if (dequeue_data_map[context_id].count(context_id) == 0) {
+  if (dequeue_data_map[context_id].count(mstreamId) == 0) {
     std::stringstream err;
     err << "dequeue: invalid stream id: " << mstreamId;
     logger.log(LogLevel::warn, err.str());
@@ -411,7 +410,7 @@ UDPTransport::connect_client()
   }
 
   // TODO: Add config for this value
-  size_t snd_rcv_max = 65535;
+  size_t snd_rcv_max = 2000000;
 
   int err =
     setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &snd_rcv_max, sizeof(snd_rcv_max));
@@ -523,7 +522,7 @@ UDPTransport::connect_server()
   }
 
   // TODO: Add config for this value
-  size_t snd_rcv_max = 65535;
+  size_t snd_rcv_max = 2000000;
 
   err =
     setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &snd_rcv_max, sizeof(snd_rcv_max));
