@@ -3,7 +3,7 @@
 
 #include <cassert>
 #include <cstdint>
-#include <list>
+#include <vector>
 #include <map>
 #include <mutex>
 #include <queue>
@@ -91,7 +91,7 @@ private:
   void fd_writer();
 
   bool stop;
-  std::list<std::thread*> running_threads;
+  std::vector<std::thread> running_threads;
 
   struct Addr
   {
