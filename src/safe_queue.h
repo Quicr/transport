@@ -48,7 +48,7 @@ public:
   {
     std::lock_guard<std::mutex> lock(mutex);
 
-    if (limit && size() >= limit) {
+    if (limit && sizeInternal() >= limit) {
       return false;
     }
 
@@ -85,7 +85,7 @@ public:
   {
     std::unique_lock<std::mutex> lock(mutex);
 
-    cv.wait(lock, [&]() { return (stop_waiting || (size() > 0)); });
+    cv.wait(lock, [&]() { return (stop_waiting || (sizeInternal() > 0)); });
 
     return popInternal();
   }
@@ -95,7 +95,11 @@ public:
    *
    * @return size of the queue
    */
-  size_t size() { return queue.size(); }
+  size_t size()
+  {
+    std::lock_guard<std::mutex> lock(mutex);
+    return sizeInternal();
+  }
 
   /**
    * @brief Put the queue in a state such that threads will not wait
@@ -116,6 +120,15 @@ public:
   }
 
 private:
+  /**
+   * @brief Size of the queue
+   *
+   * @return size of the queue
+   *
+   * @details The mutex must be locked by the caller
+   */
+  size_t sizeInternal() { return queue.size(); }
+
   /**
    * @brief Remove the first object from queue (oldest object)
    *
@@ -138,7 +151,6 @@ private:
 
     return elem;
   }
-
 
   bool stop_waiting;            // Instruct threads to stop waiting
   uint32_t limit;               // Limit of number of messages in queue
