@@ -7,6 +7,7 @@
 #include <optional>
 #include <queue>
 #include <unistd.h>
+#include <condition_variable>
 
 namespace qtransport {
 
@@ -29,12 +30,12 @@ public:
    *                  is unlimited.
    */
   safeQueue(uint32_t limit = 1000)
+    : stop_waiting{ false }
+    , limit{ limit }
   {
-    this->limit = limit;
-    empty_block_mutex.try_lock();
   }
 
-  ~safeQueue() {}
+  ~safeQueue() { stopWaiting(); }
 
   /**
    * @brief inserts element at the end of queue
@@ -45,16 +46,15 @@ public:
    */
   bool push(T const& elem)
   {
+    std::lock_guard<std::mutex> lock(mutex);
+
     if (limit && size() >= limit) {
       return false;
     }
 
-    std::lock_guard<std::mutex> lock(mutex);
-
-    if (size() == 0)
-      empty_block_mutex.unlock();
-
     queue.push(elem);
+
+    cv.notify_one();
 
     return true;
   }
@@ -67,19 +67,8 @@ public:
   std::optional<T> pop()
   {
     std::lock_guard<std::mutex> lock(mutex);
-    if (queue.empty()) {
-      return std::nullopt;
-    }
 
-    auto elem = queue.front();
-    queue.pop();
-
-    // Lock empty lock to trigger blocking of threads using block_pop()
-    if (size() == 0) {
-      empty_block_mutex.try_lock();
-    }
-
-    return elem;
+    return popInternal();
   }
 
   /**
@@ -94,11 +83,11 @@ public:
    */
   std::optional<T> block_pop()
   {
+    std::unique_lock<std::mutex> lock(mutex);
 
-    empty_block_mutex.lock();
-    empty_block_mutex.unlock();
+    cv.wait(lock, [&]() { return (stop_waiting || (size() > 0)); });
 
-    return pop();
+    return popInternal();
   }
 
   /**
@@ -108,12 +97,53 @@ public:
    */
   size_t size() { return queue.size(); }
 
-  void setLimit(uint32_t limit) { this->limit = limit; }
+  /**
+   * @brief Put the queue in a state such that threads will not wait
+   *
+   * @return Nothing
+   */
+  void stopWaiting()
+  {
+    std::lock_guard<std::mutex> lock(mutex);
+    cv.notify_all();
+    stop_waiting = true;
+  }
+
+  void setLimit(uint32_t limit)
+  {
+    std::lock_guard<std::mutex> lock(mutex);
+    this->limit = limit;
+  }
 
 private:
-  std::mutex empty_block_mutex; // Blocking mutex for when the queue is empty
-  std::mutex mutex;             // read/write lock
+  /**
+   * @brief Remove the first object from queue (oldest object)
+   *
+   * @return std::nullopt if queue is empty, otherwise reference to object
+   *
+   * @details The mutex must be locked by the caller
+   */
+  std::optional<T> popInternal()
+  {
+    if (queue.empty()) {
+      return std::nullopt;
+    }
+
+    auto elem = queue.front();
+    queue.pop();
+
+    if (size() > 0) {
+      cv.notify_one();
+    }
+
+    return elem;
+  }
+
+
+  bool stop_waiting;            // Instruct threads to stop waiting
   uint32_t limit;               // Limit of number of messages in queue
+  std::condition_variable cv;   // Signaling for thread syncronization
+  std::mutex mutex;             // read/write lock
   std::queue<T> queue;          // Queue
 };
 

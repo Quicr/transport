@@ -25,16 +25,16 @@ UDPTransport::~UDPTransport()
   // Stop threads
   stop = true;
 
-  // Push empty data to allow write queue to not block
-  connData cd = { .contextId = 0, .mStreamId = 0, .data = {} };
-  fd_write_queue.push(cd);
+  // Clear threads from the queue
+  fd_write_queue.stopWaiting();
 
   // Close socket fd
-  ::close(fd);
+  if (fd >= 0)
+    ::close(fd);
 
   logger.log(LogLevel::info, "Closing transport threads");
-  for (auto thr : running_threads) {
-    thr->join();
+  for (auto &thread : running_threads) {
+    thread.join();
   }
 }
 
@@ -42,13 +42,13 @@ UDPTransport::UDPTransport(const TransportRemote& server,
                            TransportDelegate& delegate,
                            bool isServerMode,
                            LogHandler& logger)
-  : delegate(delegate)
+  : stop(false)
   , logger(logger)
+  , fd(-1)
+  , isServerMode(isServerMode)
+  , serverInfo(server)
+  , delegate(delegate)
 {
-
-  stop = false;
-  this->isServerMode = isServerMode;
-  serverInfo = server;
 }
 
 TransportStatus
@@ -106,10 +106,10 @@ UDPTransport::close(const TransportContextId& context_id)
 {
 
   if (not isServerMode) {
-    if (fd > 0) {
+    if (fd >= 0) {
       ::close(fd);
     }
-    fd = 0;
+    fd = -1;
 
   } else {
     addrKey ak;
@@ -258,8 +258,8 @@ UDPTransport::fd_reader()
                         &remoteAddrLen);
 
     if (rLen < 0) {
-      if (errno == EAGAIN) {
-        // timeout on read
+      if ((errno == EAGAIN) || (stop)) {
+        // timeout on read or stop issued
         continue;
 
       } else {
@@ -492,9 +492,9 @@ UDPTransport::connect_client()
   // Notify caller that the connection is now ready
   delegate.on_connection_status(last_context_id, TransportStatus::Ready);
 
-  running_threads.push_back(new std::thread(&UDPTransport::fd_reader, this));
+  running_threads.emplace_back(&UDPTransport::fd_reader, this);
 
-  running_threads.push_back(new std::thread(&UDPTransport::fd_writer, this));
+  running_threads.emplace_back(&UDPTransport::fd_writer, this);
 
   return last_context_id;
 }
@@ -559,8 +559,8 @@ UDPTransport::connect_server()
   s_log << "connect_server: port: " << serverInfo.port << " fd: " << fd;
   logger.log(LogLevel::info, s_log.str());
 
-  running_threads.push_back(new std::thread(&UDPTransport::fd_reader, this));
-  running_threads.push_back(new std::thread(&UDPTransport::fd_writer, this));
+  running_threads.emplace_back(&UDPTransport::fd_reader, this);
+  running_threads.emplace_back(&UDPTransport::fd_writer, this);
 
   return last_context_id;
 }
