@@ -145,7 +145,7 @@ private:
     auto elem = queue.front();
     queue.pop();
 
-    if (size() > 0) {
+    if (sizeInternal() > 0) {
       cv.notify_one();
     }
 
