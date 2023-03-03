@@ -48,7 +48,7 @@ public:
   {
     std::lock_guard<std::mutex> lock(mutex);
 
-    if (limit && sizeInternal() >= limit) {
+    if (limit && queue.size() >= limit) {
       return false;
     }
 
@@ -85,7 +85,7 @@ public:
   {
     std::unique_lock<std::mutex> lock(mutex);
 
-    cv.wait(lock, [&]() { return (stop_waiting || (sizeInternal() > 0)); });
+    cv.wait(lock, [&]() { return (stop_waiting || (queue.size() > 0)); });
 
     return popInternal();
   }
@@ -98,7 +98,7 @@ public:
   size_t size()
   {
     std::lock_guard<std::mutex> lock(mutex);
-    return sizeInternal();
+    return queue.size();
   }
 
   /**
@@ -120,14 +120,6 @@ public:
   }
 
 private:
-  /**
-   * @brief Size of the queue
-   *
-   * @return size of the queue
-   *
-   * @details The mutex must be locked by the caller
-   */
-  size_t sizeInternal() { return queue.size(); }
 
   /**
    * @brief Remove the first object from queue (oldest object)
@@ -145,7 +137,7 @@ private:
     auto elem = queue.front();
     queue.pop();
 
-    if (sizeInternal() > 0) {
+    if (queue.size() > 0) {
       cv.notify_one();
     }
 
