@@ -55,3 +55,8 @@ endif()
 if(BUILD_TESTING AND QTRANSPORT_BUILD_TESTS)
   add_subdirectory(cmd)
 endif()
+
+install(TARGETS ${PROJECT_NAME}
+        LIBRARY DESTINATION lib)
+
+install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/transport DESTINATION include/${PROJECT_NAME})
