@@ -17,7 +17,6 @@ set (OPENSSL_FOUND ON)
 set (OPENSSL_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/boringssl")
 set (OPENSSL_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/boringssl/include")
 
-#LIST (APPEND CMAKE_LIBRARY_PATH "${CMAKE_CURRENT_BINARY_DIR}/picotls")
 set (PICOQUIC_PTLS_SUBMODULE ON)
 set (picoquic_BUILD_TESTS ON)
 add_subdirectory( picoquic )
