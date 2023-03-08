@@ -6,29 +6,27 @@
 
 namespace qtransport {
 
-void
-cmdLogger::log(LogLevel level, const std::string& string)
-{
-  char* lvl;
+void cmdLogger::log(LogLevel level, const std::string &string) {
+  const char *lvl;
   switch (level) {
-    case LogLevel::fatal:
-      lvl = "FATAL";
-      break;
-    case LogLevel::error:
-      lvl = "ERROR";
-      break;
-    case LogLevel::warn:
-      lvl = "WARN";
-      break;
-    default:
-      lvl = "INFO";
-      break;
+  case LogLevel::fatal:
+    lvl = "FATAL";
+    break;
+  case LogLevel::error:
+    lvl = "ERROR";
+    break;
+  case LogLevel::warn:
+    lvl = "WARN";
+    break;
+  default:
+    lvl = "INFO";
+    break;
   }
 
   auto now = std::chrono::system_clock::now();
   const auto nowAsTimeT = std::chrono::system_clock::to_time_t(now);
   const auto nowUs = std::chrono::duration_cast<std::chrono::microseconds>(
-                       now.time_since_epoch()) %
+                         now.time_since_epoch()) %
                      1000000;
 
   std::lock_guard lock(mutex);

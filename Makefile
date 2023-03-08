@@ -9,16 +9,11 @@ CLANG_FORMAT=clang-format -i
 
 .PHONY: all test clean cclean format
 
-all: ${BUILD_DIR} client server
+all: ${BUILD_DIR}
+	cmake --build ${BUILD_DIR}
 
-${BUILD_DIR}: CMakeLists.txt
+${BUILD_DIR}: CMakeLists.txt cmd/CMakeLists.txt
 	cmake -B${BUILD_DIR} -DBUILD_TESTING=TRUE -DQTRANSPORT_BUILD_TESTS=TRUE -DCMAKE_BUILD_TYPE=Debug .
-
-client: ${BUILD_DIR} cmd/client.cc
-	cmake --build ${BUILD_DIR} --target client
-
-server: ${BUILD_DIR} cmd/echoServer.cc
-	cmake --build ${BUILD_DIR} --target server
 
 clean:
 	cmake --build ${BUILD_DIR} --target clean
