@@ -59,4 +59,4 @@ endif()
 install(TARGETS ${PROJECT_NAME}
         LIBRARY DESTINATION lib)
 
-install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/transport DESTINATION include/${PROJECT_NAME})
+install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/ DESTINATION include/)
