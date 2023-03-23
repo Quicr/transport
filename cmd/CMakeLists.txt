@@ -1,5 +1,5 @@
 add_executable(server echoServer.cc cmdLogger.cpp)
-target_link_libraries(server PRIVATE quicr-transport)
+target_link_libraries(server PRIVATE quicr-transport picotls-core picotls-openssl)
 
 target_compile_options(server
         PRIVATE
@@ -13,7 +13,7 @@ set_target_properties(server
 
 
 add_executable(client client.cc cmdLogger.cpp)
-target_link_libraries(client PRIVATE quicr-transport)
+target_link_libraries(client PRIVATE quicr-transport picotls-core picotls-openssl)
 
 target_compile_options(client
         PRIVATE

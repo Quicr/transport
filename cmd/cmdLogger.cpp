@@ -9,6 +9,9 @@ namespace qtransport {
 void cmdLogger::log(LogLevel level, const std::string &string) {
   const char *lvl;
   switch (level) {
+  case LogLevel::debug:
+    lvl = "DEBUG";
+    break;
   case LogLevel::fatal:
     lvl = "FATAL";
     break;

@@ -52,16 +52,16 @@ public:
                          const TransportRemote & /* remote */) {}
 
   void on_recv_notify(const TransportContextId &context_id,
-                      const MediaStreamId &mStreamId) {
+                      const StreamId &streamId) {
     std::stringstream s_log;
 
     while (true) {
-      auto data = client->dequeue(context_id, mStreamId);
+      auto data = client->dequeue(context_id, streamId);
 
       if (data.has_value()) {
         msgcount++;
         s_log.str(std::string());
-        s_log << "cid: " << context_id << " msid: " << mStreamId
+        s_log << "cid: " << context_id << " msid: " << streamId
               << "  RecvMsg (" << msgcount << ") : " << to_hex(data.value());
         logger.log(LogLevel::info, s_log.str());
       } else {
@@ -69,47 +69,63 @@ public:
       }
     }
   }
-  void on_new_media_stream(const TransportContextId & /* context_id */,
-                           const MediaStreamId & /* mStreamId */) {}
+  void on_new_stream(const TransportContextId & /* context_id */,
+                     const StreamId & /* streamId */) {}
 };
 
 cmdLogger logger;
 Delegate d(logger);
 TransportRemote server =
-    TransportRemote{"127.0.0.1", 1234, TransportProtocol::UDP};
+    TransportRemote{"127.0.0.1", 1234, TransportProtocol::QUIC};
 
-auto client = ITransport::make_client_transport(server, d, logger);
-auto tcid = client->start();
+TransportConfig tconfig { .tls_key_filename = NULL, .tls_cert_filename = NULL };
+auto client = ITransport::make_client_transport(server, tconfig, d, logger);
 
 int main() {
   d.setClientTransport(client);
   const uint8_t forty_bytes[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3,
                                  4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6, 7,
                                  8, 9, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
-  // while(!transportManager.transport_ready()) {
-  //	std::this_thread::sleep_for(std::chrono::seconds (2));
-  // }
-  logger.log(LogLevel::info, "Transport is ready");
 
-  // Send forty_bytes packet 10 seconds with 50 ms apart
-  while (true) {
-    if ((tcid = d.getContextId()) == 0) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(2));
-      continue;
-    } else
-      break;
+  auto tcid = client->start();
+
+  while (client->status() != TransportStatus::Ready) {
+    logger.log(LogLevel::info, "Waiting for client to be ready");
+    std::this_thread::sleep_for(std::chrono::milliseconds(250));
   }
 
+  StreamId stream_id = client->createStream(tcid, true);
+
   std::stringstream s_log;
-  while (true) {
+
+  for (int i =0; i < 5; i++) {
     auto data = bytes(forty_bytes, forty_bytes + sizeof(forty_bytes));
 
     s_log.str("");
 
-    s_log << "sending: " << to_hex(data);
+    s_log << "sending STREAM: " << to_hex(data);
     logger.log(LogLevel::info, s_log.str());
 
-    client->enqueue(tcid, 1, std::move(data));
-    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    client->enqueue(tcid, stream_id, std::move(data));
+    std::this_thread::sleep_for(std::chrono::seconds(1));
   }
+
+  for (int i =0; i < 5; i++) {
+    auto data = bytes(forty_bytes, forty_bytes + sizeof(forty_bytes));
+
+    s_log.str("");
+
+    s_log << "sending DGRAM: " << to_hex(data);
+    logger.log(LogLevel::info, s_log.str());
+
+    client->enqueue(tcid, 0, std::move(data));
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+  }
+
+  std::this_thread::sleep_for(std::chrono::seconds(3));
+
+  client->closeStream(tcid, stream_id);
+
+  client.reset();
+
 }

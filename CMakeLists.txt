@@ -27,9 +27,12 @@ add_subdirectory(dependencies)
 add_library(quicr-transport
         src/transport.cpp
         src/transport_udp.cpp
+        src/transport_picoquic.cpp
         )
 
-target_link_libraries(quicr-transport)
+target_link_libraries(quicr-transport
+        PUBLIC
+        picoquic-core)
 target_include_directories(quicr-transport PUBLIC include src )
 set_target_properties(quicr-transport
         PROPERTIES

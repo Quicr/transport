@@ -47,7 +47,7 @@ struct addrKey
 struct connData
 {
   TransportContextId contextId;
-  MediaStreamId mStreamId;
+  StreamId streamId;
   std::vector<uint8_t> data;
 };
 
@@ -61,24 +61,24 @@ public:
 
   virtual ~UDPTransport();
 
-  TransportStatus status() const override;
+  TransportStatus status() override;
 
   TransportContextId start() override;
 
   void close(const TransportContextId& context_id) override;
-  void closeMediaStream(const TransportContextId& context_id,
-                        MediaStreamId mStreamId) override;
+  void closeStream(const TransportContextId& context_id,
+                   StreamId streamId) override;
 
-  MediaStreamId createMediaStream(const TransportContextId& context_id,
-                                  bool use_reliable_transport) override;
+  StreamId createStream(const TransportContextId& context_id,
+                        bool use_reliable_transport) override;
 
   TransportError enqueue(const TransportContextId& context_id,
-                         const MediaStreamId& mStreamId,
+                         const StreamId &streamId,
                          std::vector<uint8_t>&& bytes) override;
 
   std::optional<std::vector<uint8_t>> dequeue(
     const TransportContextId& context_id,
-    const MediaStreamId& mStreamId) override;
+    const StreamId &streamId) override;
 
 private:
   TransportContextId connect_client();
@@ -103,7 +103,7 @@ private:
   struct AddrStream
   {
     TransportContextId tcid;
-    MediaStreamId msid;
+    StreamId sid;
   };
 
   LogHandler& logger;
@@ -116,13 +116,13 @@ private:
 
   // NOTE: this is a map supporting multiple streams, but UDP does not have that
   // right now.
-  std::map<TransportContextId, std::map<MediaStreamId, safeQueue<connData>>>
+  std::map<TransportContextId, std::map<StreamId, safeQueue<connData>>>
     dequeue_data_map;
 
   TransportDelegate& delegate;
 
   TransportContextId last_context_id{ 0 };
-  MediaStreamId last_media_stream_id{ 0 };
+  StreamId last_stream_id{ 0 };
   std::map<TransportContextId, Addr> remote_contexts = {};
   std::map<addrKey, AddrStream> remote_addrs = {};
 };
