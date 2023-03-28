@@ -98,19 +98,33 @@ int main() {
 
   std::stringstream s_log;
 
-  for (int i =0; i < 5; i++) {
+
+  for (int i =0; i < 500; i++) {
     auto data = bytes(forty_bytes, forty_bytes + sizeof(forty_bytes));
 
     s_log.str("");
 
     s_log << "sending STREAM: " << to_hex(data);
     logger.log(LogLevel::info, s_log.str());
+    //client->enqueue(tcid, stream_id, std::move(data)) ;
 
-    client->enqueue(tcid, stream_id, std::move(data));
-    std::this_thread::sleep_for(std::chrono::seconds(1));
+    while (true) {
+      if (client->enqueue(tcid,
+                          stream_id,
+                          std::move(data)) != TransportError::QueueFull) {
+        break;
+      }
+
+      logger.log(LogLevel::info, "buffer full");
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
 
-  for (int i =0; i < 5; i++) {
+  std::this_thread::sleep_for(std::chrono::seconds(3));
+
+  for (int i =0; i < 1000; i++) {
     auto data = bytes(forty_bytes, forty_bytes + sizeof(forty_bytes));
 
     s_log.str("");
@@ -119,10 +133,10 @@ int main() {
     logger.log(LogLevel::info, s_log.str());
 
     client->enqueue(tcid, 0, std::move(data));
-    std::this_thread::sleep_for(std::chrono::seconds(1));
+    //std::this_thread::sleep_for(std::chrono::seconds(1));
   }
 
-  std::this_thread::sleep_for(std::chrono::seconds(3));
+  std::this_thread::sleep_for(std::chrono::seconds(20));
 
   client->closeStream(tcid, stream_id);
 

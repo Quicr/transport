@@ -50,9 +50,6 @@ public:
                       const StreamId &streamId) {
     std::stringstream s_log;
 
-    s_log << "Recv: " << context_id << " stream_id: " << streamId;
-    logger.log(LogLevel::info, s_log.str());
-
     while (true) {
       auto data = server->dequeue(context_id, streamId);
 
@@ -61,6 +58,7 @@ public:
 
         s_log.str(std::string());
         s_log << "cid: " << context_id << " msid: " << streamId
+              << " length: " << data->size()
               << "  RecvMsg (" << msgcount << ") : " << to_hex(data.value());
         logger.log(LogLevel::info, s_log.str());
 
@@ -87,7 +85,7 @@ int main() {
 
   d.setServerTransport(server);
 
-  std::this_thread::sleep_for(std::chrono::seconds(30));
+  std::this_thread::sleep_for(std::chrono::seconds(60));
 
   server.reset();
 

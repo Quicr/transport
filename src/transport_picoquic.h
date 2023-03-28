@@ -23,26 +23,25 @@
 
 namespace qtransport {
 
-struct PicoQuicStreamContext {
-  uint64_t stream_id;
-  TransportContextId context_id;
-  picoquic_cnx_t *cnx;
-  char peer_addr_text[45];
-  uint16_t peer_port;
-  safeQueue<std::vector<uint8_t>> dequeue;      /// Pending messages to dequeue
-};
-
 class PicoQuicTransport : public ITransport
 {
 public:
   const char* QUICR_ALPN = "quicr-v1";
 
-  struct connData
-  {
-    TransportContextId contextId;
-    StreamId streamId;
-    std::vector<uint8_t> data;
+  struct OutData {
+    std::vector<uint8_t> bytes;
   };
+
+  struct StreamContext {
+    uint64_t stream_id;
+    TransportContextId context_id;
+    picoquic_cnx_t *cnx;
+    char peer_addr_text[45];
+    uint16_t peer_port;
+    safeQueue<std::vector<uint8_t>> in_data;      /// Pending messages to dequeue
+    safeQueue<OutData> out_data;                  /// Pending messages from enqueue - Only used for datagram
+  };
+
 
   /*
    * Exceptions
@@ -96,17 +95,19 @@ public:
    */
   void setStatus(TransportStatus status);
 
-  PicoQuicStreamContext* getZeroStreamContext(picoquic_cnx_t* cnx);
+  StreamContext * getZeroStreamContext(picoquic_cnx_t* cnx);
 
-  PicoQuicStreamContext* createStreamContext(picoquic_cnx_t* cnx,
+  StreamContext * createStreamContext(picoquic_cnx_t* cnx,
                                              uint64_t stream_id);
   void deleteStreamContext(const TransportContextId& context_id,
                            const StreamId& stream_id);
 
-  void on_connection_status(const TransportContextId &context_id,
+  void checkDataOut();
+  void sendOutData(StreamContext *stream_cnx, uint8_t* bytes_ctx, size_t max_len);
+  void on_connection_status(StreamContext *stream_cnx,
                             const TransportStatus status);
-  void on_new_connection(PicoQuicStreamContext *stream_cnx);
-  void on_recv_data(PicoQuicStreamContext *stream_cnx,
+  void on_new_connection(StreamContext *stream_cnx);
+  void on_recv_data(StreamContext *stream_cnx,
                     uint8_t* bytes, size_t length);
 
 
@@ -125,6 +126,7 @@ private:
   void client(const TransportContextId tcid);
   void cbNotifier();
 
+
   /*
    * Variables
    */
@@ -139,6 +141,7 @@ private:
   std::thread picoQuicThread;
   std::thread cbNotifyThread;
 
+
   TransportRemote serverInfo;
   TransportDelegate& delegate;
 
@@ -148,7 +151,7 @@ private:
    *   bits. Stream ID is therefore incremented by 4.
    */
   std::atomic<StreamId> next_stream_id{ 4 };
-  std::map<TransportContextId, std::map<StreamId, PicoQuicStreamContext>> active_streams;
+  std::map<TransportContextId, std::map<StreamId, StreamContext>> active_streams;
 };
 
 } // namespace qtransport
