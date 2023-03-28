@@ -121,6 +121,11 @@ int pq_event_cb(picoquic_cnx_t* cnx,
       picoquic_close(cnx, 0);
       transport->deleteStreamContext((uint64_t)cnx, stream_id);
 
+      if (not transport->isServerMode) {
+        transport->setStatus(TransportStatus::Disconnected);
+        return PICOQUIC_NO_ERROR_TERMINATE_PACKET_LOOP;
+      }
+
       return 0;
     }
 
