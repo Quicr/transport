@@ -364,11 +364,11 @@ PicoQuicTransport::PicoQuicTransport(const TransportRemote& server,
                                      TransportDelegate& delegate,
                                      bool isServerMode,
                                      LogHandler& logger)
-    : stop(false)
-      , logger(logger)
+    : logger(logger)
       , isServerMode(isServerMode)
-      , serverInfo(server)
+      , stop(false)
       , transportStatus(TransportStatus::Connecting)
+      , serverInfo(server)
       , delegate(delegate)
 {
   if (isServerMode && tcfg.tls_cert_filename == NULL) {
@@ -551,7 +551,7 @@ void PicoQuicTransport::server()
   shutdown();
 }
 
-const TransportContextId PicoQuicTransport::createClient() {
+TransportContextId PicoQuicTransport::createClient() {
   struct sockaddr_storage server_address;
   char const* sni = "cisco.webex.com";
   int ret;
@@ -645,7 +645,8 @@ PicoQuicTransport::closeStream(const TransportContextId& context_id,
 }
 
 void
-PicoQuicTransport::close(const TransportContextId& context_id)
+PicoQuicTransport::close(
+        [[maybe_unused]] const TransportContextId& context_id)
 {
 }
 
@@ -670,7 +671,8 @@ void PicoQuicTransport::checkDataOut()
 }
 
 void PicoQuicTransport::sendOutData(StreamContext *stream_cnx,
-                                    uint8_t* bytes_ctx, size_t max_len)
+                                    [[maybe_unused]] uint8_t* bytes_ctx,
+                                    size_t max_len)
 {
     const auto &out_data = stream_cnx->out_data.pop();
 

@@ -119,7 +119,7 @@ public:
 
 
 private:
-  const TransportContextId createClient();
+  TransportContextId createClient();
   void shutdown();
 
   void server();
