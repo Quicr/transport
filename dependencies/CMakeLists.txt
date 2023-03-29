@@ -1,5 +1,11 @@
+  set(INSTALL_DESTINATION_DEFAULT
+          ARCHIVE DESTINATION lib
+          LIBRARY DESTINATION lib
+          FRAMEWORK DESTINATION lib
+          BUNDLE DESTINATION bin
+          RUNTIME DESTINATION bin)
 
-add_subdirectory( boringssl )
+  add_subdirectory( boringssl )
 
 set (OPENSSL_FOUND ON)
 set (OPENSSL_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/boringssl")
