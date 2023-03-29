@@ -1,6 +1,7 @@
 
 add_subdirectory( boringssl )
 
+set (OPENSSL_FOUND ON)
 set (OPENSSL_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/boringssl")
 set (OPENSSL_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/boringssl/include")
 
