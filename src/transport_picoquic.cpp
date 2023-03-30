@@ -49,7 +49,7 @@ int pq_event_cb(picoquic_cnx_t* cnx,
         stream_cnx = transport->getZeroStreamContext(cnx);
       }
 
-      transport->sendOutData(stream_cnx, NULL, length);
+      transport->sendOutData(stream_cnx, bytes, length);
       break;
     }
 
@@ -137,7 +137,7 @@ int pq_event_cb(picoquic_cnx_t* cnx,
       if (transport->isServerMode) {
 
         // Create new stream context for new stream/connection
-        picoquic_enable_keep_alive(cnx, 2 * 1000000);
+        picoquic_enable_keep_alive(cnx, 3000000);
         (void)picoquic_mark_datagram_ready(cnx, true);
 
         transport->on_new_connection(stream_cnx);
@@ -216,8 +216,9 @@ int pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode,
         break;
 
       case picoquic_packet_loop_time_check: {
-        /*
         packet_loop_time_check_arg_t* targ = (packet_loop_time_check_arg_t*)callback_arg;
+
+        /*
         log_msg << "packet_loop_time_check time: "
             << targ->current_time << " delta: " << targ->delta_t;
         transport->logger.log(LogLevel::info, log_msg.str());
@@ -225,9 +226,8 @@ int pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode,
 
         // TODO: Add config to set this value. This will change the loop select
         //   wait time to delta value in microseconds. Default is <= 10 seconds
-        //if (targ->delta_t > 50000)
-        //  targ->delta_t = 100000;
-
+        if (targ->delta_t > 5000)
+          targ->delta_t = 2000;
 
         // Stop loop if shutting down
         if (transport->status() == TransportStatus::Shutdown) {
@@ -497,7 +497,7 @@ PicoQuicTransport::start()
    *    also triggers PMTUD to run. This value will be the initial value.
    */
   picoquic_init_transport_parameters(&local_tp_options, 1);
-  local_tp_options.max_datagram_frame_size = 1280;
+  local_tp_options.max_datagram_frame_size = 1400;
 //  local_tp_options.max_ack_delay = 1000000;
 //  local_tp_options.min_ack_delay = 20000;
 
@@ -609,7 +609,7 @@ void PicoQuicTransport::client(const TransportContextId tcid)
     logger.log(LogLevel::error, "Could not create picoquic connection client context");
   }
   else {
-    picoquic_enable_keep_alive(cnx, 2 * 1000000);
+    picoquic_enable_keep_alive(cnx, 3000000);
     picoquic_set_callback(cnx, pq_event_cb, this);
 
     ret = picoquic_start_client_cnx(cnx);
@@ -655,16 +655,19 @@ void PicoQuicTransport::checkDataOut()
   for (auto& c_pair: active_streams) {
     for (auto &s_pair : active_streams[c_pair.first]) {
 
-      if (s_pair.first == 0)
-          continue;
-
 //      std::ostringstream log_msg;
 //      log_msg << "pending data check, ctx: " << c_pair.first
 //              << " stream: " << s_pair.second.stream_id << " size: " << s_pair.second.out_data.size();
 //      logger.log(LogLevel::info, log_msg.str());
       if (s_pair.second.out_data.size()) {
-          (void)picoquic_mark_active_stream(s_pair.second.cnx, s_pair.first, 1,
-                                            (StreamContext *)&s_pair.second);
+          if (s_pair.first == 0) {
+            sendOutData(&s_pair.second, NULL, 1300);
+          } else {
+            (void)picoquic_mark_active_stream(s_pair.second.cnx,
+                                              s_pair.first,
+                                              1,
+                                              (StreamContext*)&s_pair.second);
+          }
       }
     }
   }
@@ -674,43 +677,44 @@ void PicoQuicTransport::sendOutData(StreamContext *stream_cnx,
                                     [[maybe_unused]] uint8_t* bytes_ctx,
                                     size_t max_len)
 {
-    const auto &out_data = stream_cnx->out_data.pop();
+  for (int i=0; i < 120; i++) {
+    const auto& out_data = stream_cnx->out_data.pop();
+    if (out_data.has_value()) {
+//          std::ostringstream log_msg;
+//          log_msg << "Send Data: stream: " << stream_cnx->stream_id
+//                  << " max_len: " << max_len
+//                  << " queue_size: " << stream_cnx->out_data.size();
+//          logger.log(LogLevel::info, log_msg.str());
 
-  if (out_data.has_value()) {
-//    std::ostringstream log_msg;
-//    log_msg << "Send Data: stream: " << stream_cnx->stream_id
-//            << " max_len: " << max_len
-//            << " queue_size: " << stream_cnx->out_data.size();
-//    logger.log(LogLevel::info, log_msg.str());
-
-    if (stream_cnx->stream_id == 0) {
-        (void)picoquic_queue_datagram_frame(
+      if (stream_cnx->stream_id == 0 and max_len >= out_data.value().bytes.size() ) {
+          (void)picoquic_queue_datagram_frame(
             stream_cnx->cnx, out_data->bytes.size(), out_data->bytes.data());
-    } else if (max_len > 1000) {
 
-      (void)picoquic_add_to_stream_with_ctx(
-          stream_cnx->cnx, stream_cnx->stream_id, out_data->bytes.data(),
-          out_data->bytes.size(), 0, stream_cnx);
+      } else if (max_len > 1000) {
 
-      (void)picoquic_mark_active_stream(stream_cnx->cnx,
-                                        stream_cnx->stream_id, 1, stream_cnx);
+          (void)picoquic_add_to_stream_with_ctx(stream_cnx->cnx,
+                                                stream_cnx->stream_id,
+                                                out_data->bytes.data(),
+                                                out_data->bytes.size(),
+                                                0,
+                                                stream_cnx);
 
-      // causes problems with expected messages, resulting in around 10% being lost.
-      // Maybe due to messages being packed into the same SFRAME.
+          (void)picoquic_mark_active_stream(
+            stream_cnx->cnx, stream_cnx->stream_id, 1, stream_cnx);
 
-//        uint8_t *buf = picoquic_provide_stream_data_buffer(
-//            bytes_ctx, out_data->bytes.size(), 0, 1);
-//
-//        if (buf != NULL)
-//          std::memcpy(buf, out_data->bytes.data(), out_data->bytes.size());
+          // causes problems with expected messages, resulting in around 10% being lost. Maybe due to messages being packed into the same SFRAME.
+
+          //        uint8_t *buf = picoquic_provide_stream_data_buffer(
+          //            bytes_ctx, out_data->bytes.size(), 0, 1);
+          //
+          //        if (buf != NULL)
+          //          std::memcpy(buf, out_data->bytes.data(), out_data->bytes.size());
+      }
+
+    } else {
+      // No data left in queue or reached max send number, break loop
+      break;
     }
-
-  } else if (stream_cnx->stream_id != 0) {
-    std::ostringstream log_msg;
-    log_msg << "No Data to send: stream: " << stream_cnx->stream_id
-            << " max_len: " << max_len
-            << " queue_size: " << stream_cnx->out_data.size();
-    logger.log(LogLevel::info, log_msg.str());
   }
 }
 
