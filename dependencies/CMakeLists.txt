@@ -16,6 +16,8 @@ LIST(APPEND BORINGSSL_LIBRARIES "${CMAKE_CURRENT_BINARY_DIR}/boringssl/decrepit"
 LIST(APPEND BORINGSSL_LIBRARIES "${CMAKE_CURRENT_BINARY_DIR}/boringssl/ssl")
 set (BORINGSSL_LIBDIR "${CMAKE_CURRENT_BINARY_DIR}/boringssl")
 
+# TODO: When BORINGSSL_LIBRARIES is set, brotli will be disabled.
+# TODO:   Should check on adding brotli as a submodule if it's needed
 add_subdirectory( picotls )
 
 # picotls still attempts to find OpenSSL, which will override some variables. Need
