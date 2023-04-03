@@ -273,8 +273,11 @@ void PicoQuicTransport::deleteStreamContext(const TransportContextId &context_id
 
     if (stream_id == 0) { // Delete context if stream ID is zero
         for (const auto& stream_p : iter->second) {
-          if (stream_p.first == 0)
+          if (stream_p.first == 0) {
+            on_connection_status((StreamContext*)&stream_p.second,
+                                 TransportStatus::Disconnected);
             continue;
+          }
 
           (void)picoquic_mark_active_stream(stream_p.second.cnx,
                                             stream_id, 0,
