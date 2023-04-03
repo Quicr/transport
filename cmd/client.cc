@@ -78,7 +78,7 @@ Delegate d(logger);
 TransportRemote server =
     TransportRemote{"127.0.0.1", 1234, TransportProtocol::QUIC};
 
-TransportConfig tconfig { .tls_key_filename = NULL, .tls_cert_filename = NULL };
+TransportConfig tconfig { .tls_cert_filename = NULL, .tls_key_filename = NULL };
 auto client = ITransport::make_client_transport(server, tconfig, d, logger);
 
 int main() {
