@@ -52,7 +52,7 @@ UDPTransport::UDPTransport(const TransportRemote& server,
 }
 
 TransportStatus
-UDPTransport::status()
+UDPTransport::status() const
 {
   return (fd > 0) ? TransportStatus::Ready : TransportStatus::Disconnected;
 }

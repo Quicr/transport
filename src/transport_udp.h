@@ -61,7 +61,7 @@ public:
 
   virtual ~UDPTransport();
 
-  TransportStatus status() override;
+  TransportStatus status() const override;
 
   TransportContextId start() override;
 

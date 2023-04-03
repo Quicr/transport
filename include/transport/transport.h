@@ -200,7 +200,7 @@ public:
    * will reflect the status of the listening socket. In client mode it will
    * reflect the status of the server connection.
    */
-  virtual TransportStatus status() = 0;
+  virtual TransportStatus status() const = 0;
 
   /**
    * @brief Setup the transport connection

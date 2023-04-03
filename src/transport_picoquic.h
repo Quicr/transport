@@ -72,7 +72,7 @@ public:
 
   virtual ~PicoQuicTransport();
 
-  TransportStatus status() override;
+  TransportStatus status() const override;
 
   TransportContextId start() override;
 
