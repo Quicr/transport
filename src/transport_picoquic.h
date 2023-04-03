@@ -1,6 +1,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <cassert>
 #include <cstdint>
 #include <vector>
@@ -9,6 +10,7 @@
 #include <queue>
 #include <string>
 #include <thread>
+#include <functional>
 
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -136,7 +138,7 @@ private:
   safeQueue<std::function<void()>> cbNotifyQueue;
 
   std::mutex mutex;
-  std::atomic_bool stop;
+  std::atomic<bool> stop;
   std::atomic<TransportStatus> transportStatus;
   std::thread picoQuicThread;
   std::thread cbNotifyThread;
