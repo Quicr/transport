@@ -20,7 +20,7 @@ using namespace qtransport;
 
 UDPTransport::~UDPTransport()
 {
-  // TODO: Close all media streams and connections
+  // TODO: Close all streams and connections
 
   // Stop threads
   stop = true;
@@ -61,10 +61,10 @@ UDPTransport::status() const
  * UDP doesn't support multiple streams for clients.  This will return the same
  * stream ID used for the context
  */
-MediaStreamId
-UDPTransport::createMediaStream(
+StreamId
+UDPTransport::createStream(
   const qtransport::TransportContextId& context_id,
-  bool use_reliable_transport)
+  [[maybe_unused]] bool use_reliable_transport)
 {
 
   if (remote_contexts.count(context_id) == 0) {
@@ -75,7 +75,7 @@ UDPTransport::createMediaStream(
   }
 
   auto addr = remote_contexts[context_id];
-  return remote_addrs[addr.key].msid;
+  return remote_addrs[addr.key].sid;
 }
 
 TransportContextId
@@ -92,12 +92,12 @@ UDPTransport::start()
 }
 
 void
-UDPTransport::closeMediaStream(const TransportContextId& context_id,
-                               const MediaStreamId mStreamId)
+UDPTransport::closeStream(const TransportContextId& context_id,
+                          const StreamId streamId)
 {
 
-  if (dequeue_data_map[context_id].count(mStreamId) > 0) {
-    dequeue_data_map[context_id].erase(mStreamId);
+  if (dequeue_data_map[context_id].count(streamId) > 0) {
+    dequeue_data_map[context_id].erase(streamId);
   }
 }
 
@@ -193,9 +193,9 @@ UDPTransport::fd_writer()
     auto cd = fd_write_queue.block_pop();
 
     if (cd) {
-      if ((dequeue_data_map.count(cd->contextId) == 0 || dequeue_data_map[cd->contextId].count(cd->mStreamId) == 0)
+      if ((dequeue_data_map.count(cd->contextId) == 0 || dequeue_data_map[cd->contextId].count(cd->streamId) == 0)
           || remote_contexts.count(cd->contextId) == 0) {
-        // Drop/ignore connection data since the connection or media stream no
+        // Drop/ignore connection data since the connection or stream no
         // longer exists
         continue;
       }
@@ -234,7 +234,7 @@ UDPTransport::fd_writer()
  *  - Create connData and send to queue
  *  - Call on_recv_notify() delegate to notify of new data available. This is
  * not called again if there is still pending data to be dequeued for the same
- * mediaStreamId
+ * StreamId
  */
 void
 UDPTransport::fd_reader()
@@ -278,7 +278,7 @@ UDPTransport::fd_reader()
 
     connData cd;
     cd.data = buffer;
-    cd.mStreamId = 0;
+    cd.streamId = 0;
 
     addrKey ra_key;
     addr_to_key(remoteAddr, ra_key);
@@ -295,19 +295,19 @@ UDPTransport::fd_reader()
         memcpy(&(r.addr), &remoteAddr, remoteAddrLen);
 
         ++last_context_id;
-        ++last_media_stream_id;
+        ++last_stream_id;
 
         remote_contexts[last_context_id] = r;
         remote_addrs[ra_key] = {
           last_context_id,
-          last_media_stream_id,
+            last_stream_id,
         };
 
         cd.contextId = last_context_id;
-        cd.mStreamId = last_media_stream_id;
+        cd.streamId = last_stream_id;
 
         // Create dequeue
-        dequeue_data_map[last_context_id][last_media_stream_id].setLimit(50000);
+        dequeue_data_map[last_context_id][last_stream_id].setLimit(50000);
 
         cd.contextId = last_context_id;
 
@@ -322,25 +322,25 @@ UDPTransport::fd_reader()
     } else {
       auto sctx = remote_addrs[ra_key];
       cd.contextId = sctx.tcid;
-      cd.mStreamId = sctx.msid;
+      cd.streamId = sctx.sid;
     }
 
     // Add data to caller queue for processing
-    auto& dq = dequeue_data_map[cd.contextId][cd.mStreamId];
+    auto& dq = dequeue_data_map[cd.contextId][cd.streamId];
 
     // TODO: Notify caller that packets are being dropped on queue full
     dq.push(cd);
 
     if (dq.size() < 2) {
       // Notify the caller that there is data to process
-      delegate.on_recv_notify(cd.contextId, cd.mStreamId);
+      delegate.on_recv_notify(cd.contextId, cd.streamId);
     }
   }
 }
 
 TransportError
 UDPTransport::enqueue(const TransportContextId& context_id,
-                      const MediaStreamId& mStreamId,
+                      const StreamId& streamId,
                       std::vector<uint8_t>&& bytes)
 {
   if (bytes.empty()) {
@@ -352,7 +352,7 @@ UDPTransport::enqueue(const TransportContextId& context_id,
     return TransportError::InvalidContextId;
   }
 
-  if (dequeue_data_map[context_id].count(mStreamId) == 0) {
+  if (dequeue_data_map[context_id].count(streamId) == 0) {
     // Invalid stream Id
     return TransportError::InvalidStreamId;
   }
@@ -360,7 +360,7 @@ UDPTransport::enqueue(const TransportContextId& context_id,
   connData cd;
   cd.data = bytes;
   cd.contextId = context_id;
-  cd.mStreamId = mStreamId;
+  cd.streamId = streamId;
 
   if (not fd_write_queue.push(cd)) {
     return TransportError::QueueFull;
@@ -371,7 +371,7 @@ UDPTransport::enqueue(const TransportContextId& context_id,
 
 std::optional<std::vector<uint8_t>>
 UDPTransport::dequeue(const TransportContextId& context_id,
-                      const MediaStreamId& mstreamId)
+                      const StreamId& streamId)
 {
 
   if (remote_contexts.count(context_id) == 0) {
@@ -382,15 +382,15 @@ UDPTransport::dequeue(const TransportContextId& context_id,
     return std::nullopt;
   }
 
-  if (dequeue_data_map[context_id].count(mstreamId) == 0) {
+  if (dequeue_data_map[context_id].count(streamId) == 0) {
     std::stringstream err;
-    err << "dequeue: invalid stream id: " << mstreamId;
+    err << "dequeue: invalid stream id: " << streamId;
     logger.log(LogLevel::warn, err.str());
 
     return std::nullopt;
   }
 
-  auto& dq = dequeue_data_map[context_id][mstreamId];
+  auto& dq = dequeue_data_map[context_id][streamId];
 
   if (dq.size() <= 0) {
     return std::nullopt;
@@ -481,13 +481,13 @@ UDPTransport::connect_client()
   serverAddr.key = sa_key;
 
   ++last_context_id;
-  ++last_media_stream_id;
+  ++last_stream_id;
 
   remote_contexts[last_context_id] = serverAddr;
-  remote_addrs[sa_key] = { last_context_id, last_media_stream_id };
+  remote_addrs[sa_key] = { last_context_id, last_stream_id};
 
   // Create dequeue
-  dequeue_data_map[last_context_id][last_media_stream_id].setLimit(50000);
+  dequeue_data_map[last_context_id][last_stream_id].setLimit(50000);
 
   // Notify caller that the connection is now ready
   delegate.on_connection_status(last_context_id, TransportStatus::Ready);

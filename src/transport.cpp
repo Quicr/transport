@@ -1,10 +1,12 @@
 #include <transport/transport.h>
 #include <transport_udp.h>
+#include <transport_picoquic.h>
 
 namespace qtransport {
 
 std::shared_ptr<ITransport>
 ITransport::make_client_transport(const TransportRemote& server,
+                                  const TransportConfig& tcfg,
                                   TransportDelegate& delegate,
                                   LogHandler& logger)
 {
@@ -14,9 +16,11 @@ ITransport::make_client_transport(const TransportRemote& server,
       return std::make_shared<UDPTransport>(server, delegate, false, logger);
 
     case TransportProtocol::QUIC:
-      logger.log(LogLevel::error, "QUIC not implemented yet");
-      throw std::runtime_error("make_client_transport: QUIC not implemented");
-      break;
+      return std::make_shared<PicoQuicTransport>(server,
+                                                 tcfg,
+                                                 delegate,
+                                                 false,
+                                                 logger);
 
     default:
       logger.log(LogLevel::error, "Protocol not implemented");
@@ -30,6 +34,7 @@ ITransport::make_client_transport(const TransportRemote& server,
 
 std::shared_ptr<ITransport>
 ITransport::make_server_transport(const TransportRemote& server,
+                                  const TransportConfig& tcfg,
                                   TransportDelegate& delegate,
                                   LogHandler& logger)
 {
@@ -38,9 +43,11 @@ ITransport::make_server_transport(const TransportRemote& server,
       return std::make_shared<UDPTransport>(server, delegate, true, logger);
 
     case TransportProtocol::QUIC:
-      logger.log(LogLevel::error, "QUIC not implemented yet");
-      throw std::runtime_error("make_server_transport: QUIC not implemented");
-      break;
+      return std::make_shared<PicoQuicTransport>(server,
+                                                 tcfg,
+                                                 delegate,
+                                                 true, logger);
+
     default:
       logger.log(LogLevel::error, "Protocol not implemented");
 

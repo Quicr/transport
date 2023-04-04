@@ -18,9 +18,25 @@ Single threaded, aysnc and queued transport api for QUICR
     - make all
     - make client
     - make server
-      
+
+# Running  
+
+In order to test QUIC, the server needs to have a certificate. The program expects
+the 
+
+Generate self-signed certificate for really server to test with. 
+
+```
+openssl req -nodes -x509 -newkey rsa:2048 -days 365 -keyout ca-key.pem -out ca-cert.pem
+openssl req -nodes -newkey rsa:2048 -keyout server-key.pem -out server-req.pem
+```
+
+Run ```build/cmd/server``` and ```build/cmd/client``` 
+
+
 # Notes
 
 1. cmd/ - has client and server examples
    
+
    
