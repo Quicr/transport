@@ -780,7 +780,7 @@ void PicoQuicTransport::on_connection_status(
 {
   TransportContextId context_id { stream_cnx->context_id };
 
-  cbNotifyQueue.push([=] () {
+  cbNotifyQueue.push([=, this] () {
     delegate.on_connection_status(context_id, status);
   });
 }
@@ -804,7 +804,7 @@ void PicoQuicTransport::on_new_connection(StreamContext *stream_cnx)
 
   TransportContextId context_id { stream_cnx->context_id };
 
-  cbNotifyQueue.push([=] () {
+  cbNotifyQueue.push([=, this] () {
     delegate.on_new_connection(context_id,
                                remote);
     });
@@ -823,7 +823,7 @@ void PicoQuicTransport::on_recv_data(StreamContext *stream_cnx,
     TransportContextId context_id = stream_cnx->context_id;
     StreamId stream_id = stream_cnx->stream_id;
 
-    cbNotifyQueue.push([=] () {
+    cbNotifyQueue.push([=, this] () {
       delegate.on_recv_notify(context_id, stream_id);
       });
   }

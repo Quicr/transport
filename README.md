@@ -4,7 +4,7 @@ Single threaded, aysnc and queued transport api for QUICR
 
 # Buillding
 
-0. Needs C++17 clang, and cmake 
+0. Needs C++20 clang, and cmake 
 1. Download and install openssl
 - on a mac you can do ' ```brew install openssl```
 - find where it is ```brew info openssl```
@@ -27,8 +27,7 @@ the
 Generate self-signed certificate for really server to test with. 
 
 ```
-openssl req -nodes -x509 -newkey rsa:2048 -days 365 -keyout ca-key.pem -out ca-cert.pem
-openssl req -nodes -newkey rsa:2048 -keyout server-key.pem -out server-req.pem
+openssl req -nodes -x509 -newkey rsa:2048 -days 365 -keyout server-key.pem -out server-cert.pem
 ```
 
 Run ```build/cmd/server``` and ```build/cmd/client``` 
