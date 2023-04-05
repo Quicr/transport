@@ -60,9 +60,13 @@ public:
 
       if (data.has_value()) {
         msgcount++;
+        uint32_t *msg_num = (uint32_t *)data.value().data();
+
         s_log.str(std::string());
-        s_log << "cid: " << context_id << " msid: " << streamId
-              << "  RecvMsg (" << msgcount << ") : " << to_hex(data.value());
+        s_log << "cid: " << context_id << " sid: " << streamId
+              << "  length: " << data->size()
+              << "  RecvMsg (" << msgcount << ")"
+              << "  msg_num: " << *msg_num;
         logger.log(LogLevel::info, s_log.str());
       } else {
         break;
@@ -83,11 +87,9 @@ auto client = ITransport::make_client_transport(server, tconfig, d, logger);
 
 int main() {
   d.setClientTransport(client);
-  const uint8_t forty_bytes[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3,
-                                 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6, 7,
-                                 8, 9, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
 
   auto tcid = client->start();
+  uint8_t data_buf[1100] {0};
 
   while (client->status() != TransportStatus::Ready) {
     logger.log(LogLevel::info, "Waiting for client to be ready");
@@ -98,13 +100,13 @@ int main() {
 
   std::stringstream s_log;
 
-
+/*
   for (int i =0; i < 500; i++) {
-    auto data = bytes(forty_bytes, forty_bytes + sizeof(forty_bytes));
+    auto data = bytes(data_buf, data_buf + sizeof(data_buf));
 
     s_log.str("");
 
-    s_log << "sending STREAM: " << to_hex(data);
+    s_log << "sending STREAM length: " << data.size();
     logger.log(LogLevel::info, s_log.str());
     //client->enqueue(tcid, stream_id, std::move(data)) ;
 
@@ -123,13 +125,17 @@ int main() {
   }
 
   std::this_thread::sleep_for(std::chrono::seconds(3));
+*/
 
-  for (int i =0; i < 1000; i++) {
-    auto data = bytes(forty_bytes, forty_bytes + sizeof(forty_bytes));
+  uint32_t *msg_num = (uint32_t*)&data_buf;
+  for (int i =0; i < 10000; i++) {
+    (*msg_num)++;
+    auto data = bytes(data_buf, data_buf + sizeof(data_buf));
 
     s_log.str("");
 
-    s_log << "sending DGRAM: " << to_hex(data);
+    s_log << "sending DGRAM, length: " << data.size();
+    s_log << " msg_num: " << msg_num ;
     logger.log(LogLevel::info, s_log.str());
 
     client->enqueue(tcid, 0, std::move(data));
