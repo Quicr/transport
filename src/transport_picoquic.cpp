@@ -53,14 +53,20 @@ int pq_event_cb(picoquic_cnx_t* cnx,
       break;
     }
 
+    case picoquic_callback_datagram_spurious:
+      // Handle the same as ack
     case picoquic_callback_datagram_acked:
-      // Called for each datagram - TODO: how efficient is that?
+      // Called for each datagram - TODO: Revisit how often acked frames are coming in
       //   bytes carries the original packet data
 //      log_msg.str("");
 //      log_msg << "Got datagram ack send_time: " << stream_id
 //              << " bytes length: " << length;
 //      transport->logger.log(LogLevel::info, log_msg.str());
 
+      break;
+
+    case picoquic_callback_datagram_lost:
+      // TODO: Add metrics for lost segments
       break;
 
     case picoquic_callback_datagram:
@@ -665,14 +671,15 @@ void PicoQuicTransport::checkDataOut()
 //              << " stream: " << s_pair.second.stream_id << " size: " << s_pair.second.out_data.size();
 //      logger.log(LogLevel::info, log_msg.str());
       if (s_pair.second.out_data.size()) {
-          if (s_pair.first == 0) {
-            sendOutData(&s_pair.second, NULL, 1300);
-          } else {
+          if (s_pair.first != 0) {
             (void)picoquic_mark_active_stream(s_pair.second.cnx,
                                               s_pair.first,
                                               1,
                                               static_cast<StreamContext*>(&s_pair.second));
           }
+          /*else {
+            sendOutData(&s_pair.second, NULL, 1300);
+          } */
       }
     }
   }
@@ -682,44 +689,51 @@ void PicoQuicTransport::sendOutData(StreamContext *stream_cnx,
                                     [[maybe_unused]] uint8_t* bytes_ctx,
                                     size_t max_len)
 {
-  for (int i=0; i < 120; i++) {
-    const auto& out_data = stream_cnx->out_data.pop();
-    if (out_data.has_value()) {
-//          std::ostringstream log_msg;
-//          log_msg << "Send Data: stream: " << stream_cnx->stream_id
-//                  << " max_len: " << max_len
-//                  << " queue_size: " << stream_cnx->out_data.size();
-//          logger.log(LogLevel::info, log_msg.str());
+  const auto& out_data = stream_cnx->out_data.front();
+  if (out_data.has_value()) {
 
-      if (stream_cnx->stream_id == 0 and max_len >= out_data.value().bytes.size() ) {
-          (void)picoquic_queue_datagram_frame(
-            stream_cnx->cnx, out_data->bytes.size(), out_data->bytes.data());
+    if (stream_cnx->stream_id == 0) {
+      if (max_len >= out_data.value().bytes.size() ) {
 
-      } else if (max_len > 1000) {
+        uint8_t *buf = picoquic_provide_datagram_buffer(bytes_ctx, out_data.value().bytes.size());
+        if (buf != NULL) {
+          std::memcpy(buf, out_data.value().bytes.data(), out_data.value().bytes.size());
 
-          (void)picoquic_add_to_stream_with_ctx(stream_cnx->cnx,
-                                                stream_cnx->stream_id,
-                                                out_data->bytes.data(),
-                                                out_data->bytes.size(),
-                                                0,
-                                                stream_cnx);
+          stream_cnx->out_data.removeFront();
+        } else {
+          std::ostringstream log_msg;
+          log_msg << "context_id: " << stream_cnx->context_id
+                  << " stream_id: " << stream_cnx->stream_id
+                  << " max_len: " << max_len << " bytes_len: " << out_data.value().bytes.size()
+                  << " Write DGRAM buffer is NULL";
+          logger.log(LogLevel::warn, log_msg.str());
+        }
+      } else {
+        // Not enough data to write message, skip till next callback
 
-          (void)picoquic_mark_active_stream(
-            stream_cnx->cnx, stream_cnx->stream_id, 1, stream_cnx);
-
-          // causes problems with expected messages, resulting in around 10% being lost. Maybe due to messages being packed into the same SFRAME.
-
-          //        uint8_t *buf = picoquic_provide_stream_data_buffer(
-          //            bytes_ctx, out_data->bytes.size(), 0, 1);
-          //
-          //        if (buf != NULL)
-          //          std::memcpy(buf, out_data->bytes.data(), out_data->bytes.size());
       }
 
     } else {
-      // No data left in queue or reached max send number, break loop
-      break;
+        stream_cnx->out_data.removeFront();
+        (void)picoquic_add_to_stream_with_ctx(stream_cnx->cnx,
+                                              stream_cnx->stream_id,
+                                              out_data->bytes.data(),
+                                              out_data->bytes.size(),
+                                              0,
+                                              stream_cnx);
+
+        (void)picoquic_mark_active_stream(
+          stream_cnx->cnx, stream_cnx->stream_id, 1, stream_cnx);
+
+        // causes problems with expected messages, resulting in around 10% being lost. Maybe due to messages being packed into the same SFRAME.
+
+        //        uint8_t *buf = picoquic_provide_stream_data_buffer(
+        //            bytes_ctx, out_data->bytes.size(), 0, 1);
+        //
+        //        if (buf != NULL)
+        //          std::memcpy(buf, out_data->bytes.data(), out_data->bytes.size());
     }
+
   }
 }
 

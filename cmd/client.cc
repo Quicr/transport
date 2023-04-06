@@ -89,7 +89,7 @@ int main() {
   d.setClientTransport(client);
 
   auto tcid = client->start();
-  uint8_t data_buf[1100] {0};
+  uint8_t data_buf[1200] {0};
 
   while (client->status() != TransportStatus::Ready) {
     logger.log(LogLevel::info, "Waiting for client to be ready");
@@ -135,11 +135,14 @@ int main() {
     s_log.str("");
 
     s_log << "sending DGRAM, length: " << data.size();
-    s_log << " msg_num: " << msg_num ;
+    s_log << " msg_num: " << *msg_num ;
     logger.log(LogLevel::info, s_log.str());
 
-    client->enqueue(tcid, 0, std::move(data));
-    //std::this_thread::sleep_for(std::chrono::seconds(1));
+    while (client->enqueue(
+                  tcid,
+                  server.proto == TransportProtocol::UDP ? 1 : 0,
+                  std::move(data)) == TransportError::QueueFull)
+      std::this_thread::sleep_for(std::chrono::microseconds(100));
   }
 
   std::this_thread::sleep_for(std::chrono::seconds(20));

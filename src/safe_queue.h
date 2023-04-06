@@ -72,6 +72,35 @@ public:
   }
 
   /**
+    * @brief Get first object without removing from queue
+    *
+    * @return std::nullopt if queue is empty, otherwise reference to object
+    */
+  std::optional<T> front()
+  {
+    std::lock_guard<std::mutex> lock(mutex);
+
+    if (queue.empty()) {
+      return std::nullopt;
+    }
+
+    return queue.front();;
+  }
+
+  /**
+  * @brief Remove (aka pop) the first object from queue
+  *
+  */
+  void removeFront()
+  {
+    std::lock_guard<std::mutex> lock(mutex);
+
+    removeFrontInternal();
+  }
+
+
+
+  /**
    * @brief Block waiting for data in queue, then remove the first object from
    * queue (oldest object)
    *
@@ -143,6 +172,25 @@ private:
 
     return elem;
   }
+
+  /**
+ * @brief Remove the first object from queue (oldest object)
+ *
+ * @details The mutex must be locked by the caller
+ */
+  void removeFrontInternal()
+  {
+    if (queue.empty()) {
+      return;
+    }
+
+    queue.pop();
+
+    if (queue.size() > 0) {
+      cv.notify_one();
+    }
+  }
+
 
   bool stop_waiting;            // Instruct threads to stop waiting
   uint32_t limit;               // Limit of number of messages in queue
