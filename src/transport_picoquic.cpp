@@ -853,7 +853,7 @@ void PicoQuicTransport::on_recv_data(StreamContext *stream_cnx,
     std::cout << "cbNotifyQueue size: " << cbNotifyQueue.size() << std::endl;
   }
 
-  if (stream_cnx->in_data.size() < 2 || stream_cnx->in_data.size() > 200) {
+  if (stream_cnx->in_data.size() < 2 || stream_cnx->in_data.size() > 300) {
     TransportContextId context_id = stream_cnx->context_id;
     StreamId stream_id = stream_cnx->stream_id;
 
