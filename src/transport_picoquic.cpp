@@ -335,8 +335,8 @@ PicoQuicTransport::StreamContext * PicoQuicTransport::createStreamContext(
   stream_cnx->stream_id = stream_id;
   stream_cnx->context_id = reinterpret_cast<uint64_t>(cnx);
   stream_cnx->cnx = cnx;
-  stream_cnx->in_data.setLimit(1000);
-  stream_cnx->out_data.setLimit(1000);
+  stream_cnx->in_data.setLimit(8000);
+  stream_cnx->out_data.setLimit(8000);
 
 
   sockaddr* addr;
@@ -513,6 +513,7 @@ PicoQuicTransport::start()
 
   picoquic_set_default_tp(quic_ctx, &local_tp_options);
 
+  cbNotifyQueue.setLimit(2000);
   cbNotifyThread = std::thread(&PicoQuicTransport::cbNotifier, this);
 
   TransportContextId cid = 0;
@@ -750,8 +751,6 @@ PicoQuicTransport::enqueue(const TransportContextId& context_id,
       .bytes = bytes
   };
 
-  std::lock_guard<std::mutex> lock(mutex);
-
   const auto &ctx = active_streams.find(context_id);
 
   if (ctx != active_streams.end()) {
@@ -775,8 +774,6 @@ std::optional<std::vector<uint8_t>>
 PicoQuicTransport::dequeue(const TransportContextId& context_id,
                            const StreamId & stream_id)
 {
-  std::lock_guard<std::mutex> lock(mutex);
-
   auto cnx_it = active_streams.find(context_id);
 
   if (cnx_it != active_streams.end()) {
@@ -833,7 +830,9 @@ void PicoQuicTransport::on_recv_data(StreamContext *stream_cnx,
   std::vector<uint8_t> data(bytes, bytes + length);
   stream_cnx->in_data.push(std::move(data));
 
-  if (stream_cnx->in_data.size() <= 2) {
+  if (stream_cnx->in_data.size() < 2
+     || (stream_cnx->in_data.size() / 30) > stream_cnx->in_data_last_cb_size)  {
+    stream_cnx->in_data_last_cb_size = (stream_cnx->in_data.size() / 30);
     TransportContextId context_id = stream_cnx->context_id;
     StreamId stream_id = stream_cnx->stream_id;
 
