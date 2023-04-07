@@ -40,6 +40,7 @@ public:
     picoquic_cnx_t *cnx;
     char peer_addr_text[45];
     uint16_t peer_port;
+    uint64_t in_data_last_cb_size {0};            /// Size of the queue divided by X when last callback was called
     safeQueue<std::vector<uint8_t>> in_data;      /// Pending messages to dequeue
     safeQueue<OutData> out_data;                  /// Pending messages from enqueue - Only used for datagram
   };

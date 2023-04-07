@@ -693,14 +693,6 @@ void PicoQuicTransport::sendOutData(StreamContext *stream_cnx,
   const auto& out_data = stream_cnx->out_data.front();
   if (out_data.has_value()) {
 
-    if (stream_cnx->out_data.size() > 100) {
-      std::cout << " context_id: " << stream_cnx->context_id
-                << " stream_id: " << stream_cnx->stream_id
-                << " out_data: " << stream_cnx->out_data.size()
-                << std::endl;
-    }
-
-
     if (stream_cnx->stream_id == 0) {
       if (max_len >= out_data.value().bytes.size() ) {
 
@@ -759,8 +751,6 @@ PicoQuicTransport::enqueue(const TransportContextId& context_id,
       .bytes = bytes
   };
 
-  std::lock_guard<std::mutex> lock(mutex);
-
   const auto &ctx = active_streams.find(context_id);
 
   if (ctx != active_streams.end()) {
@@ -784,8 +774,6 @@ std::optional<std::vector<uint8_t>>
 PicoQuicTransport::dequeue(const TransportContextId& context_id,
                            const StreamId & stream_id)
 {
-  std::lock_guard<std::mutex> lock(mutex);
-
   auto cnx_it = active_streams.find(context_id);
 
   if (cnx_it != active_streams.end()) {
@@ -842,18 +830,9 @@ void PicoQuicTransport::on_recv_data(StreamContext *stream_cnx,
   std::vector<uint8_t> data(bytes, bytes + length);
   stream_cnx->in_data.push(std::move(data));
 
-  if (stream_cnx->in_data.size() > 100) {
-    std::cout << " context_id: " << stream_cnx->context_id
-              << " stream_id: " << stream_cnx->stream_id
-              << " in_data: " << stream_cnx->in_data.size()
-              << std::endl;
-  }
-
-  if (cbNotifyQueue.size() > 100) {
-    std::cout << "cbNotifyQueue size: " << cbNotifyQueue.size() << std::endl;
-  }
-
-  if (stream_cnx->in_data.size() < 2 || stream_cnx->in_data.size() > 300) {
+  if (stream_cnx->in_data.size() < 2
+     || (stream_cnx->in_data.size() / 30) > stream_cnx->in_data_last_cb_size)  {
+    stream_cnx->in_data_last_cb_size = (stream_cnx->in_data.size() / 30);
     TransportContextId context_id = stream_cnx->context_id;
     StreamId stream_id = stream_cnx->stream_id;
 
