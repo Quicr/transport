@@ -678,16 +678,13 @@ void PicoQuicTransport::checkDataOut()
       if (s_pair.second.out_data.size()) {
           // Instruct picoquic to run prepare data to send callbacks now since data is pending to be sent
           picoquic_reinsert_by_wake_time(s_pair.second.cnx->quic, s_pair.second.cnx, cur_time);
-          std::ostringstream log_msg;
+
           if (s_pair.first != 0) {
             (void)picoquic_mark_active_stream(s_pair.second.cnx,
                                               s_pair.first,
                                               1,
                                               static_cast<StreamContext*>(&s_pair.second));
           }
-          /*else {
-            sendOutData(&s_pair.second, NULL, 1300);
-          } */
       }
     }
   }
