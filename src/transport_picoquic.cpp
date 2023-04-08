@@ -144,7 +144,7 @@ int pq_event_cb(picoquic_cnx_t* cnx,
 
         // Create new stream context for new stream/connection
         picoquic_enable_keep_alive(cnx, 3000000);
-        (void)picoquic_mark_datagram_ready(cnx, true);
+        (void)picoquic_mark_datagram_ready(cnx, 1);
 
         transport->on_new_connection(stream_cnx);
       }
@@ -364,6 +364,7 @@ PicoQuicTransport::StreamContext * PicoQuicTransport::createStreamContext(
 
   (void)picoquic_set_app_stream_ctx(cnx, stream_id, stream_cnx);
 
+
   if (stream_id)
       (void)picoquic_mark_active_stream(cnx, stream_id, 1, stream_cnx);
 
@@ -560,7 +561,8 @@ void PicoQuicTransport::server()
   log_msg << "picoquic packet loop ended with " << ret;
   logger.log(LogLevel::info, log_msg.str());
 
-  shutdown();
+  setStatus(TransportStatus::Shutdown);
+
 }
 
 TransportContextId PicoQuicTransport::createClient() {
@@ -664,14 +666,19 @@ PicoQuicTransport::close(
 
 void PicoQuicTransport::checkDataOut()
 {
+  uint64_t cur_time = picoquic_current_time();
+
   for (auto& c_pair: active_streams) {
     for (auto &s_pair : active_streams[c_pair.first]) {
-
 //      std::ostringstream log_msg;
 //      log_msg << "pending data check, ctx: " << c_pair.first
 //              << " stream: " << s_pair.second.stream_id << " size: " << s_pair.second.out_data.size();
 //      logger.log(LogLevel::info, log_msg.str());
+
       if (s_pair.second.out_data.size()) {
+          // Instruct picoquic to run prepare data to send callbacks now since data is pending to be sent
+          picoquic_reinsert_by_wake_time(s_pair.second.cnx->quic, s_pair.second.cnx, cur_time);
+          std::ostringstream log_msg;
           if (s_pair.first != 0) {
             (void)picoquic_mark_active_stream(s_pair.second.cnx,
                                               s_pair.first,
@@ -690,6 +697,12 @@ void PicoQuicTransport::sendOutData(StreamContext *stream_cnx,
                                     [[maybe_unused]] uint8_t* bytes_ctx,
                                     size_t max_len)
 {
+//  std::ostringstream log_msg;
+//  log_msg << " context_id: " << stream_cnx->context_id
+//          << " steram_id: " << stream_cnx->stream_id
+//          << " out_data: " << stream_cnx->out_data.size();
+//  logger.log(LogLevel::info, log_msg.str());
+
   const auto& out_data = stream_cnx->out_data.front();
   if (out_data.has_value()) {
 
