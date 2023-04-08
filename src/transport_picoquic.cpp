@@ -693,6 +693,14 @@ void PicoQuicTransport::sendOutData(StreamContext *stream_cnx,
   const auto& out_data = stream_cnx->out_data.front();
   if (out_data.has_value()) {
 
+    // TODO: remove below debug message
+    if (stream_cnx->out_data.size() > 500) {
+        std::cout << " context_id: " << stream_cnx->context_id
+                  << " stream_id: " << stream_cnx->stream_id
+                  << " out_data: " << stream_cnx->out_data.size()
+                  << std::endl;
+    }
+
     if (stream_cnx->stream_id == 0) {
       if (max_len >= out_data.value().bytes.size() ) {
 
@@ -709,9 +717,6 @@ void PicoQuicTransport::sendOutData(StreamContext *stream_cnx,
                   << " Write DGRAM buffer is NULL";
           logger.log(LogLevel::warn, log_msg.str());
         }
-      } else {
-        // Not enough data to write message, skip till next callback
-
       }
 
     } else {
@@ -830,14 +835,29 @@ void PicoQuicTransport::on_recv_data(StreamContext *stream_cnx,
   std::vector<uint8_t> data(bytes, bytes + length);
   stream_cnx->in_data.push(std::move(data));
 
+  // TODO: Remove below debug logs
+  if (stream_cnx->in_data.size() > 500) {
+    std::cout << " context_id: " << stream_cnx->context_id
+              << " stream_id: " << stream_cnx->stream_id
+              << " in_data: " << stream_cnx->in_data.size()
+              << " last_cb_size: " << stream_cnx->in_data_cb_skip_count
+              << std::endl;
+  }
+
+  if (cbNotifyQueue.size() > 200) {
+    std::cout << "cbNotifyQueue size: " << cbNotifyQueue.size() << std::endl;
+  }
+
   if (stream_cnx->in_data.size() < 2
-     || (stream_cnx->in_data.size() / 30) > stream_cnx->in_data_last_cb_size)  {
-    stream_cnx->in_data_last_cb_size = (stream_cnx->in_data.size() / 30);
+     || stream_cnx->in_data_cb_skip_count > 30)  {
+    stream_cnx->in_data_cb_skip_count = 0;
     TransportContextId context_id = stream_cnx->context_id;
     StreamId stream_id = stream_cnx->stream_id;
 
     cbNotifyQueue.push([=, this] () {
       delegate.on_recv_notify(context_id, stream_id);
       });
+  } else {
+    stream_cnx->in_data_cb_skip_count++;
   }
 }
