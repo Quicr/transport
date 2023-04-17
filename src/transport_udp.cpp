@@ -307,7 +307,7 @@ UDPTransport::fd_reader()
         cd.streamId = last_stream_id;
 
         // Create dequeue
-        dequeue_data_map[last_context_id][last_stream_id].setLimit(50000);
+        dequeue_data_map[last_context_id][last_stream_id].setLimit(1000);
 
         cd.contextId = last_context_id;
 

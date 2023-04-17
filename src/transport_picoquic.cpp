@@ -49,7 +49,7 @@ int pq_event_cb(picoquic_cnx_t* cnx,
         stream_cnx = transport->getZeroStreamContext(cnx);
       }
 
-      transport->sendOutData(stream_cnx, bytes, length);
+      transport->sendTxData(stream_cnx, bytes, length);
       break;
     }
 
@@ -162,7 +162,7 @@ int pq_event_cb(picoquic_cnx_t* cnx,
 
     case picoquic_callback_prepare_to_send:
     {
-      transport->sendOutData(stream_cnx, bytes, length);
+      transport->sendTxData(stream_cnx, bytes, length);
       break;
     }
 
@@ -251,7 +251,7 @@ int pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode,
           return PICOQUIC_NO_ERROR_TERMINATE_PACKET_LOOP;
         }
 
-        transport->checkDataOut();
+        transport->checkTxData();
 
         break;
       }
@@ -335,8 +335,8 @@ PicoQuicTransport::StreamContext * PicoQuicTransport::createStreamContext(
   stream_cnx->stream_id = stream_id;
   stream_cnx->context_id = reinterpret_cast<uint64_t>(cnx);
   stream_cnx->cnx = cnx;
-  stream_cnx->in_data.setLimit(8000);
-  stream_cnx->out_data.setLimit(8000);
+  stream_cnx->rx_data.setLimit(tconfig.data_queue_size);
+  stream_cnx->tx_data.setLimit(tconfig.data_queue_size);
 
 
   sockaddr* addr;
@@ -382,6 +382,7 @@ PicoQuicTransport::PicoQuicTransport(const TransportRemote& server,
       , transportStatus(TransportStatus::Connecting)
       , serverInfo(server)
       , delegate(delegate)
+      , tconfig(tcfg)
 {
   if (isServerMode && tcfg.tls_cert_filename == NULL) {
     throw InvalidConfigException("Missing cert filename");
@@ -664,7 +665,7 @@ PicoQuicTransport::close(
 {
 }
 
-void PicoQuicTransport::checkDataOut()
+void PicoQuicTransport::checkTxData()
 {
   uint64_t cur_time = picoquic_current_time();
 
@@ -675,7 +676,7 @@ void PicoQuicTransport::checkDataOut()
 //              << " stream: " << s_pair.second.stream_id << " size: " << s_pair.second.out_data.size();
 //      logger.log(LogLevel::info, log_msg.str());
 
-      if (s_pair.second.out_data.size()) {
+      if (s_pair.second.tx_data.size()) {
           // Instruct picoquic to run prepare data to send callbacks now since data is pending to be sent
           picoquic_reinsert_by_wake_time(s_pair.second.cnx->quic, s_pair.second.cnx, cur_time);
 
@@ -690,9 +691,9 @@ void PicoQuicTransport::checkDataOut()
   }
 }
 
-void PicoQuicTransport::sendOutData(StreamContext *stream_cnx,
-                                    [[maybe_unused]] uint8_t* bytes_ctx,
-                                    size_t max_len)
+void PicoQuicTransport::sendTxData(StreamContext *stream_cnx,
+                                   [[maybe_unused]] uint8_t* bytes_ctx,
+                                   size_t max_len)
 {
 //  std::ostringstream log_msg;
 //  log_msg << " context_id: " << stream_cnx->context_id
@@ -700,14 +701,14 @@ void PicoQuicTransport::sendOutData(StreamContext *stream_cnx,
 //          << " out_data: " << stream_cnx->out_data.size();
 //  logger.log(LogLevel::info, log_msg.str());
 
-  const auto& out_data = stream_cnx->out_data.front();
+  const auto& out_data = stream_cnx->tx_data.front();
   if (out_data.has_value()) {
 
     // TODO: remove below debug message
-    if (stream_cnx->out_data.size() > 500) {
+    if (stream_cnx->tx_data.size() > tconfig.data_queue_size / 2) {
         std::cout << " context_id: " << stream_cnx->context_id
                   << " stream_id: " << stream_cnx->stream_id
-                  << " out_data: " << stream_cnx->out_data.size()
+                  << " out_data: " << stream_cnx->tx_data.size()
                   << std::endl;
     }
 
@@ -718,7 +719,7 @@ void PicoQuicTransport::sendOutData(StreamContext *stream_cnx,
         if (buf != NULL) {
           std::memcpy(buf, out_data.value().bytes.data(), out_data.value().bytes.size());
 
-          stream_cnx->out_data.removeFront();
+          stream_cnx->tx_data.pop_front();
         } else {
           std::ostringstream log_msg;
           log_msg << "context_id: " << stream_cnx->context_id
@@ -730,7 +731,7 @@ void PicoQuicTransport::sendOutData(StreamContext *stream_cnx,
       }
 
     } else {
-        stream_cnx->out_data.removeFront();
+      stream_cnx->tx_data.pop_front();
         (void)picoquic_add_to_stream_with_ctx(stream_cnx->cnx,
                                               stream_cnx->stream_id,
                                               out_data->bytes.data(),
@@ -755,8 +756,8 @@ void PicoQuicTransport::sendOutData(StreamContext *stream_cnx,
 
 TransportError
 PicoQuicTransport::enqueue(const TransportContextId& context_id,
-                      const StreamId & stream_id,
-                      std::vector<uint8_t>&& bytes)
+                           const StreamId & stream_id,
+                           std::vector<uint8_t>&& bytes)
 {
   if (bytes.empty()) {
     return TransportError::None;
@@ -772,7 +773,7 @@ PicoQuicTransport::enqueue(const TransportContextId& context_id,
       const auto &stream_cnx = ctx->second.find(stream_id);
 
       if (stream_cnx != ctx->second.end()) {
-        if (!stream_cnx->second.out_data.push(out_data)) {
+        if (!stream_cnx->second.tx_data.push(out_data)) {
           return TransportError::QueueFull;
         }
 
@@ -794,7 +795,7 @@ PicoQuicTransport::dequeue(const TransportContextId& context_id,
   if (cnx_it != active_streams.end()) {
     auto stream_it = cnx_it->second.find(stream_id);
     if (stream_it != cnx_it->second.end()) {
-      return stream_it->second.in_data.pop();
+      return stream_it->second.rx_data.pop();
     }
   }
 
@@ -843,13 +844,13 @@ void PicoQuicTransport::on_recv_data(StreamContext *stream_cnx,
     return;
 
   std::vector<uint8_t> data(bytes, bytes + length);
-  stream_cnx->in_data.push(std::move(data));
+  stream_cnx->rx_data.push(std::move(data));
 
   // TODO: Remove below debug logs
-  if (stream_cnx->in_data.size() > 500) {
+  if (stream_cnx->rx_data.size() > tconfig.data_queue_size / 2) {
     std::cout << " context_id: " << stream_cnx->context_id
               << " stream_id: " << stream_cnx->stream_id
-              << " in_data: " << stream_cnx->in_data.size()
+              << " in_data: " << stream_cnx->rx_data.size()
               << " last_cb_size: " << stream_cnx->in_data_cb_skip_count
               << std::endl;
   }
@@ -858,7 +859,7 @@ void PicoQuicTransport::on_recv_data(StreamContext *stream_cnx,
     std::cout << "cbNotifyQueue size: " << cbNotifyQueue.size() << std::endl;
   }
 
-  if (stream_cnx->in_data.size() < 2
+  if (stream_cnx->rx_data.size() < 2
      || stream_cnx->in_data_cb_skip_count > 30)  {
     stream_cnx->in_data_cb_skip_count = 0;
     TransportContextId context_id = stream_cnx->context_id;

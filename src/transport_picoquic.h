@@ -41,8 +41,8 @@ public:
     char peer_addr_text[45];
     uint16_t peer_port;
     uint64_t in_data_cb_skip_count {0};           /// Number of times callback was skipped due to size
-    safeQueue<std::vector<uint8_t>> in_data;      /// Pending messages to dequeue
-    safeQueue<OutData> out_data;                  /// Pending messages from enqueue - Only used for datagram
+    safeQueue<std::vector<uint8_t>> rx_data;      /// Pending messages to dequeue
+    safeQueue<OutData> tx_data;                   /// Pending messages from enqueue - Only used for datagram
   };
 
 
@@ -105,8 +105,8 @@ public:
   void deleteStreamContext(const TransportContextId& context_id,
                            const StreamId& stream_id);
 
-  void checkDataOut();
-  void sendOutData(StreamContext *stream_cnx, uint8_t* bytes_ctx, size_t max_len);
+  void checkTxData();
+  void sendTxData(StreamContext *stream_cnx, uint8_t* bytes_ctx, size_t max_len);
   void on_connection_status(StreamContext *stream_cnx,
                             const TransportStatus status);
   void on_new_connection(StreamContext *stream_cnx);
@@ -147,6 +147,7 @@ private:
 
   TransportRemote serverInfo;
   TransportDelegate& delegate;
+  TransportConfig tconfig;
 
   /*
    * RFC9000 Section 2.1 defines the stream id max value and types.

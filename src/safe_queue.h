@@ -68,7 +68,7 @@ public:
   {
     std::lock_guard<std::mutex> lock(mutex);
 
-    return popInternal();
+    return pop_internal();
   }
 
   /**
@@ -91,11 +91,11 @@ public:
   * @brief Remove (aka pop) the first object from queue
   *
   */
-  void removeFront()
+  void pop_front()
   {
     std::lock_guard<std::mutex> lock(mutex);
 
-    removeFrontInternal();
+    pop_front_internal();
   }
 
 
@@ -116,7 +116,7 @@ public:
 
     cv.wait(lock, [&]() { return (stop_waiting || (queue.size() > 0)); });
 
-    return popInternal();
+    return pop_internal();
   }
 
   /**
@@ -157,7 +157,7 @@ private:
    *
    * @details The mutex must be locked by the caller
    */
-  std::optional<T> popInternal()
+  std::optional<T> pop_internal()
   {
     if (queue.empty()) {
       return std::nullopt;
@@ -178,7 +178,7 @@ private:
  *
  * @details The mutex must be locked by the caller
  */
-  void removeFrontInternal()
+  void pop_front_internal()
   {
     if (queue.empty()) {
       return;
