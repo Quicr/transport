@@ -29,6 +29,10 @@ class PicoQuicTransport : public ITransport
 {
 public:
   const char* QUICR_ALPN = "quicr-v1";
+  const uint8_t PADDING_MSG_PREFIX_SIZE = 12;
+  const uint8_t PADDED_MSG_PREFIX[12] {0, 0, 0xF, 0xF,
+                                       0, 0, 0xA, 0xA,
+                                       0, 0, 0XF, 0xF };
 
   struct OutData {
     std::vector<uint8_t> bytes;
