@@ -239,8 +239,8 @@ int pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode,
 
         // TODO: Add config to set this value. This will change the loop select
         //   wait time to delta value in microseconds. Default is <= 10 seconds
-        if (targ->delta_t > 20000)
-          targ->delta_t = 20000;
+        if (targ->delta_t > 3000)
+          targ->delta_t = 2000;
 
         // Stop loop if shutting down
         if (transport->status() == TransportStatus::Shutdown) {
@@ -517,10 +517,9 @@ PicoQuicTransport::start()
    */
   picoquic_init_transport_parameters(&local_tp_options, 1);
   local_tp_options.max_datagram_frame_size = 1280;
-  local_tp_options.max_packet_size = 1450;
-
-  local_tp_options.max_ack_delay = 3000000;
-  local_tp_options.min_ack_delay = 500000;
+//  local_tp_options.max_packet_size = 1450;
+//  local_tp_options.max_ack_delay = 3000000;
+//  local_tp_options.min_ack_delay = 500000;
 
   picoquic_set_default_tp(quic_ctx, &local_tp_options);
 
@@ -748,13 +747,8 @@ void PicoQuicTransport::sendTxData(StreamContext *stream_cnx,
         logger.log(LogLevel::warn, log_msg.str());
       }
 
-    } else if (max_len >= PADDING_MSG_PREFIX_SIZE) {
+    } else if (max_len >= PADDING_MSG_PREFIX_SIZE && true == false) {
       // Not enough data to send, send padded message
-      if (out_data.value().bytes.size() > 1280)
-        std::cout << "Sending padding frame " << max_len
-                  << " >= " << out_data.value().bytes.size()
-                  << " out_data: " << stream_cnx->tx_data.size() << std::endl;
-
       uint8_t* buf = NULL;
 
       if (stream_cnx->stream_id == 0)
