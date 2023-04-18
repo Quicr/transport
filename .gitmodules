@@ -1,6 +1,7 @@
 [submodule "boringssl"]
 	path = dependencies/boringssl
 	url = https://github.com/google/boringssl
+	#url = https://github.com/Quicr/boringssl
 	branch = master
 [submodule "picotls"]
 	path = dependencies/picotls

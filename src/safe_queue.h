@@ -6,6 +6,7 @@
 #include <mutex>
 #include <optional>
 #include <queue>
+#include <atomic>
 #include <unistd.h>
 #include <condition_variable>
 
@@ -46,13 +47,16 @@ public:
    */
   bool push(T const& elem)
   {
+    if (is_full) // Avoid lock contention caused by mutex
+      return false;
+
     std::lock_guard<std::mutex> lock(mutex);
 
-    if (limit && queue.size() >= limit) {
-      return false;
-    }
-
     queue.push(elem);
+
+    if (limit && queue.size() >= limit) {
+      is_full = true;
+    }
 
     cv.notify_one();
 
@@ -68,7 +72,7 @@ public:
   {
     std::lock_guard<std::mutex> lock(mutex);
 
-    return popInternal();
+    return pop_internal();
   }
 
   /**
@@ -91,11 +95,11 @@ public:
   * @brief Remove (aka pop) the first object from queue
   *
   */
-  void removeFront()
+  void pop_front()
   {
     std::lock_guard<std::mutex> lock(mutex);
 
-    removeFrontInternal();
+    pop_front_internal();
   }
 
 
@@ -116,7 +120,7 @@ public:
 
     cv.wait(lock, [&]() { return (stop_waiting || (queue.size() > 0)); });
 
-    return popInternal();
+    return pop_internal();
   }
 
   /**
@@ -157,7 +161,7 @@ private:
    *
    * @details The mutex must be locked by the caller
    */
-  std::optional<T> popInternal()
+  std::optional<T> pop_internal()
   {
     if (queue.empty()) {
       return std::nullopt;
@@ -165,6 +169,9 @@ private:
 
     auto elem = queue.front();
     queue.pop();
+
+    if (queue.size() < limit)
+      is_full = false;
 
     if (queue.size() > 0) {
       cv.notify_one();
@@ -178,11 +185,14 @@ private:
  *
  * @details The mutex must be locked by the caller
  */
-  void removeFrontInternal()
+  void pop_front_internal()
   {
     if (queue.empty()) {
       return;
     }
+
+    if (queue.size() < limit)
+      is_full = false;
 
     queue.pop();
 
@@ -192,6 +202,7 @@ private:
   }
 
 
+  std::atomic<bool> is_full;    // Indicates if queue is full
   bool stop_waiting;            // Instruct threads to stop waiting
   uint32_t limit;               // Limit of number of messages in queue
   std::condition_variable cv;   // Signaling for thread syncronization
