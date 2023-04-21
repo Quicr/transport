@@ -15,6 +15,7 @@
 #endif
 
 #include <ctime>
+#include <iomanip>
 #include "picoquic_utils.h"
 #include "picoquic_internal.h"
 #include "transport_picoquic.h"
@@ -40,6 +41,15 @@ int pq_event_cb(picoquic_cnx_t* cnx,
     return PICOQUIC_ERROR_UNEXPECTED_ERROR;
   }
 
+  auto now = std::chrono::system_clock::now();
+  const auto nowAsTimeT = std::chrono::system_clock::to_time_t(now);
+  const auto nowUs = std::chrono::duration_cast<std::chrono::microseconds>(
+                                                 now.time_since_epoch()) % 1000000;
+
+  std::ostringstream timestamp;
+  timestamp << std::put_time(std::localtime(&nowAsTimeT), "%m-%d-%Y %H:%M:%S")
+            << "." << std::setfill('0') << std::setw(6) << nowUs.count()
+            << std::setfill(' ') << " " << std::setw(6) << std::right;
   switch (fin_or_event) {
 
     case picoquic_callback_prepare_datagram:
@@ -67,14 +77,13 @@ int pq_event_cb(picoquic_cnx_t* cnx,
     case picoquic_callback_datagram_spurious:
       // TODO: Add metrics for spurious datagrams
       // delayed ack
-      //std::cout << "spurious DGRAM length: " << length << std::endl;
+      std::cout << timestamp.str() << "spurious DGRAM length: " << length << std::endl;
       break;
 
     case picoquic_callback_datagram_lost:
       // TODO: Add metrics for lost datagrams
-      //std::cout << "Lost DGRAM length " << length << std::endl;
+      std::cout << timestamp.str() << "Lost DGRAM length " << length << std::endl;
       break;
-
 
     case picoquic_callback_datagram:
     {

@@ -84,7 +84,7 @@ int main() {
   cmdLogger logger;
   Delegate d(logger);
   TransportRemote serverIp =
-      TransportRemote{"127.0.0.1", 1234, TransportProtocol::QUIC};
+      TransportRemote{"127.0.0.1", 33439, TransportProtocol::QUIC};
   TransportConfig tconfig { .tls_cert_filename = "./server-cert.pem",
                            .tls_key_filename = "./server-key.pem" };
   auto server = ITransport::make_server_transport(serverIp, tconfig, d, logger);
@@ -92,7 +92,7 @@ int main() {
 
   d.setServerTransport(server);
 
-  std::this_thread::sleep_for(std::chrono::seconds(60));
+  std::this_thread::sleep_for(std::chrono::seconds(900));
 
   server.reset();
 
