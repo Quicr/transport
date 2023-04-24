@@ -60,6 +60,7 @@ int pq_event_cb(picoquic_cnx_t* cnx,
         stream_cnx = transport->getZeroStreamContext(cnx);
       }
 
+      transport->logger.log(LogLevel::info, "Send datagram");
       transport->sendTxData(stream_cnx, bytes, length);
       break;
     }
