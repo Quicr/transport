@@ -80,10 +80,13 @@ int pq_event_cb(picoquic_cnx_t* cnx,
       std::cout << timestamp.str() << "spurious DGRAM length: " << length << std::endl;
       break;
 
-    case picoquic_callback_datagram_lost:
+    case picoquic_callback_datagram_lost: {
       // TODO: Add metrics for lost datagrams
-      std::cout << timestamp.str() << "Lost DGRAM length " << length << std::endl;
+      uint32_t *msg_num = (uint32_t *)bytes;
+
+      std::cout << timestamp.str() << "Lost DGRAM num: " << *msg_num << " length: " << length << std::endl;
       break;
+    }
 
     case picoquic_callback_datagram:
     {
@@ -715,6 +718,9 @@ void PicoQuicTransport::checkTxData()
                                             1,
                                             static_cast<StreamContext*>(&s_pair.second));
         }
+        else {
+          sendTxData(&s_pair.second, NULL, 9000);
+        }
       }
     }
   }
@@ -732,6 +738,8 @@ void PicoQuicTransport::sendTxData(StreamContext *stream_cnx,
   const auto& out_data = stream_cnx->tx_data.front();
 
   if (out_data.has_value()) {
+    uint32_t *msg_num = (uint32_t *)out_data.value().bytes.data();
+    logger.log(LogLevel::info, "Send datagram num: " + std::to_string(*msg_num));
 
     // TODO: remove below debug message
     if (stream_cnx->tx_data.size() < tconfig.data_queue_size
@@ -741,16 +749,31 @@ void PicoQuicTransport::sendTxData(StreamContext *stream_cnx,
                 << " out_data: " << stream_cnx->tx_data.size() << std::endl;
     }
 
+    stream_cnx->tx_data.pop_front();
+    if (stream_cnx->stream_id == 0) {
+      picoquic_queue_datagram_frame(stream_cnx->cnx, out_data.value().bytes.size(), out_data.value().bytes.data());
+    } else {
+      picoquic_add_to_stream_with_ctx(stream_cnx->cnx, stream_cnx->stream_id,
+                                      out_data.value().bytes.data(), out_data.value().bytes.size(),
+                                      0, stream_cnx);
+    }
+
+/*
     if (max_len >= out_data.value().bytes.size()) {
+
       uint8_t* buf = NULL;
 
-      if (stream_cnx->stream_id == 0)
+      if (stream_cnx->stream_id == 0) {
+        picoquic_queue_datagram_frame(stream_cnx->cnx, out_data.value().bytes.size(), out_data.value().bytes.data());
+        stream_cnx->tx_data.pop_front();
+
         buf = picoquic_provide_datagram_buffer(bytes_ctx,
                                                out_data.value().bytes.size());
-      else
+      } else {
         buf = picoquic_provide_stream_data_buffer(bytes_ctx,
                                                   out_data->bytes.size(),
                                                   0, 1);
+      }
 
       if (buf != NULL) {
         std::memcpy(
@@ -781,7 +804,7 @@ void PicoQuicTransport::sendTxData(StreamContext *stream_cnx,
       if (buf != NULL) {
         std::memcpy(buf, PADDED_MSG_PREFIX, PADDING_MSG_PREFIX_SIZE);
       }
-    }
+    } */
   }
 }
 
