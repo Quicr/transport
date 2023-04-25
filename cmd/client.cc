@@ -81,7 +81,7 @@ cmdLogger logger;
 Delegate d(logger);
 TransportRemote server =
     TransportRemote{"relay.us-west-2.quicr.ctgpoc.com", 33439, TransportProtocol::QUIC};
-
+    //TransportRemote{"127.0.0.1", 33439, TransportProtocol::QUIC};
 TransportConfig tconfig { .tls_cert_filename = NULL, .tls_key_filename = NULL };
 auto client = ITransport::make_client_transport(server, tconfig, d, logger);
 
@@ -133,12 +133,13 @@ int main() {
       (*msg_num)++;
       auto data = bytes(data_buf, data_buf + sizeof(data_buf));
 
+      /*
       s_log.str("");
 
       s_log << "sending DGRAM, length: " << data.size();
       s_log << " msg_num: " << *msg_num;
       logger.log(LogLevel::info, s_log.str());
-
+      */
       client->enqueue(tcid, server.proto == TransportProtocol::UDP ? 1 : 0,
                       std::move(data));
     }

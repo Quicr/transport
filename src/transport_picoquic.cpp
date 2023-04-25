@@ -60,7 +60,6 @@ int pq_event_cb(picoquic_cnx_t* cnx,
         stream_cnx = transport->getZeroStreamContext(cnx);
       }
 
-      transport->logger.log(LogLevel::info, "Send datagram");
       transport->sendTxData(stream_cnx, bytes, length);
       break;
     }
@@ -88,6 +87,8 @@ int pq_event_cb(picoquic_cnx_t* cnx,
 
     case picoquic_callback_datagram:
     {
+      ++transport->dgram_received;
+      break;
       if (stream_cnx == NULL) {
         // picoquic doesn't provide stream context for datagram/stream_id==-0
         stream_cnx = transport->getZeroStreamContext(cnx);
@@ -239,6 +240,7 @@ int pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode,
         break;
 
       case picoquic_packet_loop_time_check: {
+        static uint64_t prev_time = 0;
         packet_loop_time_check_arg_t* targ = static_cast<packet_loop_time_check_arg_t*>(callback_arg);
 
         /*
@@ -251,6 +253,15 @@ int pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode,
         //   wait time to delta value in microseconds. Default is <= 10 seconds
         if (targ->delta_t > 3000)
           targ->delta_t = 2000;
+
+        if (!prev_time) prev_time = targ->current_time;
+        if (transport->isServerMode && transport->dgram_received
+            && (targ->current_time - prev_time) > 500000 ) {
+          transport->logger.log(LogLevel::info,
+                                "Messages Received: " +
+                                    std::to_string(transport->dgram_received));
+          prev_time = targ->current_time;
+        }
 
         // Stop loop if shutting down
         if (transport->status() == TransportStatus::Shutdown) {
