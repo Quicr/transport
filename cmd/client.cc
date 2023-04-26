@@ -12,15 +12,6 @@ using namespace qtransport;
 bool done = false;
 using bytes = std::vector<uint8_t>;
 
-static std::string to_hex(const std::vector<uint8_t> &data) {
-  std::stringstream hex(std::ios_base::out);
-  hex.flags(std::ios::hex);
-  for (const auto &byte : data) {
-    hex << std::setw(2) << std::setfill('0') << int(byte);
-  }
-  return hex.str();
-}
-
 struct Delegate : public ITransport::TransportDelegate {
 private:
   std::shared_ptr<ITransport> client;
@@ -64,8 +55,8 @@ public:
 
         s_log.str(std::string());
         s_log << "cid: " << context_id << " sid: " << streamId
-              << "  length: " << data->size()
-              << "  RecvMsg (" << msgcount << ")"
+              << "  length: " << data->size() << "  RecvMsg (" << msgcount
+              << ")"
               << "  msg_num: " << *msg_num;
         logger.log(LogLevel::info, s_log.str());
       } else {
@@ -82,14 +73,14 @@ Delegate d(logger);
 TransportRemote server =
     TransportRemote{"127.0.0.1", 1234, TransportProtocol::QUIC};
 
-TransportConfig tconfig { .tls_cert_filename = NULL, .tls_key_filename = NULL };
+TransportConfig tconfig{.tls_cert_filename = NULL, .tls_key_filename = NULL};
 auto client = ITransport::make_client_transport(server, tconfig, d, logger);
 
 int main() {
   d.setClientTransport(client);
 
   auto tcid = client->start();
-  uint8_t data_buf[1200] {0};
+  uint8_t data_buf[1200]{0};
 
   while (client->status() != TransportStatus::Ready) {
     logger.log(LogLevel::info, "Waiting for client to be ready");
@@ -100,48 +91,46 @@ int main() {
 
   std::stringstream s_log;
 
-/*
-  for (int i =0; i < 500; i++) {
-    auto data = bytes(data_buf, data_buf + sizeof(data_buf));
+  /*
+    for (int i =0; i < 500; i++) {
+      auto data = bytes(data_buf, data_buf + sizeof(data_buf));
 
-    s_log.str("");
+      s_log.str("");
 
-    s_log << "sending STREAM length: " << data.size();
-    logger.log(LogLevel::info, s_log.str());
-    //client->enqueue(tcid, stream_id, std::move(data)) ;
+      s_log << "sending STREAM length: " << data.size();
+      logger.log(LogLevel::info, s_log.str());
+      //client->enqueue(tcid, stream_id, std::move(data)) ;
 
-    while (true) {
-      if (client->enqueue(tcid,
-                          stream_id,
-                          std::move(data)) != TransportError::QueueFull) {
-        break;
+      while (true) {
+        if (client->enqueue(tcid,
+                            stream_id,
+                            std::move(data)) != TransportError::QueueFull) {
+          break;
+        }
+
+        logger.log(LogLevel::info, "buffer full");
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
       }
 
-      logger.log(LogLevel::info, "buffer full");
-      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  }
+    std::this_thread::sleep_for(std::chrono::seconds(3));
+  */
 
-  std::this_thread::sleep_for(std::chrono::seconds(3));
-*/
-
-  uint32_t *msg_num = (uint32_t*)&data_buf;
-  for (int i =0; i < 10000; i++) {
+  uint32_t *msg_num = (uint32_t *)&data_buf;
+  for (int i = 0; i < 10000; i++) {
     (*msg_num)++;
     auto data = bytes(data_buf, data_buf + sizeof(data_buf));
 
     s_log.str("");
 
     s_log << "sending DGRAM, length: " << data.size();
-    s_log << " msg_num: " << *msg_num ;
+    s_log << " msg_num: " << *msg_num;
     logger.log(LogLevel::info, s_log.str());
 
-    while (client->enqueue(
-                  tcid,
-                  server.proto == TransportProtocol::UDP ? 1 : 0,
-                  std::move(data)) == TransportError::QueueFull)
+    while (client->enqueue(tcid, server.proto == TransportProtocol::UDP ? 1 : 0,
+                           std::move(data)) == TransportError::QueueFull)
       std::this_thread::sleep_for(std::chrono::microseconds(100));
   }
 
@@ -150,5 +139,4 @@ int main() {
   client->closeStream(tcid, stream_id);
 
   client.reset();
-
 }
