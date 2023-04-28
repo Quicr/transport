@@ -704,57 +704,57 @@ void PicoQuicTransport::sendTxData(StreamContext *stream_cnx,
                               size_t max_len)
 {
   for (int i=0; i < tconfig.data_queue_size; i++) {
-    const auto& out_data = stream_cnx->tx_data.pop();
+    const auto &out_data = stream_cnx->tx_data.pop();
 
-  if (out_data.has_value()) {
+    if (out_data.has_value()) {
 
-    // TODO: remove below debug message
-    if (stream_cnx->tx_data.size() < tconfig.data_queue_size
-         && stream_cnx->tx_data.size() > tconfig.data_queue_size / 2) {
-      std::cout << " context_id: " << stream_cnx->context_id
-                << " stream_id: " << stream_cnx->stream_id
-                << " out_data: " << stream_cnx->tx_data.size() << std::endl;
-    }
-
-    if (max_len >= out_data.value().bytes.size()) {
-      uint8_t* buf = NULL;
-
-      if (stream_cnx->stream_id == 0)
-        buf = picoquic_provide_datagram_buffer(bytes_ctx,
-                                               out_data.value().bytes.size());
-      else
-        buf = picoquic_provide_stream_data_buffer(bytes_ctx,
-                                                  out_data->bytes.size(),
-                                                  0, 1);
-
-      if (buf != NULL) {
-        std::memcpy(
-          buf, out_data.value().bytes.data(), out_data.value().bytes.size());
-
-        stream_cnx->tx_data.pop_front();
-
-      } else {
-        std::ostringstream log_msg;
-        log_msg << "context_id: " << stream_cnx->context_id
-                << " stream_id: " << stream_cnx->stream_id
-                << " max_len: " << max_len
-                << " bytes_len: " << out_data.value().bytes.size()
-                << " Write buffer is NULL";
-        logger.log(LogLevel::warn, log_msg.str());
+      // TODO: remove below debug message
+      if (stream_cnx->tx_data.size() < tconfig.data_queue_size && stream_cnx->tx_data.size() > tconfig.data_queue_size / 2) {
+        std::cout << " context_id: " << stream_cnx->context_id
+                  << " stream_id: " << stream_cnx->stream_id
+                  << " out_data: " << stream_cnx->tx_data.size() << std::endl;
       }
 
-    } else if (max_len >= PADDING_MSG_PREFIX_SIZE && true == false) {
-      // Not enough data to send, send padded message
-      uint8_t* buf = NULL;
+      if (max_len >= out_data.value().bytes.size()) {
+        uint8_t *buf = NULL;
 
-      if (stream_cnx->stream_id == 0)
-        buf = picoquic_provide_datagram_buffer(bytes_ctx, max_len);
-      else
-        buf = picoquic_provide_stream_data_buffer(bytes_ctx,
-                                                  max_len,
-                                                  0, 1);
-      if (buf != NULL) {
-        std::memcpy(buf, PADDED_MSG_PREFIX, PADDING_MSG_PREFIX_SIZE);
+        if (stream_cnx->stream_id == 0)
+          buf = picoquic_provide_datagram_buffer(bytes_ctx,
+                                                 out_data.value().bytes.size());
+        else
+          buf = picoquic_provide_stream_data_buffer(bytes_ctx,
+                                                    out_data->bytes.size(),
+                                                    0, 1);
+
+        if (buf != NULL) {
+          std::memcpy(
+                  buf, out_data.value().bytes.data(), out_data.value().bytes.size());
+
+          stream_cnx->tx_data.pop_front();
+
+        } else {
+          std::ostringstream log_msg;
+          log_msg << "context_id: " << stream_cnx->context_id
+                  << " stream_id: " << stream_cnx->stream_id
+                  << " max_len: " << max_len
+                  << " bytes_len: " << out_data.value().bytes.size()
+                  << " Write buffer is NULL";
+          logger.log(LogLevel::warn, log_msg.str());
+        }
+
+      } else if (max_len >= PADDING_MSG_PREFIX_SIZE && true == false) {
+        // Not enough data to send, send padded message
+        uint8_t *buf = NULL;
+
+        if (stream_cnx->stream_id == 0)
+          buf = picoquic_provide_datagram_buffer(bytes_ctx, max_len);
+        else
+          buf = picoquic_provide_stream_data_buffer(bytes_ctx,
+                                                    max_len,
+                                                    0, 1);
+        if (buf != NULL) {
+          std::memcpy(buf, PADDED_MSG_PREFIX, PADDING_MSG_PREFIX_SIZE);
+        }
       }
     }
   }
