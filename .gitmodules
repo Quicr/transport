@@ -6,10 +6,10 @@
 [submodule "picotls"]
 	path = dependencies/picotls
 	#url = https://github.com/h2o/picotls
-	url = https://github.com/TimEvens/picotls
+	url = https://github.com/quicr/picotls
 	branch = master
 [submodule "picoquic"]
 	path = dependencies/picoquic
 	#url = https://github.com/private-octopus/picoquic
-	url = https://github.com/TimEvens/picoquic
+	url = https://github.com/quicr/picoquic
 	branch = master

@@ -80,8 +80,8 @@ public:
 cmdLogger logger;
 Delegate d(logger);
 TransportRemote server =
-    TransportRemote{"relay.us-west-2.quicr.ctgpoc.com", 33439, TransportProtocol::QUIC};
-    //TransportRemote{"127.0.0.1", 33439, TransportProtocol::QUIC};
+    TransportRemote{"127.0.0.1", 1234, TransportProtocol::QUIC};
+
 TransportConfig tconfig { .tls_cert_filename = NULL, .tls_key_filename = NULL };
 auto client = ITransport::make_client_transport(server, tconfig, d, logger);
 
@@ -128,28 +128,28 @@ int main() {
 */
 
   uint32_t *msg_num = (uint32_t*)&data_buf;
-  while (true) {
-    for (int i =0; i < 25; i++) {
-      (*msg_num)++;
-      auto data = bytes(data_buf, data_buf + sizeof(data_buf));
+  for (int i =0; i < 10000; i++) {
+    (*msg_num)++;
+    auto data = bytes(data_buf, data_buf + sizeof(data_buf));
 
-      /*
-      s_log.str("");
+    s_log.str("");
 
-      s_log << "sending DGRAM, length: " << data.size();
-      s_log << " msg_num: " << *msg_num;
-      logger.log(LogLevel::info, s_log.str());
-      */
-      client->enqueue(tcid, server.proto == TransportProtocol::UDP ? 1 : 0,
-                      std::move(data));
-    }
+    s_log << "sending DGRAM, length: " << data.size();
+    s_log << " msg_num: " << *msg_num ;
+    logger.log(LogLevel::info, s_log.str());
 
-    std::this_thread::sleep_for(std::chrono::milliseconds (50));
+    while (client->enqueue(
+                  tcid,
+                  server.proto == TransportProtocol::UDP ? 1 : 0,
+                  std::move(data)) == TransportError::QueueFull)
+      std::this_thread::sleep_for(std::chrono::microseconds(100));
   }
 
+  std::this_thread::sleep_for(std::chrono::seconds(20));
 
   client->closeStream(tcid, stream_id);
 
   client.reset();
 
 }
+

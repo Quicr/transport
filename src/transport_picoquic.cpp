@@ -15,7 +15,6 @@
 #endif
 
 #include <ctime>
-#include <iomanip>
 #include "picoquic_utils.h"
 #include "picoquic_internal.h"
 #include "transport_picoquic.h"
@@ -41,15 +40,6 @@ int pq_event_cb(picoquic_cnx_t* cnx,
     return PICOQUIC_ERROR_UNEXPECTED_ERROR;
   }
 
-  auto now = std::chrono::system_clock::now();
-  const auto nowAsTimeT = std::chrono::system_clock::to_time_t(now);
-  const auto nowUs = std::chrono::duration_cast<std::chrono::microseconds>(
-                                                 now.time_since_epoch()) % 1000000;
-
-  std::ostringstream timestamp;
-  timestamp << std::put_time(std::localtime(&nowAsTimeT), "%m-%d-%Y %H:%M:%S")
-            << "." << std::setfill('0') << std::setw(6) << nowUs.count()
-            << std::setfill(' ') << " " << std::setw(6) << std::right;
   switch (fin_or_event) {
 
     case picoquic_callback_prepare_datagram:
@@ -77,21 +67,17 @@ int pq_event_cb(picoquic_cnx_t* cnx,
     case picoquic_callback_datagram_spurious:
       // TODO: Add metrics for spurious datagrams
       // delayed ack
-      std::cout << timestamp.str() << "spurious DGRAM length: " << length << std::endl;
+      //std::cout << "spurious DGRAM length: " << length << std::endl;
       break;
 
-    case picoquic_callback_datagram_lost: {
+    case picoquic_callback_datagram_lost:
       // TODO: Add metrics for lost datagrams
-      uint32_t *msg_num = (uint32_t *)bytes;
-
-      std::cout << timestamp.str() << "Lost DGRAM num: " << *msg_num << " length: " << length << std::endl;
+      //std::cout << "Lost DGRAM length " << length << std::endl;
       break;
-    }
+
 
     case picoquic_callback_datagram:
     {
-      ++transport->dgram_received;
-      break;
       if (stream_cnx == NULL) {
         // picoquic doesn't provide stream context for datagram/stream_id==-0
         stream_cnx = transport->getZeroStreamContext(cnx);
@@ -243,7 +229,6 @@ int pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode,
         break;
 
       case picoquic_packet_loop_time_check: {
-        static uint64_t prev_time = 0;
         packet_loop_time_check_arg_t* targ = static_cast<packet_loop_time_check_arg_t*>(callback_arg);
 
         /*
@@ -256,15 +241,6 @@ int pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode,
         //   wait time to delta value in microseconds. Default is <= 10 seconds
         if (targ->delta_t > 3000)
           targ->delta_t = 2000;
-
-        if (!prev_time) prev_time = targ->current_time;
-        if (transport->isServerMode && transport->dgram_received
-            && (targ->current_time - prev_time) > 500000 ) {
-          transport->logger.log(LogLevel::info,
-                                "Messages Received: " +
-                                    std::to_string(transport->dgram_received));
-          prev_time = targ->current_time;
-        }
 
         // Stop loop if shutting down
         if (transport->status() == TransportStatus::Shutdown) {
@@ -718,9 +694,6 @@ void PicoQuicTransport::checkTxData()
                                             1,
                                             static_cast<StreamContext*>(&s_pair.second));
         }
-        else {
-          sendTxData(&s_pair.second, NULL, 9000);
-        }
       }
     }
   }
@@ -733,16 +706,55 @@ void PicoQuicTransport::sendTxData(StreamContext *stream_cnx,
   for (int i=0; i < tconfig.data_queue_size; i++) {
     const auto& out_data = stream_cnx->tx_data.pop();
 
-      if (out_data.has_value()) {
-      uint32_t *msg_num = (uint32_t *) out_data.value().bytes.data();
-      logger.log(LogLevel::info, "Send datagram num: " + std::to_string(*msg_num));
+  if (out_data.has_value()) {
 
-      if (stream_cnx->stream_id == 0) {
-        picoquic_queue_datagram_frame(stream_cnx->cnx, out_data.value().bytes.size(), out_data.value().bytes.data());
+    // TODO: remove below debug message
+    if (stream_cnx->tx_data.size() < tconfig.data_queue_size
+         && stream_cnx->tx_data.size() > tconfig.data_queue_size / 2) {
+      std::cout << " context_id: " << stream_cnx->context_id
+                << " stream_id: " << stream_cnx->stream_id
+                << " out_data: " << stream_cnx->tx_data.size() << std::endl;
+    }
+
+    if (max_len >= out_data.value().bytes.size()) {
+      uint8_t* buf = NULL;
+
+      if (stream_cnx->stream_id == 0)
+        buf = picoquic_provide_datagram_buffer(bytes_ctx,
+                                               out_data.value().bytes.size());
+      else
+        buf = picoquic_provide_stream_data_buffer(bytes_ctx,
+                                                  out_data->bytes.size(),
+                                                  0, 1);
+
+      if (buf != NULL) {
+        std::memcpy(
+          buf, out_data.value().bytes.data(), out_data.value().bytes.size());
+
+        stream_cnx->tx_data.pop_front();
+
       } else {
-        picoquic_add_to_stream_with_ctx(stream_cnx->cnx, stream_cnx->stream_id,
-                                        out_data.value().bytes.data(), out_data.value().bytes.size(),
-                                        0, stream_cnx);
+        std::ostringstream log_msg;
+        log_msg << "context_id: " << stream_cnx->context_id
+                << " stream_id: " << stream_cnx->stream_id
+                << " max_len: " << max_len
+                << " bytes_len: " << out_data.value().bytes.size()
+                << " Write buffer is NULL";
+        logger.log(LogLevel::warn, log_msg.str());
+      }
+
+    } else if (max_len >= PADDING_MSG_PREFIX_SIZE && true == false) {
+      // Not enough data to send, send padded message
+      uint8_t* buf = NULL;
+
+      if (stream_cnx->stream_id == 0)
+        buf = picoquic_provide_datagram_buffer(bytes_ctx, max_len);
+      else
+        buf = picoquic_provide_stream_data_buffer(bytes_ctx,
+                                                  max_len,
+                                                  0, 1);
+      if (buf != NULL) {
+        std::memcpy(buf, PADDED_MSG_PREFIX, PADDING_MSG_PREFIX_SIZE);
       }
     }
   }
