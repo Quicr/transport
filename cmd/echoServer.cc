@@ -8,6 +8,7 @@
 
 using namespace qtransport;
 
+/*
 static std::string to_hex(const std::vector<uint8_t> &data) {
   std::stringstream hex(std::ios_base::out);
   hex.flags(std::ios::hex);
@@ -16,6 +17,7 @@ static std::string to_hex(const std::vector<uint8_t> &data) {
   }
   return hex.str();
 }
+*/
 
 struct Delegate : public ITransport::TransportDelegate {
 private:
