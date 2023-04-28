@@ -123,6 +123,7 @@ public:
    */
   LogHandler& logger;
   bool isServerMode;
+  uint64_t dgram_received {0};
 
 
 private:

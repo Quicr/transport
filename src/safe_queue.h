@@ -41,16 +41,21 @@ public:
   /**
    * @brief inserts element at the end of queue
    *
+   * @details Inserts element at the end of queue. If queue is at max size,
+   *    the front element will be popped/removed to make room.
+   *    In this sense, the queue is sliding forward with every new message
+   *    added to queue.
+   *
    * @param elem
    * @return True if successfully pushed, false if not.  The cause for false is
    * that the queue is full.
    */
   bool push(T const& elem)
   {
-    if (is_full) // Avoid lock contention caused by mutex
-      return false;
-
     std::lock_guard<std::mutex> lock(mutex);
+
+    if (queue.size() >= limit) // Make room by removing first element
+      queue.pop();
 
     queue.push(elem);
 
