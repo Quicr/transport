@@ -2,6 +2,7 @@
 #include <cstring> // memcpy
 #include <iostream>
 #include <sstream>
+#include <iomanip>
 #include <thread>
 #include <unistd.h>
 
@@ -20,6 +21,20 @@
 #include "transport_picoquic.h"
 
 using namespace qtransport;
+
+const std::string getTimestampString() {
+    const auto now = std::chrono::system_clock::now();
+    const auto nowAsTimeT = std::chrono::system_clock::to_time_t(now);
+    const auto nowUs = std::chrono::duration_cast<std::chrono::microseconds>(
+            now.time_since_epoch()) % 1000000;
+
+    std::ostringstream timestamp;
+    timestamp << std::put_time(std::localtime(&nowAsTimeT), "%m-%d-%Y %H:%M:%S")
+        << '.' << std::setfill('0') << std::setw(6) << nowUs.count()
+        << std::setfill(' ') << " " << std::setw(6) << std::right;
+
+    return timestamp.str();
+}
 
 /*
  * PicoQuic Callbacks
@@ -49,7 +64,7 @@ int pq_event_cb(picoquic_cnx_t* cnx,
         // picoquic doesn't provide stream context for datagram/stream_id==-0
         stream_cnx = transport->getZeroStreamContext(cnx);
       }
-
+      transport->metrics.dgram_prepare_send++;
       transport->sendTxData(stream_cnx, bytes, length);
       break;
     }
@@ -61,18 +76,20 @@ int pq_event_cb(picoquic_cnx_t* cnx,
       //      log_msg << "Got datagram ack send_time: " << stream_id
       //              << " bytes length: " << length;
       //      transport->logger.log(LogLevel::info, log_msg.str());
-
+      transport->metrics.dgram_ack++;
       break;
 
     case picoquic_callback_datagram_spurious:
       // TODO: Add metrics for spurious datagrams
       // delayed ack
       //std::cout << "spurious DGRAM length: " << length << std::endl;
+      transport->metrics.dgram_spurious++;
       break;
 
     case picoquic_callback_datagram_lost:
       // TODO: Add metrics for lost datagrams
       //std::cout << "Lost DGRAM length " << length << std::endl;
+      transport->metrics.dgram_lost++;
       break;
 
 
@@ -82,6 +99,8 @@ int pq_event_cb(picoquic_cnx_t* cnx,
         // picoquic doesn't provide stream context for datagram/stream_id==-0
         stream_cnx = transport->getZeroStreamContext(cnx);
       }
+
+      transport->metrics.dgram_received++;
       transport->on_recv_data(stream_cnx, bytes, length);
       break;
     }
@@ -229,6 +248,9 @@ int pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode,
         break;
 
       case picoquic_packet_loop_time_check: {
+        static uint64_t prev_time = 0;
+        static qtransport::PicoQuicTransport::Metrics prev_metrics;
+
         packet_loop_time_check_arg_t* targ = static_cast<packet_loop_time_check_arg_t*>(callback_arg);
 
         /*
@@ -241,6 +263,31 @@ int pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode,
         //   wait time to delta value in microseconds. Default is <= 10 seconds
         if (targ->delta_t > 3000)
           targ->delta_t = 2000;
+
+        if (!prev_time) {
+          prev_time = targ->current_time;
+          prev_metrics = transport->metrics;
+        }
+
+        if (targ->current_time - prev_time > 500000) {
+
+          if (transport->metrics != prev_metrics) {
+              std::ostringstream log_msg;
+              log_msg << "Metrics: " << std::endl
+                      << "   dgram_recv         : " << transport->metrics.dgram_received << std::endl
+                      << "   dgram_sent         : " << transport->metrics.dgram_sent << std::endl
+                      << "   dgram_prepare_send : " << transport->metrics.dgram_prepare_send << std::endl
+                      << "   dgram_lost         : " << transport->metrics.dgram_lost << std::endl
+                      << "   dgram_ack          : " << transport->metrics.dgram_ack << std::endl
+                      << "   dgram_spurious     : " << transport->metrics.dgram_spurious
+                      << " (" << transport->metrics.dgram_spurious + transport->metrics.dgram_ack << ")" << std::endl;
+
+              transport->logger.log(LogLevel::info, log_msg.str());
+              prev_metrics = transport->metrics;
+          }
+
+          prev_time = targ->current_time;
+        }
 
         // Stop loop if shutting down
         if (transport->status() == TransportStatus::Shutdown) {
@@ -707,6 +754,7 @@ void PicoQuicTransport::sendTxData(StreamContext *stream_cnx,
     const auto &out_data = stream_cnx->tx_data.pop();
 
     if (out_data.has_value()) {
+      metrics.dgram_sent++;
 
       // TODO: remove below debug message
       if (stream_cnx->tx_data.size() < tconfig.data_queue_size && stream_cnx->tx_data.size() > tconfig.data_queue_size / 2) {

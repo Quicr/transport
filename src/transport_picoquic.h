@@ -34,6 +34,17 @@ public:
                                        0, 0, 0xA, 0xA,
                                        0, 0, 0XF, 0xF };
 
+  struct Metrics {
+      uint64_t dgram_ack;
+      uint64_t dgram_spurious;
+      uint64_t dgram_prepare_send;
+      uint64_t dgram_sent;
+      uint64_t dgram_lost;
+      uint64_t dgram_received;
+
+      auto operator<=>(const Metrics&) const = default;
+  } metrics {0};
+
   struct OutData {
     std::vector<uint8_t> bytes;
   };
