@@ -61,7 +61,7 @@ public:
         */
         prev_msg_num = *msg_num;
 
-        server->enqueue(context_id, streamId, std::move(data.value()));
+        //server->enqueue(context_id, streamId, std::move(data.value()));
       } else {
         break;
       }
