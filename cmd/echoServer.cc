@@ -8,15 +8,6 @@
 
 using namespace qtransport;
 
-static std::string to_hex(const std::vector<uint8_t> &data) {
-  std::stringstream hex(std::ios_base::out);
-  hex.flags(std::ios::hex);
-  for (const auto &byte : data) {
-    hex << std::setw(2) << std::setfill('0') << int(byte);
-  }
-  return hex.str();
-}
-
 struct Delegate : public ITransport::TransportDelegate {
 private:
   std::shared_ptr<ITransport> server;
@@ -61,9 +52,9 @@ public:
 
         s_log.str(std::string());
         s_log << "cid: " << context_id << " sid: " << streamId
-              << " length: " << data->size()
-              << "  RecvMsg (" << msgcount << ")"
-              << "  msg_num: " << *msg_num << " (" << ((*msg_num) - prev_msg_num) << ")";
+              << " length: " << data->size() << "  RecvMsg (" << msgcount << ")"
+              << "  msg_num: " << *msg_num << " ("
+              << ((*msg_num) - prev_msg_num) << ")";
 
         logger.log(LogLevel::info, s_log.str());
 
@@ -85,8 +76,8 @@ int main() {
   Delegate d(logger);
   TransportRemote serverIp =
       TransportRemote{"127.0.0.1", 1234, TransportProtocol::QUIC};
-  TransportConfig tconfig { .tls_cert_filename = "./server-cert.pem",
-                           .tls_key_filename = "./server-key.pem" };
+  TransportConfig tconfig{.tls_cert_filename = "./server-cert.pem",
+                          .tls_key_filename = "./server-key.pem"};
   auto server = ITransport::make_server_transport(serverIp, tconfig, d, logger);
   server->start();
 
