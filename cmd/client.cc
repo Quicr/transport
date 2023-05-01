@@ -96,13 +96,14 @@ int main() {
   uint32_t *msg_num = (uint32_t *)&data_buf;
 
   while (true) {
-      for (int i = 0; i < 25; i++) {
+    for (int i = 0; i < 25; i++) {
       (*msg_num)++;
       auto data = bytes(data_buf, data_buf + sizeof(data_buf));
 
       client->enqueue(tcid, server.proto == TransportProtocol::UDP ? 1 : 0,
-                      std::move(data));
+                        std::move(data));
     }
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
   }
 
   client->closeStream(tcid, stream_id);
