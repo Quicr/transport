@@ -282,7 +282,7 @@ int pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode,
                       << "   dgram_recv         : " << transport->metrics.dgram_received << std::endl
                       << "   dgram_sent         : " << transport->metrics.dgram_sent << std::endl
                       << "   dgram_prepare_send : " << transport->metrics.dgram_prepare_send
-                      << " ( " << transport->metrics.dgram_prepare_send - prev_metrics.dgram_prepare_send << ")" << std::endl
+                      << " (" << transport->metrics.dgram_prepare_send - prev_metrics.dgram_prepare_send << ")" << std::endl
                       << "   dgram_lost         : " << transport->metrics.dgram_lost << std::endl
                       << "   dgram_ack          : " << transport->metrics.dgram_ack << std::endl
                       << "   dgram_spurious     : " << transport->metrics.dgram_spurious
