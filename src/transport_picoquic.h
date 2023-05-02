@@ -42,6 +42,8 @@ public:
       uint64_t dgram_lost;
       uint64_t dgram_received;
 
+      uint64_t time_checks;
+
       auto operator<=>(const Metrics&) const = default;
   } metrics {0};
 

@@ -263,22 +263,26 @@ int pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode,
 
         // TODO: Add config to set this value. This will change the loop select
         //   wait time to delta value in microseconds. Default is <= 10 seconds
-        if (targ->delta_t > 3000)
-          targ->delta_t = 2000;
+        if (targ->delta_t > 30000)
+          targ->delta_t = 30000;
 
         if (!prev_time) {
           prev_time = targ->current_time;
           prev_metrics = transport->metrics;
         }
 
+        transport->metrics.time_checks++;
+
         if (targ->current_time - prev_time > 500000) {
 
           if (transport->metrics != prev_metrics) {
               std::ostringstream log_msg;
               log_msg << "Metrics: " << std::endl
+                      << "   time checks        : " << transport->metrics.time_checks << std::endl
                       << "   dgram_recv         : " << transport->metrics.dgram_received << std::endl
                       << "   dgram_sent         : " << transport->metrics.dgram_sent << std::endl
-                      << "   dgram_prepare_send : " << transport->metrics.dgram_prepare_send << std::endl
+                      << "   dgram_prepare_send : " << transport->metrics.dgram_prepare_send
+                      << " ( " << transport->metrics.dgram_prepare_send - prev_metrics.dgram_prepare_send << ")" << std::endl
                       << "   dgram_lost         : " << transport->metrics.dgram_lost << std::endl
                       << "   dgram_ack          : " << transport->metrics.dgram_ack << std::endl
                       << "   dgram_spurious     : " << transport->metrics.dgram_spurious
@@ -735,7 +739,8 @@ void PicoQuicTransport::checkTxData()
 
       if (s_pair.second.tx_data.size()) {
         // Instruct picoquic to run prepare data to send callbacks now since data is pending to be sent
-        picoquic_reinsert_by_wake_time(s_pair.second.cnx->quic, s_pair.second.cnx, cur_time);
+        //picoquic_reinsert_by_wake_time(s_pair.second.cnx->quic, s_pair.second.cnx, cur_time);
+        sendTxData(&s_pair.second, NULL, 1400);
 
         if (s_pair.first != 0) {
           (void)picoquic_mark_active_stream(s_pair.second.cnx,
