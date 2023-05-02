@@ -273,6 +273,7 @@ int pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode,
 
         transport->metrics.time_checks++;
 
+
         if (targ->current_time - prev_time > 500000) {
 
           if (transport->metrics != prev_metrics) {
@@ -580,11 +581,21 @@ PicoQuicTransport::start()
   cbNotifyThread = std::thread(&PicoQuicTransport::cbNotifier, this);
 
   TransportContextId cid = 0;
+  std::ostringstream log_msg;
 
   if (isServerMode) {
+
+    log_msg << "Starting server, listening on "
+            << serverInfo.host_or_ip << ':' << serverInfo.port;
+    logger.log(LogLevel::info, log_msg.str());
+
     picoQuicThread = std::thread(&PicoQuicTransport::server, this);
 
   } else {
+    log_msg << "Connecting to server "
+            << serverInfo.host_or_ip << ':' << serverInfo.port;
+    logger.log(LogLevel::info, log_msg.str());
+
     cid = createClient();
     picoQuicThread = std::thread(&PicoQuicTransport::client, this, cid);
   }

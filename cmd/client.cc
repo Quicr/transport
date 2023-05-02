@@ -72,13 +72,23 @@ public:
 
 cmdLogger logger;
 Delegate d(logger);
-TransportRemote server =
-    //TransportRemote{"127.0.0.1", 1234, TransportProtocol::QUIC};
-    TransportRemote{"relay.us-west-2.quicr.ctgpoc.com", 33439, TransportProtocol::QUIC};
-TransportConfig tconfig{.tls_cert_filename = NULL, .tls_key_filename = NULL};
-auto client = ITransport::make_client_transport(server, tconfig, d, logger);
 
 int main() {
+  char *envVar;
+
+  TransportRemote server =
+      TransportRemote{"127.0.0.1", 1234, TransportProtocol::QUIC};
+
+  TransportConfig tconfig{.tls_cert_filename = NULL, .tls_key_filename = NULL};
+
+  if ( (envVar = getenv("RELAY_HOST")))
+    server.host_or_ip = envVar;
+
+  if ( (envVar = getenv("RELAY_PORT")))
+    server.port = atoi(envVar);
+
+  auto client = ITransport::make_client_transport(server, tconfig, d, logger);
+
   d.setClientTransport(client);
 
   auto tcid = client->start();

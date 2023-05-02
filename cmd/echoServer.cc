@@ -61,7 +61,7 @@ public:
         */
         prev_msg_num = *msg_num;
 
-        //server->enqueue(context_id, streamId, std::move(data.value()));
+        server->enqueue(context_id, streamId, std::move(data.value()));
       } else {
         break;
       }
@@ -73,12 +73,18 @@ public:
 };
 
 int main() {
+  char *envVar;
   cmdLogger logger;
   Delegate d(logger);
   TransportRemote serverIp =
-      TransportRemote{"127.0.0.1", 33439, TransportProtocol::QUIC};
+      TransportRemote{"127.0.0.1", 1234, TransportProtocol::QUIC};
   TransportConfig tconfig{.tls_cert_filename = "./server-cert.pem",
                           .tls_key_filename = "./server-key.pem"};
+
+
+  if ( (envVar = getenv("RELAY_PORT")))
+    serverIp.port = atoi(envVar);
+
   auto server = ITransport::make_server_transport(serverIp, tconfig, d, logger);
   server->start();
 
