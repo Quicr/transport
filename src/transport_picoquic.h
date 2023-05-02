@@ -35,18 +35,18 @@ public:
                                        0, 0, 0XF, 0xF };
 
   struct Metrics {
-      uint64_t dgram_ack;
-      uint64_t dgram_spurious;
-      uint64_t dgram_prepare_send;
-      uint64_t dgram_sent;
-      uint64_t send_null_bytes_ctx;
-      uint64_t dgram_lost;
-      uint64_t dgram_received;
+      uint64_t dgram_ack {0};
+      uint64_t dgram_spurious {0};
+      uint64_t dgram_prepare_send {0};
+      uint64_t dgram_sent {0};
+      uint64_t send_null_bytes_ctx {0};
+      uint64_t dgram_lost {0};
+      uint64_t dgram_received {0};
 
       uint64_t time_checks;
 
       auto operator<=>(const Metrics&) const = default;
-  } metrics {0};
+  } metrics;
 
   struct OutData {
     std::vector<uint8_t> bytes;
