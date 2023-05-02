@@ -96,7 +96,7 @@ public:
       return std::nullopt;
     }
 
-    return queue.front();;
+    return queue.front();
   }
 
   /**

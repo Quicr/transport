@@ -263,8 +263,9 @@ int pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode,
 
         // TODO: Add config to set this value. This will change the loop select
         //   wait time to delta value in microseconds. Default is <= 10 seconds
-        if (targ->delta_t > 30000)
-          targ->delta_t = 30000;
+        if (targ->delta_t > 1000) {
+          targ->delta_t = 1000;
+        }
 
         if (!prev_time) {
           prev_time = targ->current_time;
@@ -746,23 +747,24 @@ void PicoQuicTransport::checkTxData()
 
   for (auto& c_pair: active_streams) {
     for (auto &s_pair : active_streams[c_pair.first]) {
-      //      std::ostringstream log_msg;
-      //      log_msg << "pending data check, ctx: " << c_pair.first
-      //              << " stream: " << s_pair.second.stream_id << " size: " << s_pair.second.out_data.size();
-      //      logger.log(LogLevel::info, log_msg.str());
 
-      if (s_pair.second.tx_data.size()) {
-        // reinsert by wake is one way to get picoquic to callback sooner
-        //picoquic_reinsert_by_wake_time(s_pair.second.cnx->quic, s_pair.second.cnx, cur_time);
-
-        // Only send tx data here when using picoquic queueing, otherwise let the callbacks handle it
-        //sendTxData(&s_pair.second, NULL, 1400);
-
-        if (s_pair.first != 0) {
+      if (s_pair.first != 0) {
+        if (s_pair.second.tx_data.size() > 0)
           (void)picoquic_mark_active_stream(s_pair.second.cnx,
                                             s_pair.first,
                                             1,
                                             static_cast<StreamContext*>(&s_pair.second));
+      }
+      else {
+        if (s_pair.second.tx_data.size() > 0) {
+          // reinsert by wake is one way to get picoquic to callback sooner
+          //picoquic_reinsert_by_wake_time(s_pair.second.cnx->quic, s_pair.second.cnx, cur_time);
+          // Only send tx data here when using picoquic queueing, otherwise let the callbacks handle it
+          //sendTxData(&s_pair.second, NULL, 1400);
+
+          (void)picoquic_mark_datagram_ready(s_pair.second.cnx, 1);
+        } else {
+          (void)picoquic_mark_datagram_ready(s_pair.second.cnx, 0);
         }
       }
     }
@@ -792,7 +794,6 @@ void PicoQuicTransport::sendTxData(StreamContext *stream_cnx,
 
       if (max_len >= out_data.value().bytes.size()) {
         metrics.dgram_sent++;
-        stream_cnx->tx_data.pop_front();
 
         uint8_t *buf = NULL;
 
@@ -832,10 +833,15 @@ void PicoQuicTransport::sendTxData(StreamContext *stream_cnx,
         }
 
       }
+      else {
+        // Not enough data buffer to send, mark datagram is ready to send more
+        (void)picoquic_mark_datagram_ready(stream_cnx->cnx, 1);
+      }
     }
-//    else {
-//      break;
-//    }
+    else {
+      //(void)picoquic_mark_datagram_ready(stream_cnx->cnx, 0);
+      //break;
+    }
 //  }
 }
 
@@ -927,14 +933,16 @@ void PicoQuicTransport::on_new_connection(StreamContext *stream_cnx)
 void PicoQuicTransport::on_recv_data(StreamContext *stream_cnx,
                                 uint8_t* bytes, size_t length)
 {
-  if (stream_cnx == NULL || length == 0)
+  if (stream_cnx == NULL || length == 0) {
     return;
+  }
 
   std::vector<uint8_t> data(bytes, bytes + length);
   stream_cnx->rx_data.push(std::move(data));
 
-  // TODO: Remove below debug logs
+  bool too_many_in_queue = false;
   if (stream_cnx->rx_data.size() > tconfig.data_queue_size / 2) {
+    too_many_in_queue = true;
     std::cout << " context_id: " << stream_cnx->context_id
               << " stream_id: " << stream_cnx->stream_id
               << " in_data: " << stream_cnx->rx_data.size()
@@ -946,7 +954,8 @@ void PicoQuicTransport::on_recv_data(StreamContext *stream_cnx,
     std::cout << "cbNotifyQueue size: " << cbNotifyQueue.size() << std::endl;
   }
 
-  if (stream_cnx->rx_data.size() < 2
+  if (too_many_in_queue
+      || stream_cnx->rx_data.size() < 2
       || stream_cnx->in_data_cb_skip_count > 30)  {
     stream_cnx->in_data_cb_skip_count = 0;
     TransportContextId context_id = stream_cnx->context_id;
