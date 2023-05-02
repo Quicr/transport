@@ -71,6 +71,7 @@ struct TransportConfig
   const char *tls_cert_filename;            /// QUIC TLS certificate to use
   const char *tls_key_filename;             /// QUIC TLS private key to use
   const uint32_t data_queue_size {500};     /// Size of incoming and outgoing data queues
+  bool debug {false};                       /// Enable debug logging/processing
 };
 
 /**

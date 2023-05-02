@@ -39,6 +39,7 @@ public:
       uint64_t dgram_spurious;
       uint64_t dgram_prepare_send;
       uint64_t dgram_sent;
+      uint64_t send_null_bytes_ctx;
       uint64_t dgram_lost;
       uint64_t dgram_received;
 
@@ -136,6 +137,7 @@ public:
    */
   LogHandler& logger;
   bool isServerMode;
+  bool debug {false};
   uint64_t dgram_received {0};
 
 

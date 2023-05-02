@@ -274,12 +274,13 @@ int pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode,
         transport->metrics.time_checks++;
 
 
-        if (targ->current_time - prev_time > 500000) {
+        if (transport->debug && targ->current_time - prev_time > 500000) {
 
           if (transport->metrics != prev_metrics) {
               std::ostringstream log_msg;
               log_msg << "Metrics: " << std::endl
                       << "   time checks        : " << transport->metrics.time_checks << std::endl
+                      << "   send with null ctx : " << transport->metrics.send_null_bytes_ctx << std::endl
                       << "   dgram_recv         : " << transport->metrics.dgram_received << std::endl
                       << "   dgram_sent         : " << transport->metrics.dgram_sent << std::endl
                       << "   dgram_prepare_send : " << transport->metrics.dgram_prepare_send
@@ -289,7 +290,7 @@ int pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode,
                       << "   dgram_spurious     : " << transport->metrics.dgram_spurious
                       << " (" << transport->metrics.dgram_spurious + transport->metrics.dgram_ack << ")" << std::endl;
 
-              transport->logger.log(LogLevel::info, log_msg.str());
+              transport->logger.log(LogLevel::debug, log_msg.str());
               prev_metrics = transport->metrics;
           }
 
@@ -445,6 +446,8 @@ PicoQuicTransport::PicoQuicTransport(const TransportRemote& server,
   , delegate(delegate)
   , tconfig(tcfg)
 {
+  debug = tcfg.debug;
+
   if (isServerMode && tcfg.tls_cert_filename == NULL) {
     throw InvalidConfigException("Missing cert filename");
   }
@@ -749,9 +752,11 @@ void PicoQuicTransport::checkTxData()
       //      logger.log(LogLevel::info, log_msg.str());
 
       if (s_pair.second.tx_data.size()) {
-        // Instruct picoquic to run prepare data to send callbacks now since data is pending to be sent
+        // reinsert by wake is one way to get picoquic to callback sooner
         //picoquic_reinsert_by_wake_time(s_pair.second.cnx->quic, s_pair.second.cnx, cur_time);
-        sendTxData(&s_pair.second, NULL, 1400);
+
+        // Only send tx data here when using picoquic queueing, otherwise let the callbacks handle it
+        //sendTxData(&s_pair.second, NULL, 1400);
 
         if (s_pair.first != 0) {
           (void)picoquic_mark_active_stream(s_pair.second.cnx,
@@ -768,11 +773,15 @@ void PicoQuicTransport::sendTxData(StreamContext *stream_cnx,
                               [[maybe_unused]] uint8_t* bytes_ctx,
                               size_t max_len)
 {
-  for (int i=0; i < tconfig.data_queue_size; i++) {
-    const auto &out_data = stream_cnx->tx_data.pop();
+  if (bytes_ctx == NULL) {
+    metrics.send_null_bytes_ctx++;
+    return;
+  }
+
+//  for (int i=0; i < tconfig.data_queue_size; i++) {
+    const auto &out_data = stream_cnx->tx_data.front();
 
     if (out_data.has_value()) {
-      metrics.dgram_sent++;
 
       // TODO: remove below debug message
       if (stream_cnx->tx_data.size() < tconfig.data_queue_size && stream_cnx->tx_data.size() > tconfig.data_queue_size / 2) {
@@ -782,45 +791,52 @@ void PicoQuicTransport::sendTxData(StreamContext *stream_cnx,
       }
 
       if (max_len >= out_data.value().bytes.size()) {
+        metrics.dgram_sent++;
         stream_cnx->tx_data.pop_front();
-//        uint8_t *buf = NULL;
 
-        if (stream_cnx->stream_id == 0)
-          picoquic_queue_datagram_frame(stream_cnx->cnx,
-                                        out_data.value().bytes.size(),
-                                        out_data.value().bytes.data());
-//          buf = picoquic_provide_datagram_buffer(bytes_ctx,
-//                                                 out_data.value().bytes.size());
-        else
-          picoquic_add_to_stream_with_ctx(stream_cnx->cnx, stream_cnx->stream_id,
-                                          out_data.value().bytes.data(),
-                                          out_data.value().bytes.size(),
-                                          0, stream_cnx);
-//          buf = picoquic_provide_stream_data_buffer(bytes_ctx,
-//                                                    out_data->bytes.size(),
-//                                                    0, 1);
+        uint8_t *buf = NULL;
 
-//        if (buf != NULL) {
-//          std::memcpy(
-//                  buf, out_data.value().bytes.data(), out_data.value().bytes.size());
-//
-//          stream_cnx->tx_data.pop_front();
-//
-//        } else {
-//          std::ostringstream log_msg;
-//          log_msg << "context_id: " << stream_cnx->context_id
-//                  << " stream_id: " << stream_cnx->stream_id
-//                  << " max_len: " << max_len
-//                  << " bytes_len: " << out_data.value().bytes.size()
-//                  << " Write buffer is NULL";
-//          logger.log(LogLevel::warn, log_msg.str());
-//        }
+        if (stream_cnx->stream_id == 0) {
+          /*
+                    picoquic_queue_datagram_frame(stream_cnx->cnx,
+                                                  out_data.value().bytes.size(),
+                                                  out_data.value().bytes.data());
+          */
+          buf = picoquic_provide_datagram_buffer(bytes_ctx,
+                                                 out_data.value().bytes.size());
+        } else {
+          /*
+                    picoquic_add_to_stream_with_ctx(stream_cnx->cnx,
+             stream_cnx->stream_id, out_data.value().bytes.data(),
+                                                    out_data.value().bytes.size(),
+                                                    0, stream_cnx);
+          */
+          buf = picoquic_provide_stream_data_buffer(
+              bytes_ctx, out_data->bytes.size(), 0, 1);
+        }
+
+        if (buf != NULL) {
+          std::memcpy(
+                  buf, out_data.value().bytes.data(), out_data.value().bytes.size());
+
+          stream_cnx->tx_data.pop_front();
+
+        } else {
+          std::ostringstream log_msg;
+          log_msg << "context_id: " << stream_cnx->context_id
+                  << " stream_id: " << stream_cnx->stream_id
+                  << " max_len: " << max_len
+                  << " bytes_len: " << out_data.value().bytes.size()
+                  << " Write buffer is NULL";
+          logger.log(LogLevel::warn, log_msg.str());
+        }
 
       }
-    } else {
-      break;
     }
-  }
+//    else {
+//      break;
+//    }
+//  }
 }
 
 TransportError

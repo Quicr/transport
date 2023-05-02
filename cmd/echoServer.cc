@@ -79,7 +79,8 @@ int main() {
   TransportRemote serverIp =
       TransportRemote{"127.0.0.1", 1234, TransportProtocol::QUIC};
   TransportConfig tconfig{.tls_cert_filename = "./server-cert.pem",
-                          .tls_key_filename = "./server-key.pem"};
+                          .tls_key_filename = "./server-key.pem",
+                          .debug = true};
 
 
   if ( (envVar = getenv("RELAY_PORT")))
