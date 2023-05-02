@@ -22,6 +22,7 @@
 
 using namespace qtransport;
 
+/* * NOT USED
 const std::string getTimestampString() {
     const auto now = std::chrono::system_clock::now();
     const auto nowAsTimeT = std::chrono::system_clock::to_time_t(now);
@@ -35,6 +36,7 @@ const std::string getTimestampString() {
 
     return timestamp.str();
 }
+*/
 
 /*
  * PicoQuic Callbacks
@@ -895,7 +897,7 @@ void PicoQuicTransport::on_recv_data(StreamContext *stream_cnx,
 {
   if (stream_cnx == NULL || length == 0)
     return;
-  
+
   std::vector<uint8_t> data(bytes, bytes + length);
   stream_cnx->rx_data.push(std::move(data));
 
