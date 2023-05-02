@@ -743,7 +743,7 @@ PicoQuicTransport::close(
 
 void PicoQuicTransport::checkTxData()
 {
-  uint64_t cur_time = picoquic_current_time();
+  //uint64_t cur_time = picoquic_current_time();
 
   for (auto& c_pair: active_streams) {
     for (auto &s_pair : active_streams[c_pair.first]) {
