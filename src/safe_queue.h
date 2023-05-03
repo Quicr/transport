@@ -52,10 +52,13 @@ public:
    */
   bool push(T const& elem)
   {
+    bool rval = true;
     std::lock_guard<std::mutex> lock(mutex);
 
-    if (queue.size() >= limit) // Make room by removing first element
+    if (queue.size() >= limit) {// Make room by removing first element
       queue.pop();
+      rval = false;
+    }
 
     queue.push(elem);
 
@@ -65,7 +68,7 @@ public:
 
     cv.notify_one();
 
-    return true;
+    return rval;
   }
 
   /**
@@ -93,7 +96,7 @@ public:
       return std::nullopt;
     }
 
-    return queue.front();;
+    return queue.front();
   }
 
   /**

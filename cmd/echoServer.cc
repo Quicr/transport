@@ -41,13 +41,15 @@ public:
                       const StreamId &streamId) {
     std::stringstream s_log;
 
-    static uint32_t prev_msg_num = 0;
+    //static uint32_t prev_msg_num = 0;
+
     while (true) {
       auto data = server->dequeue(context_id, streamId);
 
       if (data.has_value()) {
         msgcount++;
 
+        /*
         uint32_t *msg_num = (uint32_t *)data.value().data();
 
         s_log.str(std::string());
@@ -57,8 +59,8 @@ public:
               << ((*msg_num) - prev_msg_num) << ")";
 
         logger.log(LogLevel::info, s_log.str());
-
         prev_msg_num = *msg_num;
+        */
 
         server->enqueue(context_id, streamId, std::move(data.value()));
       } else {
@@ -72,18 +74,27 @@ public:
 };
 
 int main() {
+  char *envVar;
   cmdLogger logger;
   Delegate d(logger);
   TransportRemote serverIp =
       TransportRemote{"127.0.0.1", 1234, TransportProtocol::QUIC};
   TransportConfig tconfig{.tls_cert_filename = "./server-cert.pem",
-                          .tls_key_filename = "./server-key.pem"};
+                          .tls_key_filename = "./server-key.pem",
+                          .debug = true};
+
+
+  if ( (envVar = getenv("RELAY_PORT")))
+    serverIp.port = atoi(envVar);
+
   auto server = ITransport::make_server_transport(serverIp, tconfig, d, logger);
   server->start();
 
   d.setServerTransport(server);
 
-  std::this_thread::sleep_for(std::chrono::seconds(60));
+  while (true) {
+    std::this_thread::sleep_for(std::chrono::seconds(60));
+  }
 
   server.reset();
 

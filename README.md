@@ -30,7 +30,17 @@ Generate self-signed certificate for really server to test with.
 openssl req -nodes -x509 -newkey rsa:2048 -days 365 -keyout server-key.pem -out server-cert.pem
 ```
 
-Run ```build/cmd/server``` and ```build/cmd/client``` 
+Run:
+
+```
+RELAY_PORT=1234 build/cmd/server
+``` 
+
+and 
+
+```
+RELAY_HOST=localhost RELAY_PORT=1234 build/cmd/client
+``` 
 
 
 # Notes

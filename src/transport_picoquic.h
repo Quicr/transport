@@ -29,10 +29,20 @@ class PicoQuicTransport : public ITransport
 {
 public:
   const char* QUICR_ALPN = "quicr-v1";
-  const uint8_t PADDING_MSG_PREFIX_SIZE = 12;
-  const uint8_t PADDED_MSG_PREFIX[12] {0, 0, 0xF, 0xF,
-                                       0, 0, 0xA, 0xA,
-                                       0, 0, 0XF, 0xF };
+
+  struct Metrics {
+      uint64_t dgram_ack {0};
+      uint64_t dgram_spurious {0};
+      uint64_t dgram_prepare_send {0};
+      uint64_t dgram_sent {0};
+      uint64_t send_null_bytes_ctx {0};
+      uint64_t dgram_lost {0};
+      uint64_t dgram_received {0};
+
+      uint64_t time_checks {0};
+
+      auto operator<=>(const Metrics&) const = default;
+  } metrics;
 
   struct OutData {
     std::vector<uint8_t> bytes;
@@ -123,6 +133,7 @@ public:
    */
   LogHandler& logger;
   bool isServerMode;
+  bool debug {false};
   uint64_t dgram_received {0};
 
 
