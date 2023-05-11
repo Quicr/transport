@@ -306,7 +306,7 @@ int pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode,
           return PICOQUIC_NO_ERROR_TERMINATE_PACKET_LOOP;
         }
 
-        //transport->checkTxData();
+        transport->checkTxData();
 
         break;
       }
