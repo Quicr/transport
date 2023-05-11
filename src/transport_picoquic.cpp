@@ -752,7 +752,7 @@ void PicoQuicTransport::checkTxData()
 
           (void)picoquic_mark_datagram_ready(s_pair.second.cnx, 1);
         } else {
-          (void)picoquic_mark_datagram_ready(s_pair.second.cnx, 0);
+          (void)picoquic_mark_datagram_ready(s_pair.second.cnx, 1);
         }
       }
     }
