@@ -306,7 +306,7 @@ int pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode,
           return PICOQUIC_NO_ERROR_TERMINATE_PACKET_LOOP;
         }
 
-        transport->checkTxData();
+        //transport->checkTxData();
 
         break;
       }
@@ -787,11 +787,11 @@ void PicoQuicTransport::sendTxData(StreamContext *stream_cnx,
       if (stream_cnx->stream_id == 0) {
         buf = picoquic_provide_datagram_buffer_ex(bytes_ctx,
                                                   out_data.value().bytes.size(),
-                                                  stream_cnx->tx_data.size() > 1 ? 1 : 0);
+                                                  /*stream_cnx->tx_data.size() > 1 ? 1 : 0*/ 1);
 
       } else {
         buf = picoquic_provide_stream_data_buffer(bytes_ctx, out_data->bytes.size(), 0,
-                                                  stream_cnx->tx_data.size() > 1 ? 1 : 0);
+                                                  /*stream_cnx->tx_data.size() > 1 ? 1 : 0*/ 1);
       }
 
       if (buf != NULL) {
