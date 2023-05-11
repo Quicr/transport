@@ -134,7 +134,6 @@ public:
   LogHandler& logger;
   bool isServerMode;
   bool debug {false};
-  uint64_t dgram_received {0};
 
 
 private:
@@ -154,12 +153,10 @@ private:
   picoquic_tp_t local_tp_options;
   safeQueue<std::function<void()>> cbNotifyQueue;
 
-  std::mutex mutex;
   std::atomic<bool> stop;
   std::atomic<TransportStatus> transportStatus;
   std::thread picoQuicThread;
   std::thread cbNotifyThread;
-
 
   TransportRemote serverInfo;
   TransportDelegate& delegate;

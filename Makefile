@@ -10,7 +10,7 @@ CLANG_FORMAT=clang-format -i
 .PHONY: all test clean cclean format
 
 all: ${BUILD_DIR}
-	cmake --build ${BUILD_DIR}
+	cmake --build ${BUILD_DIR} --parallel 8
 
 ${BUILD_DIR}: CMakeLists.txt cmd/CMakeLists.txt
 	cmake -B${BUILD_DIR} -DBUILD_TESTING=TRUE -DQTRANSPORT_BUILD_TESTS=TRUE -DCMAKE_BUILD_TYPE=Debug .

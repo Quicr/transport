@@ -81,7 +81,7 @@ int main() {
       TransportRemote{"127.0.0.1", 1234, TransportProtocol::QUIC};
   TransportConfig tconfig{.tls_cert_filename = "./server-cert.pem",
                           .tls_key_filename = "./server-key.pem",
-                          .data_queue_size = 10000,
+                          .data_queue_size = 500,
                           .debug = true};
 
 

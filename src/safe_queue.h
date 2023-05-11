@@ -52,16 +52,18 @@ public:
   bool push(T const& elem)
   {
     bool rval = true;
+
     std::lock_guard<std::mutex> lock(mutex);
 
-    if (queue.size() >= limit) {// Make room by removing first element
+    if (queue.size() == 0)
+      cv.notify_one();
+
+    else if (queue.size() >= limit) { // Make room by removing first element
       queue.pop();
       rval = false;
     }
 
     queue.push(elem);
-
-    cv.notify_one();
 
     return rval;
   }
@@ -120,7 +122,6 @@ public:
   std::optional<T> block_pop()
   {
     std::unique_lock<std::mutex> lock(mutex);
-
     cv.wait(lock, [&]() { return (stop_waiting || (queue.size() > 0)); });
 
     return pop_internal();
@@ -173,11 +174,7 @@ private:
     auto elem = queue.front();
     queue.pop();
 
-    if (queue.size() > 0) {
-      cv.notify_one();
-    }
-
-    return elem;
+    return std::move(elem);
   }
 
   /**
@@ -192,10 +189,6 @@ private:
     }
 
     queue.pop();
-
-    if (queue.size() > 0) {
-      cv.notify_one();
-    }
   }
 
 
