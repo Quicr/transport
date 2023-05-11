@@ -6,7 +6,6 @@
 #include <mutex>
 #include <optional>
 #include <queue>
-#include <atomic>
 #include <unistd.h>
 #include <condition_variable>
 
@@ -61,10 +60,6 @@ public:
     }
 
     queue.push(elem);
-
-    if (limit && queue.size() >= limit) {
-      is_full = true;
-    }
 
     cv.notify_one();
 
@@ -178,9 +173,6 @@ private:
     auto elem = queue.front();
     queue.pop();
 
-    if (queue.size() < limit)
-      is_full = false;
-
     if (queue.size() > 0) {
       cv.notify_one();
     }
@@ -199,9 +191,6 @@ private:
       return;
     }
 
-    if (queue.size() < limit)
-      is_full = false;
-
     queue.pop();
 
     if (queue.size() > 0) {
@@ -210,7 +199,6 @@ private:
   }
 
 
-  std::atomic<bool> is_full;    // Indicates if queue is full
   bool stop_waiting;            // Instruct threads to stop waiting
   uint32_t limit;               // Limit of number of messages in queue
   std::condition_variable cv;   // Signaling for thread syncronization

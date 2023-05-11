@@ -2,7 +2,6 @@
 #include <cstring> // memcpy
 #include <iostream>
 #include <sstream>
-#include <iomanip>
 #include <thread>
 #include <unistd.h>
 
@@ -135,8 +134,6 @@ int pq_event_cb(picoquic_cnx_t* cnx,
       }
 
       transport->deleteStreamContext(reinterpret_cast<uint64_t>(cnx), stream_id);
-
-
       return 0;
     }
 
@@ -168,12 +165,9 @@ int pq_event_cb(picoquic_cnx_t* cnx,
         stream_cnx = transport->createStreamContext(cnx, stream_id);
       }
 
+      picoquic_enable_keep_alive(cnx, 3000000);
+
       if (transport->isServerMode) {
-
-        // Create new stream context for new stream/connection
-        picoquic_enable_keep_alive(cnx, 3000000);
-        (void)picoquic_mark_datagram_ready(cnx, 1);
-
         transport->on_new_connection(stream_cnx);
       }
 
@@ -314,7 +308,7 @@ int pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode,
           return PICOQUIC_NO_ERROR_TERMINATE_PACKET_LOOP;
         }
 
-        transport->checkTxData();
+        //transport->checkTxData();
 
         break;
       }
@@ -700,7 +694,6 @@ void PicoQuicTransport::client(const TransportContextId tcid)
     logger.log(LogLevel::error, "Could not create picoquic connection client context");
   }
   else {
-    picoquic_enable_keep_alive(cnx, 3000000);
     picoquic_set_callback(cnx, pq_event_cb, this);
 
     ret = picoquic_start_client_cnx(cnx);
@@ -708,8 +701,6 @@ void PicoQuicTransport::client(const TransportContextId tcid)
       logger.log(LogLevel::error, "Could not activate connection");
       return;
     }
-
-    (void)picoquic_mark_datagram_ready(cnx, true);
 
     ret = picoquic_packet_loop(quic_ctx, 0, AF_INET, 0,
                                2000000, 0,
@@ -775,18 +766,18 @@ void PicoQuicTransport::sendTxData(StreamContext *stream_cnx,
                               [[maybe_unused]] uint8_t* bytes_ctx,
                               size_t max_len)
 {
-  if (bytes_ctx == NULL) {
-    metrics.send_null_bytes_ctx++;
-    return;
-  }
+    if (bytes_ctx == NULL) {
+        metrics.send_null_bytes_ctx++;
+        return;
+    }
 
-//  for (int i=0; i < tconfig.data_queue_size; i++) {
-    const auto &out_data = stream_cnx->tx_data.front();
+    std::lock_guard<std::mutex> lock(mutex);
+    const auto& out_data = stream_cnx->tx_data.front();
 
     if (out_data.has_value()) {
-
+      stream_cnx->tx_data.pop_front();
       // TODO: remove below debug message
-      if (stream_cnx->tx_data.size() < tconfig.data_queue_size && stream_cnx->tx_data.size() > tconfig.data_queue_size / 2) {
+      if (stream_cnx->tx_data.size() > tconfig.data_queue_size / 2) {
         std::cout << " context_id: " << stream_cnx->context_id
                   << " stream_id: " << stream_cnx->stream_id
                   << " out_data: " << stream_cnx->tx_data.size() << std::endl;
@@ -798,22 +789,13 @@ void PicoQuicTransport::sendTxData(StreamContext *stream_cnx,
         uint8_t *buf = NULL;
 
         if (stream_cnx->stream_id == 0) {
-          /*
-                    picoquic_queue_datagram_frame(stream_cnx->cnx,
-                                                  out_data.value().bytes.size(),
-                                                  out_data.value().bytes.data());
-          */
-          buf = picoquic_provide_datagram_buffer(bytes_ctx,
-                                                 out_data.value().bytes.size());
-        } else {
-          /*
-                    picoquic_add_to_stream_with_ctx(stream_cnx->cnx,
-             stream_cnx->stream_id, out_data.value().bytes.data(),
+          buf = picoquic_provide_datagram_buffer_ex(bytes_ctx,
                                                     out_data.value().bytes.size(),
-                                                    0, stream_cnx);
-          */
-          buf = picoquic_provide_stream_data_buffer(
-              bytes_ctx, out_data->bytes.size(), 0, 1);
+                                                    stream_cnx->tx_data.size() > 1 ? 1 : 0);
+
+        } else {
+          buf = picoquic_provide_stream_data_buffer(bytes_ctx, out_data->bytes.size(), 0,
+                                                    stream_cnx->tx_data.size() > 1 ? 1 : 0);
         }
 
         if (buf != NULL) {
@@ -821,28 +803,9 @@ void PicoQuicTransport::sendTxData(StreamContext *stream_cnx,
                   buf, out_data.value().bytes.data(), out_data.value().bytes.size());
 
           stream_cnx->tx_data.pop_front();
-
-        } else {
-          std::ostringstream log_msg;
-          log_msg << "context_id: " << stream_cnx->context_id
-                  << " stream_id: " << stream_cnx->stream_id
-                  << " max_len: " << max_len
-                  << " bytes_len: " << out_data.value().bytes.size()
-                  << " Write buffer is NULL";
-          logger.log(LogLevel::warn, log_msg.str());
         }
-
-      }
-      else {
-        // Not enough data buffer to send, mark datagram is ready to send more
-        (void)picoquic_mark_datagram_ready(stream_cnx->cnx, 1);
       }
     }
-    else {
-      //(void)picoquic_mark_datagram_ready(stream_cnx->cnx, 0);
-      //break;
-    }
-//  }
 }
 
 TransportError
@@ -858,7 +821,7 @@ PicoQuicTransport::enqueue(const TransportContextId& context_id,
     .bytes = bytes
   };
 
-  //std::lock_guard<std::mutex> lock(mutex);
+  std::lock_guard<std::mutex> lock(mutex);
 
   const auto &ctx = active_streams.find(context_id);
 
@@ -866,6 +829,16 @@ PicoQuicTransport::enqueue(const TransportContextId& context_id,
     const auto &stream_cnx = ctx->second.find(stream_id);
 
     if (stream_cnx != ctx->second.end()) {
+
+      if (stream_cnx->second.stream_id) {
+          (void) picoquic_mark_active_stream(stream_cnx->second.cnx,
+                                             stream_cnx->second.stream_id,
+                                             1,
+                                             static_cast<StreamContext *>(&stream_cnx->second));
+      } else {
+        (void) picoquic_mark_datagram_ready(stream_cnx->second.cnx, 1);
+      }
+
       if (!stream_cnx->second.tx_data.push(out_data)) {
         return TransportError::QueueFull;
       }
@@ -888,7 +861,7 @@ PicoQuicTransport::dequeue(const TransportContextId& context_id,
   if (cnx_it != active_streams.end()) {
     auto stream_it = cnx_it->second.find(stream_id);
     if (stream_it != cnx_it->second.end()) {
-      return stream_it->second.rx_data.pop();
+      return std::move(stream_it->second.rx_data.pop());
     }
   }
 
