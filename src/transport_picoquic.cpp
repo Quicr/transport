@@ -481,6 +481,7 @@ void PicoQuicTransport::shutdown()
 
   logger.log(LogLevel::info, "done closing transport threads");
 
+  picoquic_config_clear(&config);
 }
 
 
