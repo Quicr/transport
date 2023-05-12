@@ -55,7 +55,7 @@ public:
 
     std::lock_guard<std::mutex> lock(mutex);
 
-    if (queue.size() == 0)
+    if (queue.empty())
       cv.notify_one();
 
     else if (queue.size() >= limit) { // Make room by removing first element
