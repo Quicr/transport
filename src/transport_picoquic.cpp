@@ -164,6 +164,7 @@ int pq_event_cb(picoquic_cnx_t* cnx,
       }
 
       picoquic_enable_keep_alive(cnx, 3000000);
+      (void)picoquic_mark_datagram_ready(cnx, 1);
 
       if (transport->isServerMode) {
         transport->on_new_connection(stream_cnx);
