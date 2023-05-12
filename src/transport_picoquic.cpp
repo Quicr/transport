@@ -608,7 +608,6 @@ void PicoQuicTransport::cbNotifier()
     }
   }
 
-  std::cerr << "Done with notifier thead" << std::endl;
   logger.log(LogLevel::info, "Done with transport callback notifier thread");
 }
 
