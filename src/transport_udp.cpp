@@ -221,6 +221,8 @@ UDPTransport::fd_writer()
       }
     }
   }
+
+  logger.log(LogLevel::info, "Done transport writer thread");
 }
 
 /*
@@ -336,6 +338,8 @@ UDPTransport::fd_reader()
       delegate.on_recv_notify(cd.contextId, cd.streamId);
     }
   }
+
+  logger.log(LogLevel::info, "Done transport reader thread");
 }
 
 TransportError

@@ -606,6 +606,8 @@ void PicoQuicTransport::cbNotifier()
       (*cb)();
     }
   }
+
+  logger.log(LogLevel::info, "Done with transport callback notifier thread");
 }
 
 void PicoQuicTransport::server()
