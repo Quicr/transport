@@ -608,6 +608,7 @@ void PicoQuicTransport::cbNotifier()
     }
   }
 
+  std::cerr << "Done with notifier thead" << std::endl;
   logger.log(LogLevel::info, "Done with transport callback notifier thread");
 }
 
@@ -717,7 +718,7 @@ void PicoQuicTransport::client(const TransportContextId tcid)
     quic_ctx = NULL;
   }
 
-  shutdown();
+  setStatus(TransportStatus::Disconnected);
 }
 
 void
