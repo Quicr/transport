@@ -462,6 +462,7 @@ PicoQuicTransport::~PicoQuicTransport()
 
 void PicoQuicTransport::shutdown()
 {
+  setStatus(TransportStatus::Shutdown);
 
   if (stop) // Already stopped
     return;
