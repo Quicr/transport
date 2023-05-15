@@ -124,6 +124,10 @@ public:
     std::unique_lock<std::mutex> lock(mutex);
     cv.wait(lock, [&]() { return (stop_waiting || (queue.size() > 0)); });
 
+    if (stop_waiting) {
+      return std::nullopt;
+    }
+
     return pop_internal();
   }
 
@@ -146,8 +150,8 @@ public:
   void stopWaiting()
   {
     std::lock_guard<std::mutex> lock(mutex);
-    cv.notify_all();
     stop_waiting = true;
+    cv.notify_all();
   }
 
   void setLimit(uint32_t limit)
@@ -192,11 +196,11 @@ private:
   }
 
 
-  bool stop_waiting;            // Instruct threads to stop waiting
-  uint32_t limit;               // Limit of number of messages in queue
-  std::condition_variable cv;   // Signaling for thread syncronization
-  std::mutex mutex;             // read/write lock
-  std::queue<T> queue;          // Queue
+  bool stop_waiting;                // Instruct threads to stop waiting
+  uint32_t limit;                   // Limit of number of messages in queue
+  std::condition_variable cv;       // Signaling for thread syncronization
+  std::mutex mutex;                 // read/write lock
+  std::queue<T> queue;              // Queue
 };
 
 } /* namespace qtransport */
