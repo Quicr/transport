@@ -6,7 +6,6 @@
 #include <mutex>
 #include <optional>
 #include <queue>
-#include <atomic>
 #include <unistd.h>
 #include <condition_variable>
 
@@ -53,20 +52,18 @@ public:
   bool push(T const& elem)
   {
     bool rval = true;
+
     std::lock_guard<std::mutex> lock(mutex);
 
-    if (queue.size() >= limit) {// Make room by removing first element
+    if (queue.empty())
+      cv.notify_one();
+
+    else if (queue.size() >= limit) { // Make room by removing first element
       queue.pop();
       rval = false;
     }
 
     queue.push(elem);
-
-    if (limit && queue.size() >= limit) {
-      is_full = true;
-    }
-
-    cv.notify_one();
 
     return rval;
   }
@@ -125,8 +122,11 @@ public:
   std::optional<T> block_pop()
   {
     std::unique_lock<std::mutex> lock(mutex);
-
     cv.wait(lock, [&]() { return (stop_waiting || (queue.size() > 0)); });
+
+    if (stop_waiting) {
+      return std::nullopt;
+    }
 
     return pop_internal();
   }
@@ -150,8 +150,8 @@ public:
   void stopWaiting()
   {
     std::lock_guard<std::mutex> lock(mutex);
-    cv.notify_all();
     stop_waiting = true;
+    cv.notify_all();
   }
 
   void setLimit(uint32_t limit)
@@ -178,14 +178,7 @@ private:
     auto elem = queue.front();
     queue.pop();
 
-    if (queue.size() < limit)
-      is_full = false;
-
-    if (queue.size() > 0) {
-      cv.notify_one();
-    }
-
-    return elem;
+    return std::move(elem);
   }
 
   /**
@@ -199,23 +192,15 @@ private:
       return;
     }
 
-    if (queue.size() < limit)
-      is_full = false;
-
     queue.pop();
-
-    if (queue.size() > 0) {
-      cv.notify_one();
-    }
   }
 
 
-  std::atomic<bool> is_full;    // Indicates if queue is full
-  bool stop_waiting;            // Instruct threads to stop waiting
-  uint32_t limit;               // Limit of number of messages in queue
-  std::condition_variable cv;   // Signaling for thread syncronization
-  std::mutex mutex;             // read/write lock
-  std::queue<T> queue;          // Queue
+  bool stop_waiting;                // Instruct threads to stop waiting
+  uint32_t limit;                   // Limit of number of messages in queue
+  std::condition_variable cv;       // Signaling for thread syncronization
+  std::mutex mutex;                 // read/write lock
+  std::queue<T> queue;              // Queue
 };
 
 } /* namespace qtransport */

@@ -99,7 +99,7 @@ int main() {
     std::this_thread::sleep_for(std::chrono::milliseconds(250));
   }
 
-  StreamId stream_id = client->createStream(tcid, true);
+  StreamId stream_id = client->createStream(tcid, false);
 
   std::stringstream s_log;
 
@@ -110,7 +110,7 @@ int main() {
       (*msg_num)++;
       auto data = bytes(data_buf, data_buf + sizeof(data_buf));
 
-      client->enqueue(tcid, server.proto == TransportProtocol::UDP ? 1 : 0,
+      client->enqueue(tcid, server.proto == TransportProtocol::UDP ? 1 : stream_id,
                         std::move(data));
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
