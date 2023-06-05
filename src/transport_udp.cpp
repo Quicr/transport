@@ -479,6 +479,8 @@ UDPTransport::connect_client()
   ipv4->sin_port = htons(serverInfo.port);
   serverAddr.addr_len = sizeof(sockaddr_in);
 
+  freeaddrinfo(address_list);
+
   addrKey sa_key;
   addr_to_key(serverAddr.addr, sa_key);
 
