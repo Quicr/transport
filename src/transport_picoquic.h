@@ -78,7 +78,7 @@ public:
     PicoQuicTransport(const TransportRemote &server,
                       const TransportConfig &tcfg,
                       TransportDelegate &delegate,
-                      bool isServerMode,
+                      bool _is_server_mode,
                       LogHandler &logger);
 
     virtual ~PicoQuicTransport();
@@ -125,12 +125,12 @@ public:
 
 
     /*
-   * Internal Public Variables
-   */
+     * Internal Public Variables
+     */
     LogHandler &logger;
-    bool isServerMode;
+    bool _is_server_mode;
+    bool _is_bidirectional{true};
     bool debug{false};
-
 
 private:
     TransportContextId createClient();
@@ -140,10 +140,9 @@ private:
     void client(const TransportContextId tcid);
     void cbNotifier();
 
-
     /*
-   * Variables
-   */
+     * Variables
+     */
     picoquic_quic_config_t config;
     picoquic_quic_t *quic_ctx;
     picoquic_tp_t local_tp_options;
@@ -163,8 +162,7 @@ private:
    *   Type is encoded in the stream id as the first 2 least significant
    *   bits. Stream ID is therefore incremented by 4.
    */
-    std::atomic<StreamId> next_stream_id{4};
+    std::atomic<StreamId> next_stream_id;
     std::map<TransportContextId, std::map<StreamId, StreamContext>> active_streams;
   };
-
 }// namespace qtransport

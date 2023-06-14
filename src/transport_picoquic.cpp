@@ -1,12 +1,17 @@
+#include "transport_picoquic.h"
+
+#include <picoquic_internal.h>
+#include <picoquic_utils.h>
+
+#include <arpa/inet.h>
 #include <cassert>
-#include <cstring>// memcpy
+#include <cstring>
+#include <ctime>
 #include <iostream>
+#include <netdb.h>
 #include <sstream>
 #include <thread>
 #include <unistd.h>
-
-#include <arpa/inet.h>
-#include <netdb.h>
 #if defined(__linux__)
 #include <net/ethernet.h>
 #include <netpacket/packet.h>
@@ -14,28 +19,57 @@
 #include <net/if_dl.h>
 #endif
 
-#include "picoquic_internal.h"
-#include "picoquic_utils.h"
-#include "transport_picoquic.h"
-#include <ctime>
-
 using namespace qtransport;
 
-/* * NOT USED
-const std::string getTimestampString() {
-    const auto now = std::chrono::system_clock::now();
-    const auto nowAsTimeT = std::chrono::system_clock::to_time_t(now);
-    const auto nowUs = std::chrono::duration_cast<std::chrono::microseconds>(
-            now.time_since_epoch()) % 1000000;
+namespace {
+  /**
+   * Stream type bits as defined by RFC9000:
+   * - https://datatracker.ietf.org/doc/html/rfc9000#table-1
+   */
 
-    std::ostringstream timestamp;
-    timestamp << std::put_time(std::localtime(&nowAsTimeT), "%m-%d-%Y %H:%M:%S")
-        << '.' << std::setfill('0') << std::setw(6) << nowUs.count()
-        << std::setfill(' ') << " " << std::setw(6) << std::right;
+  /// Client initiated stream type
+  constexpr uint8_t ClientStreamBits = 0b00;
 
-    return timestamp.str();
-}
-*/
+  /// Server initiated stream type
+  constexpr uint8_t ServerStreamBits = 0b01;
+
+  /// Bidirectional stream type
+  constexpr uint8_t BidirectionalStreamBits = 0b00;
+
+  /// Unidirectional stream type
+  constexpr uint8_t UnidirectionalStreamBits = 0b10;
+
+  /**
+   * @brief Returns the appropriate stream id depending on if the stream is
+   *        initiated by the client or the server, and if it bi- or uni- directional.
+   *
+   * @tparam Int_t The preferred integer type to deal with.
+   *
+   * @param id  The initial value to adjust
+   * @param is_server Flag if the initiating request is from a server or a client
+   * @param is_bidirectional Flag if the streams are bi- or uni- directional.
+   *
+   * @return The correctly adjusted stream id value.
+   */
+  constexpr StreamId make_stream_id(StreamId id, bool is_server, bool is_bidirectional) {
+    return id & (~0x0u << 2) |
+           (is_server ? ServerStreamBits : ClientStreamBits) |
+           (is_bidirectional ? BidirectionalStreamBits : UnidirectionalStreamBits);
+  }
+
+  /**
+   * @brief Defines the default/datagram stream depending on if the stream is
+   *        initiated by the client or the server, and if it bi- or uni- directional.
+   *
+   * @param is_server Flag if the initiating request is from a server or a client
+   * @param is_bidirectional Flag if the streams are bi- or uni- directional.
+   *
+   * @return The datagram stream id.
+   */
+  constexpr StreamId make_datagram_stream_id(bool is_server, bool is_bidirectional) {
+    return ::make_stream_id(0, is_server, is_bidirectional);
+  }
+}// namespace
 
 /*
  * PicoQuic Callbacks
@@ -146,7 +180,7 @@ int pq_event_cb(picoquic_cnx_t *cnx,
       picoquic_close(cnx, 0);
       transport->deleteStreamContext(reinterpret_cast<uint64_t>(cnx), stream_id);
 
-      if (not transport->isServerMode) {
+      if (not transport->_is_server_mode) {
         transport->setStatus(TransportStatus::Disconnected);
         return PICOQUIC_NO_ERROR_TERMINATE_PACKET_LOOP;
       }
@@ -162,7 +196,7 @@ int pq_event_cb(picoquic_cnx_t *cnx,
       picoquic_enable_keep_alive(cnx, 3000000);
       (void) picoquic_mark_datagram_ready(cnx, 1);
 
-      if (transport->isServerMode) {
+      if (transport->_is_server_mode) {
         transport->on_new_connection(stream_cnx);
       }
 
@@ -209,7 +243,7 @@ int pq_loop_cb(picoquic_quic_t *quic, picoquic_packet_loop_cb_enum cb_mode,
         log_msg << "packet_loop_ready, waiting for packets";
         transport->logger.log(LogLevel::info, log_msg.str());
 
-        if (transport->isServerMode)
+        if (transport->_is_server_mode)
           transport->setStatus(TransportStatus::Ready);
 
         if (callback_arg != nullptr) {
@@ -335,7 +369,7 @@ void PicoQuicTransport::deleteStreamContext(const TransportContextId &context_id
         (void) picoquic_mark_active_stream(stream_p.second.cnx,
                                            stream_id, 0,
                                            NULL);
-        if (not isServerMode) {
+        if (not _is_server_mode) {
           (void) picoquic_add_to_stream(stream_p.second.cnx,
                                         stream_id, NULL, 0, 1);
         }
@@ -416,12 +450,20 @@ PicoQuicTransport::StreamContext *PicoQuicTransport::createStreamContext(
 PicoQuicTransport::PicoQuicTransport(const TransportRemote &server,
                                      const TransportConfig &tcfg,
                                      TransportDelegate &delegate,
-                                     bool isServerMode,
+                                     bool _is_server_mode,
                                      LogHandler &logger)
-    : logger(logger), isServerMode(isServerMode), stop(false), transportStatus(TransportStatus::Connecting), serverInfo(server), delegate(delegate), tconfig(tcfg) {
+    : logger(logger),
+      _is_server_mode(_is_server_mode),
+      stop(false),
+      transportStatus(TransportStatus::Connecting),
+      serverInfo(server),
+      delegate(delegate),
+      tconfig(tcfg),
+      next_stream_id{::make_datagram_stream_id(_is_server_mode, _is_bidirectional)} {
+
   debug = tcfg.debug;
 
-  if (isServerMode && tcfg.tls_cert_filename == NULL) {
+  if (_is_server_mode && tcfg.tls_cert_filename == NULL) {
     throw InvalidConfigException("Missing cert filename");
   } else if (tcfg.tls_cert_filename != NULL) {
     (void) picoquic_config_set_option(&config, picoquic_option_CERT,
@@ -473,30 +515,23 @@ void PicoQuicTransport::setStatus(TransportStatus status) {
   transportStatus = status;
 }
 
-StreamId PicoQuicTransport::createStream(
-        const TransportContextId &context_id,
-        bool use_reliable_transport) {
-  logger.log(LogLevel::debug, "App requests to create new stream");
+StreamId PicoQuicTransport::createStream(const TransportContextId &context_id, bool use_reliable_transport) {
 
   const auto &iter = active_streams.find(context_id);
   if (iter == active_streams.end()) {
-    logger.log(LogLevel::warn, "Invalid context id, cannot create stream");
-    return 0;
+    throw std::invalid_argument("Invalid context id, cannot create stream");
   }
 
   const auto &cnx_stream_iter = iter->second.find(0);
   if (cnx_stream_iter == iter->second.end()) {
-    logger.log(LogLevel::warn,
-               "Missing primary connection zero stream, cannot create streams");
-    return 0;
+    throw std::invalid_argument("Missing primary connection zero stream, cannot create streams");
   }
 
-  if (isServerMode)// Server does not create streams, clients must create these
-    return 0;
-  else if (not use_reliable_transport)
-    return 0;
+  if (!use_reliable_transport)
+    return ::make_datagram_stream_id(_is_server_mode, _is_bidirectional);
 
-  // Create stream will add stream to active_streams
+  next_stream_id = ::make_stream_id(next_stream_id + 4, _is_server_mode, _is_bidirectional);
+
   PicoQuicTransport::StreamContext *stream_cnx = createStreamContext(
           cnx_stream_iter->second.cnx,
           next_stream_id);
@@ -507,9 +542,6 @@ StreamId PicoQuicTransport::createStream(
   cbNotifyQueue.push([&]() {
     delegate.on_new_stream(tcid, stream_id);
   });
-
-  // Set next stream ID
-  next_stream_id += 4;// Increment by 4, stream type is first 2 bits
 
   return stream_cnx->stream_id;
 }
@@ -553,7 +585,7 @@ PicoQuicTransport::start() {
   TransportContextId cid = 0;
   std::ostringstream log_msg;
 
-  if (isServerMode) {
+  if (_is_server_mode) {
 
     log_msg << "Starting server, listening on "
             << serverInfo.host_or_ip << ':' << serverInfo.port;
