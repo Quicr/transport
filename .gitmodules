@@ -1,15 +1,11 @@
-[submodule "boringssl"]
+[submodule "dependencies/boringssl"]
 	path = dependencies/boringssl
-	url = https://github.com/google/boringssl
-	#url = https://github.com/Quicr/boringssl
-	branch = master
+	url = https://github.com/quicr/boringssl
 [submodule "picotls"]
 	path = dependencies/picotls
-	#url = https://github.com/h2o/picotls
 	url = https://github.com/quicr/picotls
 	branch = master
 [submodule "picoquic"]
 	path = dependencies/picoquic
-	#url = https://github.com/private-octopus/picoquic
 	url = https://github.com/quicr/picoquic
 	branch = master
