@@ -68,10 +68,13 @@ struct TransportRemote
  */
 struct TransportConfig
 {
-  const char *tls_cert_filename;            /// QUIC TLS certificate to use
-  const char *tls_key_filename;             /// QUIC TLS private key to use
-  const uint32_t data_queue_size {500};     /// Size of incoming and outgoing data queues
-  bool debug {false};                       /// Enable debug logging/processing
+  const char *tls_cert_filename;                        /// QUIC TLS certificate to use
+  const char *tls_key_filename;                         /// QUIC TLS private key to use
+  const uint32_t time_queue_init_queue_size {1000};     /// Initial queue size to reserve upfront
+  const uint32_t time_queue_max_duration {1000};        /// Max duration for the time queue in milliseconds
+  const uint32_t time_queue_bucket_interval {1};        /// The bucket interval in milliseconds
+  const uint32_t time_queue_rx_ttl { 250 };             /// Receive queue TTL
+  bool debug {false};                                   /// Enable debug logging/processing
 };
 
 /**
@@ -250,14 +253,18 @@ public:
    * @todo is priority missing?
    *
    * @param[in] context_id	Identifying the connection
-   * @param[in] streamId	stream Id to send data on
+   * @param[in] streamId	  stream Id to send data on
    * @param[in] bytes				Data to send/write
+   * @param[in] priority    Priority of the object, range should be 0 - 255
+   * @param[in] ttl_ms      The age the object should exist in queue in milliseconds
    *
    * @returns TransportError is returned indicating status of the operation
    */
   virtual TransportError enqueue(const TransportContextId& context_id,
                                  const StreamId & streamId,
-                                 std::vector<uint8_t>&& bytes) = 0;
+                                 std::vector<uint8_t>&& bytes,
+                                 const uint8_t priority = 1,
+                                 const uint32_t ttl_ms = 300) = 0;
 
   /**
    * @brief Dequeue application data from transport queue
