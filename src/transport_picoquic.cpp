@@ -26,23 +26,6 @@ using namespace qtransport;
 
 namespace {
     /**
-     * Stream type bits as defined by RFC9000:
-     * - https://datatracker.ietf.org/doc/html/rfc9000#table-1
-     */
-
-    /// Client initiated stream type
-    constexpr uint8_t ClientStreamBits = 0b00;
-
-    /// Server initiated stream type
-    constexpr uint8_t ServerStreamBits = 0b01;
-
-    /// Bidirectional stream type
-    constexpr uint8_t BidirectionalStreamBits = 0b00;
-
-    /// Unidirectional stream type
-    constexpr uint8_t UnidirectionalStreamBits = 0b10;
-
-    /**
      * @brief Returns the appropriate stream id depending on if the stream is
      *        initiated by the client or the server, and if it bi- or uni- directional.
      *
@@ -50,14 +33,13 @@ namespace {
      *
      * @param id  The initial value to adjust
      * @param is_server Flag if the initiating request is from a server or a client
-     * @param is_bidirectional Flag if the streams are bi- or uni- directional.
+     * @param is_unidirectional Flag if the streams are bi- or uni- directional.
      *
      * @return The correctly adjusted stream id value.
      */
-    constexpr StreamId make_stream_id(StreamId id, bool is_server, bool is_bidirectional)
+    constexpr StreamId make_stream_id(StreamId id, bool is_server, bool is_unidirectional)
     {
-        return id & (~0x0u << 2) | (is_server ? ServerStreamBits : ClientStreamBits) |
-               (is_bidirectional ? BidirectionalStreamBits : UnidirectionalStreamBits);
+        return (id & (~0x0u << 2)) | (is_server ? 0b01 : 0b00) | (is_unidirectional ? 0b10 : 0b00);
     }
 
     /**
@@ -65,20 +47,21 @@ namespace {
      *        initiated by the client or the server, and if it bi- or uni- directional.
      *
      * @param is_server Flag if the initiating request is from a server or a client
-     * @param is_bidirectional Flag if the streams are bi- or uni- directional.
+     * @param is_unidirectional Flag if the streams are bi- or uni- directional.
      *
      * @return The datagram stream id.
      */
-    constexpr StreamId make_datagram_stream_id(bool is_server, bool is_bidirectional)
+    constexpr StreamId make_datagram_stream_id(bool is_server, bool is_unidirectional)
     {
-        return ::make_stream_id(0, is_server, is_bidirectional);
+        return ::make_stream_id(0, is_server, is_unidirectional);
     }
 } // namespace
 
 /*
  * PicoQuic Callbacks
  */
-int pq_event_cb(picoquic_cnx_t* cnx,
+int
+pq_event_cb(picoquic_cnx_t* cnx,
             uint64_t stream_id,
             uint8_t* bytes,
             size_t length,
@@ -235,8 +218,8 @@ int pq_event_cb(picoquic_cnx_t* cnx,
     return 0;
 }
 
-int pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode,
-           void* callback_ctx, void* callback_arg)
+int
+pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode, void* callback_ctx, void* callback_arg)
 {
 
     PicoQuicTransport* transport = static_cast<PicoQuicTransport*>(callback_ctx);
@@ -358,8 +341,8 @@ int pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode,
     return ret;
 }
 
-void PicoQuicTransport::deleteStreamContext(const TransportContextId& context_id,
-                                            const StreamId& stream_id)
+void
+PicoQuicTransport::deleteStreamContext(const TransportContextId& context_id, const StreamId& stream_id)
 {
     std::ostringstream log_msg;
     log_msg << "Delete stream context for id: " << stream_id;
@@ -466,7 +449,7 @@ PicoQuicTransport::PicoQuicTransport(const TransportRemote& server,
   , serverInfo(server)
   , delegate(delegate)
   , tconfig(tcfg)
-  , next_stream_id{ ::make_datagram_stream_id(_is_server_mode, _is_bidirectional) }
+  , next_stream_id{ ::make_datagram_stream_id(_is_server_mode, _is_unidirectional) }
 {
     debug = tcfg.debug;
 
@@ -531,34 +514,25 @@ PicoQuicTransport::setStatus(TransportStatus status)
 StreamId
 PicoQuicTransport::createStream(const TransportContextId& context_id, bool use_reliable_transport)
 {
-    logger.log(LogLevel::debug, "App requests to create new stream");
-
     const auto& iter = active_streams.find(context_id);
     if (iter == active_streams.end()) {
         throw std::invalid_argument("Invalid context id, cannot create stream");
     }
 
-    const auto& cnx_stream_iter = iter->second.find(0);
+    const auto datagram_stream_id = ::make_datagram_stream_id(_is_server_mode, _is_unidirectional);
+    const auto& cnx_stream_iter = iter->second.find(datagram_stream_id);
     if (cnx_stream_iter == iter->second.end()) {
-        throw std::invalid_argument("Missing primary connection zero stream, cannot create streams");
+        throw std::logic_error("Missing primary connection zero stream, cannot create streams");
     }
 
     if (!use_reliable_transport)
-        return ::make_datagram_stream_id(_is_server_mode, _is_bidirectional);
+        return datagram_stream_id;
 
-    next_stream_id = ::make_stream_id(next_stream_id + 4, _is_server_mode, _is_bidirectional);
+    next_stream_id += 4;
 
-    PicoQuicTransport::StreamContext *stream_cnx = createStreamContext(
-      cnx_stream_iter->second.cnx,
-      next_stream_id);
+    PicoQuicTransport::StreamContext* stream_cnx = createStreamContext(cnx_stream_iter->second.cnx, next_stream_id);
 
-    TransportContextId tcid = context_id;
-    StreamId stream_id = next_stream_id;
-
-    cbNotifyQueue.push([&]() { delegate.on_new_stream(tcid, stream_id); });
-
-    // Set next stream ID
-    next_stream_id += 4; // Increment by 4, stream type is first 2 bits
+    cbNotifyQueue.push([&] { delegate.on_new_stream(context_id, next_stream_id); });
 
     return stream_cnx->stream_id;
 }
@@ -579,9 +553,9 @@ PicoQuicTransport::start()
     }
 
     /*
-   * TODO doc: Apparently need to set some value to send datagrams. If not set,
-   *    max datagram size is zero, preventing sending of datagrams. Setting this
-   *    also triggers PMTUD to run. This value will be the initial value.
+     * TODO doc: Apparently need to set some value to send datagrams. If not set,
+     *    max datagram size is zero, preventing sending of datagrams. Setting this
+     *    also triggers PMTUD to run. This value will be the initial value.
      */
     picoquic_init_transport_parameters(&local_tp_options, 1);
     local_tp_options.max_datagram_frame_size = 1280;
