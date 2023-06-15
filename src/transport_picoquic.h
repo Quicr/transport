@@ -4,22 +4,23 @@
 #include <atomic>
 #include <cassert>
 #include <cstdint>
+#include <functional>
 #include <vector>
 #include <map>
 #include <mutex>
 #include <queue>
 #include <string>
 #include <thread>
-#include <functional>
+#include <vector>
 
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 
-#include <transport/transport.h>
 #include <picoquic.h>
 #include <picoquic_config.h>
 #include <picoquic_packet_loop.h>
+#include <transport/transport.h>
 
 #include "safe_queue.h"
 #include "time_queue.h"
@@ -83,7 +84,7 @@ class PicoQuicTransport : public ITransport
     PicoQuicTransport(const TransportRemote& server,
                       const TransportConfig& tcfg,
                       TransportDelegate& delegate,
-                      bool isServerMode,
+                      bool _is_server_mode,
                       LogHandler& logger);
 
     virtual ~PicoQuicTransport();
@@ -135,7 +136,8 @@ class PicoQuicTransport : public ITransport
    * Internal Public Variables
      */
     LogHandler& logger;
-    bool isServerMode;
+    bool _is_server_mode;
+    bool _is_bidirectional{true};
     bool debug {false};
 
 
@@ -170,7 +172,7 @@ class PicoQuicTransport : public ITransport
    *   Type is encoded in the stream id as the first 2 least significant
    *   bits. Stream ID is therefore incremented by 4.
      */
-    std::atomic<StreamId> next_stream_id{ 4 };
+    std::atomic<StreamId> next_stream_id;
     std::map<TransportContextId, std::map<StreamId, StreamContext>> active_streams;
 
     std::shared_ptr<queue_timer_service> _timer;

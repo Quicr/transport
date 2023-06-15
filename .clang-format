@@ -5,3 +5,6 @@ BasedOnStyle:  Mozilla
 # Overrides
 ColumnLimit: 120
 IndentWidth: 4
+NamespaceIndentation: All
+BraceWrapping:
+  AfterFunction: false

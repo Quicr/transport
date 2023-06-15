@@ -1,6 +1,14 @@
+#include "transport_picoquic.h"
+
+#include <picoquic_internal.h>
+#include <picoquic_utils.h>
+
+#include <arpa/inet.h>
 #include <cassert>
-#include <cstring> // memcpy
+#include <cstring>
+#include <ctime>
 #include <iostream>
+#include <netdb.h>
 #include <sstream>
 #include <thread>
 #include <unistd.h>
@@ -14,38 +22,72 @@
 #include <net/if_dl.h>
 #endif
 
-#include <ctime>
-#include "picoquic_utils.h"
-#include "picoquic_internal.h"
-#include "transport_picoquic.h"
-
 using namespace qtransport;
 
-/* * NOT USED
-const std::string getTimestampString() {
-    const auto now = std::chrono::system_clock::now();
-    const auto nowAsTimeT = std::chrono::system_clock::to_time_t(now);
-    const auto nowUs = std::chrono::duration_cast<std::chrono::microseconds>(
-            now.time_since_epoch()) % 1000000;
+namespace {
+    /**
+     * Stream type bits as defined by RFC9000:
+     * - https://datatracker.ietf.org/doc/html/rfc9000#table-1
+     */
 
-    std::ostringstream timestamp;
-    timestamp << std::put_time(std::localtime(&nowAsTimeT), "%m-%d-%Y %H:%M:%S")
-        << '.' << std::setfill('0') << std::setw(6) << nowUs.count()
-        << std::setfill(' ') << " " << std::setw(6) << std::right;
+    /// Client initiated stream type
+    constexpr uint8_t ClientStreamBits = 0b00;
 
-    return timestamp.str();
-}
-*/
+    /// Server initiated stream type
+    constexpr uint8_t ServerStreamBits = 0b01;
+
+    /// Bidirectional stream type
+    constexpr uint8_t BidirectionalStreamBits = 0b00;
+
+    /// Unidirectional stream type
+    constexpr uint8_t UnidirectionalStreamBits = 0b10;
+
+    /**
+     * @brief Returns the appropriate stream id depending on if the stream is
+     *        initiated by the client or the server, and if it bi- or uni- directional.
+     *
+     * @tparam Int_t The preferred integer type to deal with.
+     *
+     * @param id  The initial value to adjust
+     * @param is_server Flag if the initiating request is from a server or a client
+     * @param is_bidirectional Flag if the streams are bi- or uni- directional.
+     *
+     * @return The correctly adjusted stream id value.
+     */
+    constexpr StreamId make_stream_id(StreamId id, bool is_server, bool is_bidirectional)
+    {
+        return id & (~0x0u << 2) | (is_server ? ServerStreamBits : ClientStreamBits) |
+               (is_bidirectional ? BidirectionalStreamBits : UnidirectionalStreamBits);
+    }
+
+    /**
+     * @brief Defines the default/datagram stream depending on if the stream is
+     *        initiated by the client or the server, and if it bi- or uni- directional.
+     *
+     * @param is_server Flag if the initiating request is from a server or a client
+     * @param is_bidirectional Flag if the streams are bi- or uni- directional.
+     *
+     * @return The datagram stream id.
+     */
+    constexpr StreamId make_datagram_stream_id(bool is_server, bool is_bidirectional)
+    {
+        return ::make_stream_id(0, is_server, is_bidirectional);
+    }
+} // namespace
 
 /*
  * PicoQuic Callbacks
  */
 int pq_event_cb(picoquic_cnx_t* cnx,
-            uint64_t stream_id, uint8_t* bytes, size_t length,
-            picoquic_call_back_event_t fin_or_event, void* callback_ctx, void* v_stream_ctx)
+            uint64_t stream_id,
+            uint8_t* bytes,
+            size_t length,
+            picoquic_call_back_event_t fin_or_event,
+            void* callback_ctx,
+            void* v_stream_ctx)
 {
-    PicoQuicTransport *transport = static_cast<PicoQuicTransport *>(callback_ctx);
-    PicoQuicTransport::StreamContext *stream_cnx = static_cast<PicoQuicTransport::StreamContext *>(v_stream_ctx);
+    PicoQuicTransport* transport = static_cast<PicoQuicTransport*>(callback_ctx);
+    PicoQuicTransport::StreamContext* stream_cnx = static_cast<PicoQuicTransport::StreamContext*>(v_stream_ctx);
 
     std::ostringstream log_msg;
     bool is_fin = false;
@@ -56,8 +98,7 @@ int pq_event_cb(picoquic_cnx_t* cnx,
 
     switch (fin_or_event) {
 
-        case picoquic_callback_prepare_datagram:
-        {
+        case picoquic_callback_prepare_datagram: {
             // length is the max allowed data length
             if (stream_cnx == NULL) {
                 // picoquic doesn't provide stream context for datagram/stream_id==-0
@@ -81,19 +122,17 @@ int pq_event_cb(picoquic_cnx_t* cnx,
         case picoquic_callback_datagram_spurious:
             // TODO: Add metrics for spurious datagrams
             // delayed ack
-            //std::cout << "spurious DGRAM length: " << length << std::endl;
+            // std::cout << "spurious DGRAM length: " << length << std::endl;
             transport->metrics.dgram_spurious++;
             break;
 
         case picoquic_callback_datagram_lost:
             // TODO: Add metrics for lost datagrams
-            //std::cout << "Lost DGRAM length " << length << std::endl;
+            // std::cout << "Lost DGRAM length " << length << std::endl;
             transport->metrics.dgram_lost++;
             break;
 
-
-        case picoquic_callback_datagram:
-        {
+        case picoquic_callback_datagram: {
             if (stream_cnx == NULL) {
                 // picoquic doesn't provide stream context for datagram/stream_id==-0
                 stream_cnx = transport->getZeroStreamContext(cnx);
@@ -107,15 +146,15 @@ int pq_event_cb(picoquic_cnx_t* cnx,
         case picoquic_callback_stream_fin:
             is_fin = true;
             // fall through to picoquic_callback_stream_data
-        case picoquic_callback_stream_data:
-        {
+        case picoquic_callback_stream_data: {
             if (stream_cnx == NULL) {
                 stream_cnx = transport->createStreamContext(cnx, stream_id);
             }
             // length is the amount of data received
             transport->on_recv_data(stream_cnx, bytes, length);
 
-            if (is_fin) transport->deleteStreamContext(reinterpret_cast<uint64_t>(cnx), stream_id);
+            if (is_fin)
+                transport->deleteStreamContext(reinterpret_cast<uint64_t>(cnx), stream_id);
             break;
         }
 
@@ -150,7 +189,7 @@ int pq_event_cb(picoquic_cnx_t* cnx,
             picoquic_close(cnx, 0);
             transport->deleteStreamContext(reinterpret_cast<uint64_t>(cnx), stream_id);
 
-            if (not transport->isServerMode) {
+            if (not transport->_is_server_mode) {
                 transport->setStatus(TransportStatus::Disconnected);
                 return PICOQUIC_NO_ERROR_TERMINATE_PACKET_LOOP;
             }
@@ -166,7 +205,7 @@ int pq_event_cb(picoquic_cnx_t* cnx,
             picoquic_enable_keep_alive(cnx, 3000000);
             (void)picoquic_mark_datagram_ready(cnx, 1);
 
-            if (transport->isServerMode) {
+            if (transport->_is_server_mode) {
                 transport->on_new_connection(stream_cnx);
             }
 
@@ -181,8 +220,7 @@ int pq_event_cb(picoquic_cnx_t* cnx,
             break;
         }
 
-        case picoquic_callback_prepare_to_send:
-        {
+        case picoquic_callback_prepare_to_send: {
             transport->sendTxData(stream_cnx, bytes, length);
             break;
         }
@@ -201,14 +239,13 @@ int pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode,
            void* callback_ctx, void* callback_arg)
 {
 
-    PicoQuicTransport *transport = static_cast<PicoQuicTransport *>(callback_ctx);
+    PicoQuicTransport* transport = static_cast<PicoQuicTransport*>(callback_ctx);
     int ret = 0;
     std::ostringstream log_msg;
 
     if (transport == NULL) {
         return PICOQUIC_ERROR_UNEXPECTED_ERROR;
-    }
-    else {
+    } else {
         log_msg << "Loop got cb_mode: ";
 
         switch (cb_mode) {
@@ -216,11 +253,11 @@ int pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode,
                 log_msg << "packet_loop_ready, waiting for packets";
                 transport->logger.log(LogLevel::info, log_msg.str());
 
-                if (transport->isServerMode)
+                if (transport->_is_server_mode)
                     transport->setStatus(TransportStatus::Ready);
 
                 if (callback_arg != nullptr) {
-                    auto *options = static_cast<picoquic_packet_loop_options_t *> (callback_arg);
+                    auto* options = static_cast<picoquic_packet_loop_options_t*>(callback_arg);
                     options->do_time_check = 1;
                 }
 
@@ -267,7 +304,6 @@ int pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode,
 
                 transport->metrics.time_checks++;
 
-
                 if (transport->debug && targ->current_time - prev_time > 500000) {
 
                     if (transport->metrics != prev_metrics) {
@@ -277,12 +313,13 @@ int pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode,
                                 << "   send with null ctx : " << transport->metrics.send_null_bytes_ctx << std::endl
                                 << "   dgram_recv         : " << transport->metrics.dgram_received << std::endl
                                 << "   dgram_sent         : " << transport->metrics.dgram_sent << std::endl
-                                << "   dgram_prepare_send : " << transport->metrics.dgram_prepare_send
-                                << " (" << transport->metrics.dgram_prepare_send - prev_metrics.dgram_prepare_send << ")" << std::endl
+                                << "   dgram_prepare_send : " << transport->metrics.dgram_prepare_send << " ("
+                                << transport->metrics.dgram_prepare_send - prev_metrics.dgram_prepare_send << ")"
+                                << std::endl
                                 << "   dgram_lost         : " << transport->metrics.dgram_lost << std::endl
                                 << "   dgram_ack          : " << transport->metrics.dgram_ack << std::endl
-                                << "   dgram_spurious     : " << transport->metrics.dgram_spurious
-                                << " (" << transport->metrics.dgram_spurious + transport->metrics.dgram_ack << ")" << std::endl;
+                                << "   dgram_spurious     : " << transport->metrics.dgram_spurious << " ("
+                                << transport->metrics.dgram_spurious + transport->metrics.dgram_ack << ")" << std::endl;
 
                         transport->logger.log(LogLevel::debug, log_msg.str());
                         prev_metrics = transport->metrics;
@@ -295,7 +332,7 @@ int pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode,
                 if (transport->status() == TransportStatus::Shutdown) {
                     transport->logger.log(LogLevel::info, "picoquic is shutting down");
 
-                    picoquic_cnx_t *close_cnx = picoquic_get_first_cnx(quic);
+                    picoquic_cnx_t* close_cnx = picoquic_get_first_cnx(quic);
                     while (close_cnx != NULL) {
                         log_msg.str("");
                         log_msg << "Closing connection id " << reinterpret_cast<uint64_t>(close_cnx);
@@ -321,76 +358,69 @@ int pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode,
     return ret;
 }
 
-void PicoQuicTransport::deleteStreamContext(const TransportContextId &context_id,
-                                       const StreamId &stream_id)
+void PicoQuicTransport::deleteStreamContext(const TransportContextId& context_id,
+                                            const StreamId& stream_id)
 {
     std::ostringstream log_msg;
     log_msg << "Delete stream context for id: " << stream_id;
     logger.log(LogLevel::info, log_msg.str());
 
-    const auto &iter = active_streams.find(context_id);
+    const auto& iter = active_streams.find(context_id);
 
     if (iter != active_streams.end()) {
 
         if (stream_id == 0) { // Delete context if stream ID is zero
             for (const auto& stream_p : iter->second) {
                 if (stream_p.first == 0) {
-                    on_connection_status((StreamContext*)&stream_p.second,
-                                         TransportStatus::Disconnected);
+                    on_connection_status((StreamContext*)&stream_p.second, TransportStatus::Disconnected);
                     continue;
                 }
 
-                (void)picoquic_mark_active_stream(stream_p.second.cnx,
-                                                  stream_id, 0,
-                                                  NULL);
-                if (not isServerMode) {
-                    (void)picoquic_add_to_stream(stream_p.second.cnx,
-                                                 stream_id, NULL, 0,1);
+                (void)picoquic_mark_active_stream(stream_p.second.cnx, stream_id, 0, NULL);
+                if (not _is_server_mode) {
+                    (void)picoquic_add_to_stream(stream_p.second.cnx, stream_id, NULL, 0, 1);
                 }
 
                 iter->second.erase(stream_id);
             }
 
             (void)active_streams.erase(iter);
-        }
-        else {
-            const auto &stream_iter = iter->second.find(stream_id);
+        } else {
+            const auto& stream_iter = iter->second.find(stream_id);
 
             if (stream_iter != iter->second.end()) {
-                (void)picoquic_mark_active_stream(stream_iter->second.cnx,
-                                                  stream_id, 0,
-                                                  NULL);
+                (void)picoquic_mark_active_stream(stream_iter->second.cnx, stream_id, 0, NULL);
                 (void)iter->second.erase(stream_id);
             }
         }
     }
 }
 
-PicoQuicTransport::StreamContext * PicoQuicTransport::getZeroStreamContext(picoquic_cnx_t* cnx) {
+PicoQuicTransport::StreamContext*
+PicoQuicTransport::getZeroStreamContext(picoquic_cnx_t* cnx)
+{
     if (cnx == NULL)
         return NULL;
 
     return &active_streams[reinterpret_cast<uint64_t>(cnx)][0];
 }
 
-PicoQuicTransport::StreamContext * PicoQuicTransport::createStreamContext(
-  picoquic_cnx_t* cnx, uint64_t stream_id)
+PicoQuicTransport::StreamContext*
+PicoQuicTransport::createStreamContext(picoquic_cnx_t* cnx, uint64_t stream_id)
 {
     if (cnx == NULL)
         return NULL;
 
-    StreamContext * stream_cnx = &active_streams[reinterpret_cast<uint64_t>(cnx)][stream_id];
+    StreamContext* stream_cnx = &active_streams[reinterpret_cast<uint64_t>(cnx)][stream_id];
     stream_cnx->stream_id = stream_id;
     stream_cnx->context_id = reinterpret_cast<uint64_t>(cnx);
     stream_cnx->cnx = cnx;
 
-    stream_cnx->rx_data = std::make_unique<timeQueue>(tconfig.time_queue_max_duration,
-                                                      tconfig.time_queue_bucket_interval,
-                                                      _timer, tconfig.time_queue_init_queue_size);
+    stream_cnx->rx_data = std::make_unique<timeQueue>(
+      tconfig.time_queue_max_duration, tconfig.time_queue_bucket_interval, _timer, tconfig.time_queue_init_queue_size);
 
-    stream_cnx->tx_data = std::make_unique<priority_queue<bytes_t>>(tconfig.time_queue_max_duration,
-                                                                    tconfig.time_queue_bucket_interval,
-                                                                    _timer, tconfig.time_queue_init_queue_size);
+    stream_cnx->tx_data = std::make_unique<priority_queue<bytes_t>>(
+      tconfig.time_queue_max_duration, tconfig.time_queue_bucket_interval, _timer, tconfig.time_queue_init_queue_size);
 
     sockaddr* addr;
     picoquic_get_peer_addr(cnx, &addr);
@@ -399,24 +429,24 @@ PicoQuicTransport::StreamContext * PicoQuicTransport::createStreamContext(
     switch (addr->sa_family) {
         case AF_INET:
             (void)inet_ntop(AF_INET,
-                            &reinterpret_cast<struct sockaddr_in *>(addr)->sin_addr,
+                            &reinterpret_cast<struct sockaddr_in*>(addr)->sin_addr,
                             /*(const void*)(&((struct sockaddr_in*)addr)->sin_addr),*/
                             stream_cnx->peer_addr_text,
                             sizeof(stream_cnx->peer_addr_text));
-            stream_cnx->peer_port = ntohs(((struct sockaddr_in*) addr)->sin_port);
+            stream_cnx->peer_port = ntohs(((struct sockaddr_in*)addr)->sin_port);
             break;
 
         case AF_INET6:
             (void)inet_ntop(AF_INET6,
-                            &reinterpret_cast<struct sockaddr_in6 *>(addr)->sin6_addr,
+                            &reinterpret_cast<struct sockaddr_in6*>(addr)->sin6_addr,
                             /*(const void*)(&((struct sockaddr_in6*)addr)->sin6_addr), */
-                            stream_cnx->peer_addr_text, sizeof(stream_cnx->peer_addr_text));
-            stream_cnx->peer_port = ntohs(((struct sockaddr_in6*) addr)->sin6_port);
+                            stream_cnx->peer_addr_text,
+                            sizeof(stream_cnx->peer_addr_text));
+            stream_cnx->peer_port = ntohs(((struct sockaddr_in6*)addr)->sin6_port);
             break;
     }
 
     (void)picoquic_set_app_stream_ctx(cnx, stream_id, stream_cnx);
-
 
     if (stream_id)
         (void)picoquic_mark_active_stream(cnx, stream_id, 1, stream_cnx);
@@ -427,28 +457,26 @@ PicoQuicTransport::StreamContext * PicoQuicTransport::createStreamContext(
 PicoQuicTransport::PicoQuicTransport(const TransportRemote& server,
                                      const TransportConfig& tcfg,
                                      TransportDelegate& delegate,
-                                     bool isServerMode,
+                                     bool _is_server_mode,
                                      LogHandler& logger)
   : logger(logger)
-  , isServerMode(isServerMode)
+  , _is_server_mode(_is_server_mode)
   , stop(false)
   , transportStatus(TransportStatus::Connecting)
   , serverInfo(server)
   , delegate(delegate)
   , tconfig(tcfg)
+  , next_stream_id{ ::make_datagram_stream_id(_is_server_mode, _is_bidirectional) }
 {
     debug = tcfg.debug;
 
-    if (isServerMode && tcfg.tls_cert_filename == NULL) {
+    if (_is_server_mode && tcfg.tls_cert_filename == NULL) {
         throw InvalidConfigException("Missing cert filename");
-    }
-    else if (tcfg.tls_cert_filename != NULL) {
-        (void)picoquic_config_set_option(&config, picoquic_option_CERT,
-                                         tcfg.tls_cert_filename);
+    } else if (tcfg.tls_cert_filename != NULL) {
+        (void)picoquic_config_set_option(&config, picoquic_option_CERT, tcfg.tls_cert_filename);
 
         if (tcfg.tls_key_filename != NULL) {
-            (void)picoquic_config_set_option(&config, picoquic_option_KEY,
-                                             tcfg.tls_key_filename);
+            (void)picoquic_config_set_option(&config, picoquic_option_KEY, tcfg.tls_key_filename);
         } else {
             throw InvalidConfigException("Missing cert key filename");
         }
@@ -463,7 +491,8 @@ PicoQuicTransport::~PicoQuicTransport()
     shutdown();
 }
 
-void PicoQuicTransport::shutdown()
+void
+PicoQuicTransport::shutdown()
 {
     if (stop) // Already stopped
         return;
@@ -487,52 +516,46 @@ void PicoQuicTransport::shutdown()
     picoquic_config_clear(&config);
 }
 
-
 TransportStatus
 PicoQuicTransport::status() const
 {
     return transportStatus;
 }
 
-void PicoQuicTransport::setStatus(TransportStatus status) {
+void
+PicoQuicTransport::setStatus(TransportStatus status)
+{
     transportStatus = status;
 }
 
-StreamId PicoQuicTransport::createStream(
-  const TransportContextId& context_id,
-  bool use_reliable_transport)
+StreamId
+PicoQuicTransport::createStream(const TransportContextId& context_id, bool use_reliable_transport)
 {
     logger.log(LogLevel::debug, "App requests to create new stream");
 
-    const auto &iter = active_streams.find(context_id);
+    const auto& iter = active_streams.find(context_id);
     if (iter == active_streams.end()) {
-        logger.log(LogLevel::warn, "Invalid context id, cannot create stream");
-        return 0;
+        throw std::invalid_argument("Invalid context id, cannot create stream");
     }
 
-    const auto &cnx_stream_iter = iter->second.find(0);
+    const auto& cnx_stream_iter = iter->second.find(0);
     if (cnx_stream_iter == iter->second.end()) {
-        logger.log(LogLevel::warn,
-                   "Missing primary connection zero stream, cannot create streams");
-        return 0;
+        throw std::invalid_argument("Missing primary connection zero stream, cannot create streams");
     }
 
-    if (isServerMode) // Server does not create streams, clients must create these
-        return 0;
-    else if (not use_reliable_transport)
-        return 0;
+    if (!use_reliable_transport)
+        return ::make_datagram_stream_id(_is_server_mode, _is_bidirectional);
 
-    // Create stream will add stream to active_streams
-    PicoQuicTransport::StreamContext * stream_cnx = createStreamContext(
+    next_stream_id = ::make_stream_id(next_stream_id + 4, _is_server_mode, _is_bidirectional);
+
+    PicoQuicTransport::StreamContext *stream_cnx = createStreamContext(
       cnx_stream_iter->second.cnx,
       next_stream_id);
 
     TransportContextId tcid = context_id;
     StreamId stream_id = next_stream_id;
 
-    cbNotifyQueue.push([&] () {
-        delegate.on_new_stream(tcid, stream_id);
-    });
+    cbNotifyQueue.push([&]() { delegate.on_new_stream(tcid, stream_id); });
 
     // Set next stream ID
     next_stream_id += 4; // Increment by 4, stream type is first 2 bits
@@ -544,17 +567,11 @@ TransportContextId
 PicoQuicTransport::start()
 {
     uint64_t current_time = picoquic_current_time();
-    debug_set_stream(stdout);  // Enable picoquic debug
+    debug_set_stream(stdout); // Enable picoquic debug
 
-    (void)picoquic_config_set_option(&config,
-                                     picoquic_option_ALPN, QUICR_ALPN);
-    (void)picoquic_config_set_option(&config,
-                                     picoquic_option_MAX_CONNECTIONS, "100");
-    quic_ctx = picoquic_create_and_configure(&config,
-                                             pq_event_cb,
-                                             this,
-                                             current_time,
-                                             NULL);
+    (void)picoquic_config_set_option(&config, picoquic_option_ALPN, QUICR_ALPN);
+    (void)picoquic_config_set_option(&config, picoquic_option_MAX_CONNECTIONS, "100");
+    quic_ctx = picoquic_create_and_configure(&config, pq_event_cb, this, current_time, NULL);
 
     if (quic_ctx == NULL) {
         logger.log(LogLevel::fatal, "Unable to create picoquic context, check certificate and key filenames");
@@ -580,17 +597,15 @@ PicoQuicTransport::start()
     TransportContextId cid = 0;
     std::ostringstream log_msg;
 
-    if (isServerMode) {
+    if (_is_server_mode) {
 
-        log_msg << "Starting server, listening on "
-                << serverInfo.host_or_ip << ':' << serverInfo.port;
+        log_msg << "Starting server, listening on " << serverInfo.host_or_ip << ':' << serverInfo.port;
         logger.log(LogLevel::info, log_msg.str());
 
         picoQuicThread = std::thread(&PicoQuicTransport::server, this);
 
     } else {
-        log_msg << "Connecting to server "
-                << serverInfo.host_or_ip << ':' << serverInfo.port;
+        log_msg << "Connecting to server " << serverInfo.host_or_ip << ':' << serverInfo.port;
         logger.log(LogLevel::info, log_msg.str());
 
         cid = createClient();
@@ -600,7 +615,8 @@ PicoQuicTransport::start()
     return cid;
 }
 
-void PicoQuicTransport::cbNotifier()
+void
+PicoQuicTransport::cbNotifier()
 {
     logger.log(LogLevel::info, "Starting transport callback notifier thread");
 
@@ -614,14 +630,10 @@ void PicoQuicTransport::cbNotifier()
     logger.log(LogLevel::info, "Done with transport callback notifier thread");
 }
 
-void PicoQuicTransport::server()
+void
+PicoQuicTransport::server()
 {
-    int ret = picoquic_packet_loop(quic_ctx, serverInfo.port,
-                                   0, 0,
-                                   2000000,
-                                   0,
-                                   pq_loop_cb,
-                                   this);
+    int ret = picoquic_packet_loop(quic_ctx, serverInfo.port, 0, 0, 2000000, 0, pq_loop_cb, this);
 
     std::ostringstream log_msg;
 
@@ -634,10 +646,11 @@ void PicoQuicTransport::server()
     logger.log(LogLevel::info, log_msg.str());
 
     setStatus(TransportStatus::Shutdown);
-
 }
 
-TransportContextId PicoQuicTransport::createClient() {
+TransportContextId
+PicoQuicTransport::createClient()
+{
     struct sockaddr_storage server_address;
     char const* sni = "cisco.webex.com";
     int ret;
@@ -645,12 +658,10 @@ TransportContextId PicoQuicTransport::createClient() {
 
     int is_name = 0;
 
-    ret = picoquic_get_server_address(serverInfo.host_or_ip.c_str(),
-                                      serverInfo.port, &server_address, &is_name);
+    ret = picoquic_get_server_address(serverInfo.host_or_ip.c_str(), serverInfo.port, &server_address, &is_name);
     if (ret != 0) {
         log_msg.str("");
-        log_msg << "Failed to get server: "
-                << serverInfo.host_or_ip << " port: " << serverInfo.port;
+        log_msg << "Failed to get server: " << serverInfo.host_or_ip << " port: " << serverInfo.port;
         logger.log(LogLevel::error, log_msg.str());
 
     } else if (is_name) {
@@ -664,9 +675,12 @@ TransportContextId PicoQuicTransport::createClient() {
     picoquic_cnx_t* cnx = picoquic_create_cnx(quic_ctx,
                                               picoquic_null_connection_id,
                                               picoquic_null_connection_id,
-                                              reinterpret_cast<struct sockaddr*>( &server_address),
+                                              reinterpret_cast<struct sockaddr*>(&server_address),
                                               current_time,
-                                              0, sni, config.alpn, 1);
+                                              0,
+                                              sni,
+                                              config.alpn,
+                                              1);
 
     if (cnx == NULL) {
         logger.log(LogLevel::error, "Could not create picoquic connection client context");
@@ -681,7 +695,8 @@ TransportContextId PicoQuicTransport::createClient() {
     return reinterpret_cast<uint64_t>(cnx);
 }
 
-void PicoQuicTransport::client(const TransportContextId tcid)
+void
+PicoQuicTransport::client(const TransportContextId tcid)
 {
     int ret;
     std::ostringstream log_msg;
@@ -693,8 +708,7 @@ void PicoQuicTransport::client(const TransportContextId tcid)
 
     if (cnx == NULL) {
         logger.log(LogLevel::error, "Could not create picoquic connection client context");
-    }
-    else {
+    } else {
         picoquic_set_callback(cnx, pq_event_cb, this);
 
         picoquic_enable_keep_alive(cnx, 3000000);
@@ -705,10 +719,7 @@ void PicoQuicTransport::client(const TransportContextId tcid)
             return;
         }
 
-
-        ret = picoquic_packet_loop(quic_ctx, 0, AF_INET, 0,
-                                   2000000, 0,
-                                   pq_loop_cb, this);
+        ret = picoquic_packet_loop(quic_ctx, 0, AF_INET, 0, 2000000, 0, pq_loop_cb, this);
 
         log_msg.str("");
         log_msg << "picoquic ended with " << ret;
@@ -724,38 +735,34 @@ void PicoQuicTransport::client(const TransportContextId tcid)
 }
 
 void
-PicoQuicTransport::closeStream(const TransportContextId& context_id,
-                               const StreamId stream_id)
+PicoQuicTransport::closeStream(const TransportContextId& context_id, const StreamId stream_id)
 {
     deleteStreamContext(context_id, stream_id);
 }
 
 void
-PicoQuicTransport::close(
-  [[maybe_unused]] const TransportContextId& context_id)
+PicoQuicTransport::close([[maybe_unused]] const TransportContextId& context_id)
 {
 }
 
-void PicoQuicTransport::checkTxData()
+void
+PicoQuicTransport::checkTxData()
 {
-    //uint64_t cur_time = picoquic_current_time();
+    // uint64_t cur_time = picoquic_current_time();
 
-    for (auto& c_pair: active_streams) {
-        for (auto &s_pair : active_streams[c_pair.first]) {
+    for (auto& c_pair : active_streams) {
+        for (auto& s_pair : active_streams[c_pair.first]) {
 
             if (s_pair.first != 0) {
                 if (s_pair.second.tx_data->size() > 0)
-                    (void)picoquic_mark_active_stream(s_pair.second.cnx,
-                                                      s_pair.first,
-                                                      1,
-                                                      static_cast<StreamContext*>(&s_pair.second));
-            }
-            else {
+                    (void)picoquic_mark_active_stream(
+                      s_pair.second.cnx, s_pair.first, 1, static_cast<StreamContext*>(&s_pair.second));
+            } else {
                 if (s_pair.second.tx_data->size() > 0) {
                     // reinsert by wake is one way to get picoquic to callback sooner
-                    //picoquic_reinsert_by_wake_time(s_pair.second.cnx->quic, s_pair.second.cnx, cur_time);
+                    // picoquic_reinsert_by_wake_time(s_pair.second.cnx->quic, s_pair.second.cnx, cur_time);
                     // Only send tx data here when using picoquic queueing, otherwise let the callbacks handle it
-                    //sendTxData(&s_pair.second, NULL, 1400);
+                    // sendTxData(&s_pair.second, NULL, 1400);
 
                     (void)picoquic_mark_datagram_ready(s_pair.second.cnx, 1);
                 } else {
@@ -766,9 +773,8 @@ void PicoQuicTransport::checkTxData()
     }
 }
 
-void PicoQuicTransport::sendTxData(StreamContext *stream_cnx,
-                              [[maybe_unused]] uint8_t* bytes_ctx,
-                              size_t max_len)
+void
+PicoQuicTransport::sendTxData(StreamContext* stream_cnx, [[maybe_unused]] uint8_t* bytes_ctx, size_t max_len)
 {
     if (bytes_ctx == NULL) {
         metrics.send_null_bytes_ctx++;
@@ -780,7 +786,7 @@ void PicoQuicTransport::sendTxData(StreamContext *stream_cnx,
         if (max_len >= out_data.value().size()) {
             metrics.dgram_sent++;
 
-            uint8_t *buf = NULL;
+            uint8_t* buf = NULL;
 
             if (stream_cnx->stream_id == 0) {
                 buf = picoquic_provide_datagram_buffer_ex(bytes_ctx,
@@ -788,7 +794,9 @@ void PicoQuicTransport::sendTxData(StreamContext *stream_cnx,
                                                           /*stream_cnx->tx_data.size() > 1 ? 1 : 0*/ 1);
 
             } else {
-                buf = picoquic_provide_stream_data_buffer(bytes_ctx, out_data->size(), 0,
+                buf = picoquic_provide_stream_data_buffer(bytes_ctx,
+                                                          out_data->size(),
+                                                          0,
                                                           /*stream_cnx->tx_data.size() > 1 ? 1 : 0*/ 1);
             }
 
@@ -799,12 +807,11 @@ void PicoQuicTransport::sendTxData(StreamContext *stream_cnx,
             }
         }
     }
-
 }
 
 TransportError
 PicoQuicTransport::enqueue(const TransportContextId& context_id,
-                           const StreamId & stream_id,
+                           const StreamId& stream_id,
                            std::vector<uint8_t>&& bytes,
                            const uint8_t priority,
                            const uint32_t ttl_ms)
@@ -813,10 +820,10 @@ PicoQuicTransport::enqueue(const TransportContextId& context_id,
         return TransportError::None;
     }
 
-    const auto &ctx = active_streams.find(context_id);
+    const auto& ctx = active_streams.find(context_id);
 
     if (ctx != active_streams.end()) {
-        const auto &stream_cnx = ctx->second.find(stream_id);
+        const auto& stream_cnx = ctx->second.find(stream_id);
 
         if (stream_cnx != ctx->second.end()) {
 
@@ -832,8 +839,7 @@ PicoQuicTransport::enqueue(const TransportContextId& context_id,
 }
 
 std::optional<std::vector<uint8_t>>
-PicoQuicTransport::dequeue(const TransportContextId& context_id,
-                           const StreamId & stream_id)
+PicoQuicTransport::dequeue(const TransportContextId& context_id, const StreamId& stream_id)
 {
     auto cnx_it = active_streams.find(context_id);
 
@@ -847,43 +853,35 @@ PicoQuicTransport::dequeue(const TransportContextId& context_id,
     return std::nullopt;
 }
 
-void PicoQuicTransport::on_connection_status(
-  PicoQuicTransport::StreamContext *stream_cnx, const TransportStatus status)
+void
+PicoQuicTransport::on_connection_status(PicoQuicTransport::StreamContext* stream_cnx, const TransportStatus status)
 {
-    TransportContextId context_id { stream_cnx->context_id };
+    TransportContextId context_id{ stream_cnx->context_id };
 
-    cbNotifyQueue.push([=, this] () {
-        delegate.on_connection_status(context_id, status);
-    });
+    cbNotifyQueue.push([=, this]() { delegate.on_connection_status(context_id, status); });
 }
 
-void PicoQuicTransport::on_new_connection(StreamContext *stream_cnx)
+void
+PicoQuicTransport::on_new_connection(StreamContext* stream_cnx)
 {
     std::ostringstream log_msg;
 
-    log_msg << "New Connection " << stream_cnx->peer_addr_text
-            << ":" << stream_cnx->peer_port
-            << " conn_ctx: " << reinterpret_cast<uint64_t>(stream_cnx->cnx)
-            << " stream_id: " << stream_cnx->stream_id;
+    log_msg << "New Connection " << stream_cnx->peer_addr_text << ":" << stream_cnx->peer_port
+            << " conn_ctx: " << reinterpret_cast<uint64_t>(stream_cnx->cnx) << " stream_id: " << stream_cnx->stream_id;
 
     logger.log(LogLevel::info, log_msg.str());
 
-    TransportRemote remote {
-        .host_or_ip = stream_cnx->peer_addr_text,
-        .port = stream_cnx->peer_port,
-        .proto = TransportProtocol::QUIC
-    };
+    TransportRemote remote{ .host_or_ip = stream_cnx->peer_addr_text,
+                            .port = stream_cnx->peer_port,
+                            .proto = TransportProtocol::QUIC };
 
-    TransportContextId context_id { stream_cnx->context_id };
+    TransportContextId context_id{ stream_cnx->context_id };
 
-    cbNotifyQueue.push([=, this] () {
-        delegate.on_new_connection(context_id,
-                                   remote);
-    });
+    cbNotifyQueue.push([=, this]() { delegate.on_new_connection(context_id, remote); });
 }
 
-void PicoQuicTransport::on_recv_data(StreamContext *stream_cnx,
-                                uint8_t* bytes, size_t length)
+void
+PicoQuicTransport::on_recv_data(StreamContext* stream_cnx, uint8_t* bytes, size_t length)
 {
     if (stream_cnx == NULL || length == 0) {
         return;
@@ -898,16 +896,12 @@ void PicoQuicTransport::on_recv_data(StreamContext *stream_cnx,
         std::cout << "cbNotifyQueue size: " << cbNotifyQueue.size() << std::endl;
     }
 
-    if (too_many_in_queue
-        || stream_cnx->rx_data->size() < 2
-        || stream_cnx->in_data_cb_skip_count > 30)  {
+    if (too_many_in_queue || stream_cnx->rx_data->size() < 2 || stream_cnx->in_data_cb_skip_count > 30) {
         stream_cnx->in_data_cb_skip_count = 0;
         TransportContextId context_id = stream_cnx->context_id;
         StreamId stream_id = stream_cnx->stream_id;
 
-        cbNotifyQueue.push([=, this] () {
-            delegate.on_recv_notify(context_id, stream_id);
-        });
+        cbNotifyQueue.push([=, this]() { delegate.on_recv_notify(context_id, stream_id); });
     } else {
         stream_cnx->in_data_cb_skip_count++;
     }
