@@ -137,7 +137,7 @@ class PicoQuicTransport : public ITransport
      */
     LogHandler& logger;
     bool _is_server_mode;
-    bool _is_bidirectional{true};
+    bool _is_unidirectional{ false };
     bool debug {false};
 
 
