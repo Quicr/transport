@@ -25,7 +25,6 @@
 #include <array>
 #include <atomic>
 #include <chrono>
-#include <iostream>
 #include <memory>
 #include <mutex>
 #include <optional>
