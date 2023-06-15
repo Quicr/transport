@@ -29,10 +29,14 @@ namespace qtransport {
     constexpr StreamId &operator=(const StreamId &) = default;
     constexpr StreamId &operator=(StreamId &&) = default;
     constexpr StreamId &operator=(const type &value) {
+      _is_server = value & 0b01;
+      _is_unidirectional = value & 0b10;
       adjust(value);
       return *this;
     }
     constexpr StreamId &operator=(type &&value) {
+      _is_server = value & 0b01;
+      _is_unidirectional = value & 0b10;
       _value = std::move(value);
       adjust(_value);
       return *this;
