@@ -111,7 +111,7 @@ public:
     StreamContext *getZeroStreamContext(picoquic_cnx_t *cnx);
 
     StreamContext *createStreamContext(picoquic_cnx_t *cnx,
-                                       uint64_t stream_id);
+                                       StreamId stream_id);
     void deleteStreamContext(const TransportContextId &context_id,
                              const StreamId &stream_id);
 
@@ -129,7 +129,7 @@ public:
      */
     LogHandler &logger;
     bool _is_server_mode;
-    bool _is_bidirectional{true};
+    bool _is_unidirectional{false};
     bool debug{false};
 
 private:

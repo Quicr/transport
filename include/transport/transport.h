@@ -1,18 +1,18 @@
 #pragma once
 
+#include "logger.h"
+#include "stream_id.h"
+
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <queue>
 #include <vector>
 
-#include "logger.h"
-
 namespace qtransport {
 
-using TransportContextId = uint64_t; ///< Context Id is a 64bit number that is used as a key to maps
-using StreamId = uint64_t;           ///< stream Id is a 64bit number that is
-                                     ///< used as a key to maps
+  using TransportContextId = uint64_t;///< Context Id is a 64bit number that is used as a key to maps
+
 /**
  * Transport status/state values
  */
@@ -276,4 +276,4 @@ public:
     const StreamId & streamId) = 0;
 };
 
-} // namespace qtransport
+}// namespace qtransport

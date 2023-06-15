@@ -48,6 +48,7 @@ UDPTransport::UDPTransport(const TransportRemote& server,
   , isServerMode(isServerMode)
   , serverInfo(server)
   , delegate(delegate)
+  , last_stream_id(0, isServerMode, false)
 {
 }
 

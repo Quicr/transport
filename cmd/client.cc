@@ -110,7 +110,7 @@ int main() {
       (*msg_num)++;
       auto data = bytes(data_buf, data_buf + sizeof(data_buf));
 
-      client->enqueue(tcid, server.proto == TransportProtocol::UDP ? 1 : stream_id,
+      client->enqueue(tcid, server.proto == TransportProtocol::UDP ? StreamId(1) : stream_id,
                         std::move(data));
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
@@ -120,4 +120,3 @@ int main() {
 
   client.reset();
 }
-

@@ -122,7 +122,7 @@ private:
   TransportDelegate& delegate;
 
   TransportContextId last_context_id{ 0 };
-  StreamId last_stream_id{ 0 };
+  StreamId last_stream_id;
   std::map<TransportContextId, Addr> remote_contexts = {};
   std::map<addrKey, AddrStream> remote_addrs = {};
 };

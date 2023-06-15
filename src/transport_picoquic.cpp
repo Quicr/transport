@@ -21,56 +21,6 @@
 
 using namespace qtransport;
 
-namespace {
-  /**
-   * Stream type bits as defined by RFC9000:
-   * - https://datatracker.ietf.org/doc/html/rfc9000#table-1
-   */
-
-  /// Client initiated stream type
-  constexpr uint8_t ClientStreamBits = 0b00;
-
-  /// Server initiated stream type
-  constexpr uint8_t ServerStreamBits = 0b01;
-
-  /// Bidirectional stream type
-  constexpr uint8_t BidirectionalStreamBits = 0b00;
-
-  /// Unidirectional stream type
-  constexpr uint8_t UnidirectionalStreamBits = 0b10;
-
-  /**
-   * @brief Returns the appropriate stream id depending on if the stream is
-   *        initiated by the client or the server, and if it bi- or uni- directional.
-   *
-   * @tparam Int_t The preferred integer type to deal with.
-   *
-   * @param id  The initial value to adjust
-   * @param is_server Flag if the initiating request is from a server or a client
-   * @param is_bidirectional Flag if the streams are bi- or uni- directional.
-   *
-   * @return The correctly adjusted stream id value.
-   */
-  constexpr StreamId make_stream_id(StreamId id, bool is_server, bool is_bidirectional) {
-    return id & (~0x0u << 2) |
-           (is_server ? ServerStreamBits : ClientStreamBits) |
-           (is_bidirectional ? BidirectionalStreamBits : UnidirectionalStreamBits);
-  }
-
-  /**
-   * @brief Defines the default/datagram stream depending on if the stream is
-   *        initiated by the client or the server, and if it bi- or uni- directional.
-   *
-   * @param is_server Flag if the initiating request is from a server or a client
-   * @param is_bidirectional Flag if the streams are bi- or uni- directional.
-   *
-   * @return The datagram stream id.
-   */
-  constexpr StreamId make_datagram_stream_id(bool is_server, bool is_bidirectional) {
-    return ::make_stream_id(0, is_server, is_bidirectional);
-  }
-}// namespace
-
 /*
  * PicoQuic Callbacks
  */
@@ -399,7 +349,7 @@ PicoQuicTransport::StreamContext *PicoQuicTransport::getZeroStreamContext(picoqu
 }
 
 PicoQuicTransport::StreamContext *PicoQuicTransport::createStreamContext(
-        picoquic_cnx_t *cnx, uint64_t stream_id) {
+        picoquic_cnx_t *cnx, StreamId stream_id) {
   if (cnx == NULL)
     return NULL;
 
@@ -459,7 +409,7 @@ PicoQuicTransport::PicoQuicTransport(const TransportRemote &server,
       serverInfo(server),
       delegate(delegate),
       tconfig(tcfg),
-      next_stream_id{::make_datagram_stream_id(_is_server_mode, _is_bidirectional)} {
+      next_stream_id(0, _is_server_mode, _is_unidirectional) {
 
   debug = tcfg.debug;
 
@@ -524,13 +474,13 @@ StreamId PicoQuicTransport::createStream(const TransportContextId &context_id, b
 
   const auto &cnx_stream_iter = iter->second.find(0);
   if (cnx_stream_iter == iter->second.end()) {
-    throw std::invalid_argument("Missing primary connection zero stream, cannot create streams");
+    throw std::domain_error("Missing primary connection zero stream, cannot create streams");
   }
 
   if (!use_reliable_transport)
-    return ::make_datagram_stream_id(_is_server_mode, _is_bidirectional);
+    return _is_server_mode ? 0b01 : 0b00;
 
-  next_stream_id = ::make_stream_id(next_stream_id + 4, _is_server_mode, _is_bidirectional);
+  ++next_stream_id;
 
   PicoQuicTransport::StreamContext *stream_cnx = createStreamContext(
           cnx_stream_iter->second.cnx,
