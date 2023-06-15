@@ -55,7 +55,7 @@ namespace qtransport {
 
   private:
     constexpr void adjust(type value) {
-      _value = (value & (~0x0u << 2)) | _is_server | (_is_unidirectional & 0b10);
+      _value = (value & (~0x0u << 2)) | _is_server | (_is_unidirectional * 2);
     }
 
   private:
