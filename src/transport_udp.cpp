@@ -345,7 +345,9 @@ UDPTransport::fd_reader()
 TransportError
 UDPTransport::enqueue(const TransportContextId& context_id,
                       const StreamId& streamId,
-                      std::vector<uint8_t>&& bytes)
+                      std::vector<uint8_t>&& bytes,
+                      [[maybe_unused]] const uint8_t priority,
+                      [[maybe_unused]] const uint32_t ttl_ms)
 {
   if (bytes.empty()) {
     return TransportError::None;

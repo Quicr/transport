@@ -72,9 +72,13 @@ public:
   StreamId createStream(const TransportContextId& context_id,
                         bool use_reliable_transport) override;
 
+
   TransportError enqueue(const TransportContextId& context_id,
-                         const StreamId &streamId,
-                         std::vector<uint8_t>&& bytes) override;
+                         const StreamId & stream_id,
+                         std::vector<uint8_t>&& bytes,
+                         const uint8_t priority = 1,
+                         const uint32_t ttl_ms = 300) override;
+
 
   std::optional<std::vector<uint8_t>> dequeue(
     const TransportContextId& context_id,

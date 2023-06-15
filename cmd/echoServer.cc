@@ -41,7 +41,7 @@ public:
                       const StreamId &streamId) {
     std::stringstream s_log;
 
-    //static uint32_t prev_msg_num = 0;
+    static uint32_t prev_msg_num = 0;
 
     while (true) {
       auto data = server->dequeue(context_id, streamId);
@@ -49,18 +49,18 @@ public:
       if (data.has_value()) {
         msgcount++;
 
-        /*
         uint32_t *msg_num = (uint32_t *)data.value().data();
 
-        s_log.str(std::string());
-        s_log << "cid: " << context_id << " sid: " << streamId
-              << " length: " << data->size() << "  RecvMsg (" << msgcount << ")"
-              << "  msg_num: " << *msg_num << " ("
-              << ((*msg_num) - prev_msg_num) << ")";
+        if (prev_msg_num && (*msg_num - prev_msg_num) > 1) {
+            s_log.str(std::string());
+            s_log << "cid: " << context_id << " sid: " << streamId << "  length: " << data->size() << "  RecvMsg ("
+                  << msgcount << ")"
+                  << "  msg_num: " << *msg_num
+                  << "  prev_num: " << prev_msg_num << "(" << *msg_num - prev_msg_num << ")";
+            logger.log(LogLevel::info, s_log.str());
+        }
 
-        logger.log(LogLevel::info, s_log.str());
         prev_msg_num = *msg_num;
-        */
 
         server->enqueue(context_id, streamId, std::move(data.value()));
       } else {
@@ -81,7 +81,8 @@ int main() {
       TransportRemote{"127.0.0.1", 1234, TransportProtocol::QUIC};
   TransportConfig tconfig{.tls_cert_filename = "./server-cert.pem",
                           .tls_key_filename = "./server-key.pem",
-                          .data_queue_size = 500,
+                          .time_queue_max_duration = 300,
+                          .time_queue_bucket_interval = 1,
                           .debug = true};
 
 

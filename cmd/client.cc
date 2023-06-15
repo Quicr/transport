@@ -46,21 +46,27 @@ public:
                       const StreamId &streamId) {
     std::stringstream s_log;
 
+    static uint32_t prev_msg_num = 0;
+
     while (true) {
       auto data = client->dequeue(context_id, streamId);
 
       if (data.has_value()) {
         msgcount++;
 
-        /*
         uint32_t *msg_num = (uint32_t *)data.value().data();
-        s_log.str(std::string());
-        s_log << "cid: " << context_id << " sid: " << streamId
-              << "  length: " << data->size() << "  RecvMsg (" << msgcount
-              << ")"
-              << "  msg_num: " << *msg_num;
-        logger.log(LogLevel::info, s_log.str());
-         */
+
+        if (prev_msg_num && (*msg_num - prev_msg_num) > 1) {
+            s_log.str(std::string());
+            s_log << "cid: " << context_id << " sid: " << streamId << "  length: " << data->size() << "  RecvMsg ("
+                  << msgcount << ")"
+                  << "  msg_num: " << *msg_num
+                  << "  prev_num: " << prev_msg_num << "(" << *msg_num - prev_msg_num << ")";
+            logger.log(LogLevel::info, s_log.str());
+        }
+
+        prev_msg_num = *msg_num;
+
       } else {
         break;
       }
@@ -79,7 +85,12 @@ int main() {
   TransportRemote server =
       TransportRemote{"127.0.0.1", 1234, TransportProtocol::QUIC};
 
-  TransportConfig tconfig{.tls_cert_filename = NULL, .tls_key_filename = NULL, .debug = true};
+  TransportConfig tconfig{.tls_cert_filename = NULL,
+                           .tls_key_filename = NULL,
+                           .time_queue_init_queue_size = 1000,
+                           .time_queue_max_duration = 1000,
+                           .time_queue_bucket_interval = 1,
+                           .debug = true};
 
   if ( (envVar = getenv("RELAY_HOST")))
     server.host_or_ip = envVar;
