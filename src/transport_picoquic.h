@@ -22,9 +22,9 @@
 #include <picoquic_packet_loop.h>
 #include <transport/transport.h>
 
-#include "safe_queue.h"
-#include "time_queue.h"
-#include "priority_queue.h"
+#include "transport/priority_queue.h"
+#include "transport/safe_queue.h"
+#include "transport/time_queue.h"
 
 namespace qtransport {
 

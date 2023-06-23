@@ -599,6 +599,8 @@ PicoQuicTransport::cbNotifier()
         auto cb = std::move(cbNotifyQueue.block_pop());
         if (cb) {
             (*cb)();
+        } else {
+            logger.log(LogLevel::info, "Notify callback is NULL");
         }
     }
 
