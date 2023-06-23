@@ -16,7 +16,7 @@
 
 #include <transport/transport.h>
 
-#include "safe_queue.h"
+#include "transport/safe_queue.h"
 
 namespace qtransport {
 

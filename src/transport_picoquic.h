@@ -22,9 +22,9 @@
 #include <picoquic_packet_loop.h>
 #include <transport/transport.h>
 
-#include "safe_queue.h"
-#include "time_queue.h"
-#include "priority_queue.h"
+#include "transport/priority_queue.h"
+#include "transport/safe_queue.h"
+#include "transport/time_queue.h"
 
 namespace qtransport {
 
@@ -41,8 +41,8 @@ class PicoQuicTransport : public ITransport
         uint64_t send_null_bytes_ctx {0};
         uint64_t dgram_lost {0};
         uint64_t dgram_received {0};
-
         uint64_t time_checks {0};
+        uint64_t enqueued_objs {0 };
 
         auto operator<=>(const Metrics&) const = default;
     } metrics;

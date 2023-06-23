@@ -295,6 +295,7 @@ pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode, void* ca
                                 << "   time checks        : " << transport->metrics.time_checks << std::endl
                                 << "   send with null ctx : " << transport->metrics.send_null_bytes_ctx << std::endl
                                 << "   dgram_recv         : " << transport->metrics.dgram_received << std::endl
+                                << "   enqueued_objs      : " << transport->metrics.enqueued_objs << std::endl
                                 << "   dgram_sent         : " << transport->metrics.dgram_sent << std::endl
                                 << "   dgram_prepare_send : " << transport->metrics.dgram_prepare_send << " ("
                                 << transport->metrics.dgram_prepare_send - prev_metrics.dgram_prepare_send << ")"
@@ -598,6 +599,8 @@ PicoQuicTransport::cbNotifier()
         auto cb = std::move(cbNotifyQueue.block_pop());
         if (cb) {
             (*cb)();
+        } else {
+            logger.log(LogLevel::info, "Notify callback is NULL");
         }
     }
 
@@ -722,8 +725,6 @@ PicoQuicTransport::close([[maybe_unused]] const TransportContextId& context_id)
 void
 PicoQuicTransport::checkTxData()
 {
-    // uint64_t cur_time = picoquic_current_time();
-
     for (auto& c_pair : active_streams) {
         for (auto& s_pair : active_streams[c_pair.first]) {
 
@@ -791,6 +792,7 @@ PicoQuicTransport::enqueue(const TransportContextId& context_id,
                            const uint32_t ttl_ms)
 {
     if (bytes.empty()) {
+        std::cerr << "enqueue dropped due bytes empty" << std::endl;
         return TransportError::None;
     }
 
@@ -800,13 +802,15 @@ PicoQuicTransport::enqueue(const TransportContextId& context_id,
         const auto& stream_cnx = ctx->second.find(stream_id);
 
         if (stream_cnx != ctx->second.end()) {
-
+            metrics.enqueued_objs++;
             stream_cnx->second.tx_data->push(bytes, ttl_ms, priority);
 
         } else {
+            std::cerr << "enqueue dropped due to invalid stream: " << stream_id << std::endl;
             return TransportError::InvalidStreamId;
         }
     } else {
+        std::cerr << "enqueue dropped due to invalid contextId: " << context_id << std::endl;
         return TransportError::InvalidContextId;
     }
     return TransportError::None;
@@ -858,7 +862,8 @@ void
 PicoQuicTransport::on_recv_data(StreamContext* stream_cnx, uint8_t* bytes, size_t length)
 {
     if (stream_cnx == NULL || length == 0) {
-        return;
+      logger.log(LogLevel::warn, "On receive data has null context");
+      return;
     }
 
     std::vector<uint8_t> data(bytes, bytes + length);
