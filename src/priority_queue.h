@@ -84,13 +84,17 @@ class priority_queue
      */
     void push(DataType& value, uint32_t ttl, uint8_t priority = 0)
     {
-        if (priority >= PMAX) {
+      std::lock_guard<std::mutex> lock(_mutex);
+
+      if (priority >= PMAX) {
             throw InvalidPriorityException("Priority not within range");
         }
 
-        if (!_queue[priority])
-            _queue[priority] = std::make_unique<timeQueue>(_duration_ms, _interval_ms,
-                                                           _timer, _initial_queue_size);
+        if (!_queue[priority]) {
+          _queue[priority] = std::make_unique<timeQueue>(_duration_ms, _interval_ms,
+                                                         _timer, _initial_queue_size);
+          std::cerr << "Creating priority queue pri: " << static_cast<int>(priority) << std::endl;
+        }
 
         auto& queue = _queue[priority];
         queue->push(value, ttl);
@@ -103,7 +107,9 @@ class priority_queue
      */
     std::optional<DataType> front()
     {
-        for (int i = 0; i < _queue.size(); i++) {
+      std::lock_guard<std::mutex> lock(_mutex);
+
+      for (size_t i = 0; i < _queue.size(); i++) {
             if (_queue[i]) {
                 const auto& obj = _queue[i]->front();
                 if (obj.has_value()) {
@@ -122,7 +128,9 @@ class priority_queue
      */
     std::optional<DataType> pop_front()
     {
-        for (int i = 0; i < _queue.size(); i++) {
+      std::lock_guard<std::mutex> lock(_mutex);
+
+      for (size_t i = 0; i < _queue.size(); i++) {
             if (_queue[i]) {
                 const auto& obj = _queue[i]->pop();
                 if (obj.has_value()) {
@@ -139,7 +147,9 @@ class priority_queue
      */
     void pop()
     {
-        for (int i = 0; i < _queue.size(); i++) {
+      std::lock_guard<std::mutex> lock(_mutex);
+
+      for (size_t i = 0; i < _queue.size(); i++) {
             if (_queue[i]) {
                 const auto& obj = _queue[i]->pop();
                 if (obj.has_value()) {
@@ -154,6 +164,7 @@ class priority_queue
     bool empty() const { return _queue.empty(); }
 
   private:
+    std::mutex _mutex;
     size_t _initial_queue_size;
     size_t _duration_ms;
     size_t _interval_ms;

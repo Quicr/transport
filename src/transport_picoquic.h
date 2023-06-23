@@ -41,8 +41,8 @@ class PicoQuicTransport : public ITransport
         uint64_t send_null_bytes_ctx {0};
         uint64_t dgram_lost {0};
         uint64_t dgram_received {0};
-
         uint64_t time_checks {0};
+        uint64_t enqueued_objs {0 };
 
         auto operator<=>(const Metrics&) const = default;
     } metrics;

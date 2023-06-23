@@ -31,6 +31,7 @@
 #include <thread>
 #include <type_traits>
 #include <vector>
+#include <iostream>
 
 namespace qtransport {
 
@@ -338,18 +339,16 @@ class time_queue
 
             if (value_index >= bucket.size()) {
                 // TODO: Add metrics
-                /*
                 std::cout << "Bucket was cleared, skipping"
                           << " b: " << bucket_index << " v: " << value_index << " e: " << expiry_tick
                           << " tick: " << ticks << " bi: " << _bucket_index
                           << std::endl;
-                */
                 continue;
             }
 
             if (ticks > expiry_tick) {
                 // TODO: Add metrics
-                //std::cout << "item expired, skipping" << std::endl;
+                std::cout << "item expired, skipping" << std::endl;
                 continue;
             }
 
@@ -380,7 +379,7 @@ class time_queue
                 _queue_index++;
 
                 // TODO: Add metrics
-                //std::cout << "Bucket was cleared, skipping" << std::endl;
+                std::cout << "Bucket was cleared, skipping" << std::endl;
                 continue;
             }
 
@@ -388,7 +387,7 @@ class time_queue
                 _queue_index++;
 
                 // TODO: Add metrics
-                //std::cout << "item expired, skipping" << std::endl;
+                std::cout << "item expired, skipping" << std::endl;
                 continue;
             }
 
@@ -428,6 +427,10 @@ class time_queue
             return _timer_ctx.ticks;
         }
 
+        if (_queue_index && _queue_index >= _queue.size()) {
+          _queue.clear();
+          _queue_index = 0;
+        }
 
         for (int i = 0; i < _timer_ctx.delta; i++) {
             _buckets[(_bucket_index + i) % _total_buckets].clear();
