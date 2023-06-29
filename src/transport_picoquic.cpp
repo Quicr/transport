@@ -454,6 +454,7 @@ PicoQuicTransport::PicoQuicTransport(const TransportRemote& server,
 {
     debug = tcfg.debug;
 
+    picoquic_config_init(&config);
     if (_is_server_mode && tcfg.tls_cert_filename == NULL) {
         throw InvalidConfigException("Missing cert filename");
     } else if (tcfg.tls_cert_filename != NULL) {
