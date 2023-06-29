@@ -53,7 +53,7 @@ namespace {
      */
     constexpr StreamId make_datagram_stream_id(bool is_server, bool is_unidirectional)
     {
-        return ::make_stream_id(0, is_server, is_unidirectional);
+        return 0; // ::make_stream_id(0, is_server, is_unidirectional);
     }
 } // namespace
 
@@ -197,6 +197,7 @@ pq_event_cb(picoquic_cnx_t* cnx,
                 transport->setStatus(TransportStatus::Ready);
                 log_msg << "Connection established to server " << stream_cnx->peer_addr_text
                         << " stream_id: " << stream_id;
+                transport->on_connection_status(stream_cnx, TransportStatus::Ready);
                 transport->logger.log(LogLevel::info, log_msg.str());
             }
 
@@ -524,13 +525,16 @@ PicoQuicTransport::createStream(const TransportContextId& context_id, bool use_r
     const auto datagram_stream_id = ::make_datagram_stream_id(_is_server_mode, _is_unidirectional);
     const auto& cnx_stream_iter = iter->second.find(datagram_stream_id);
     if (cnx_stream_iter == iter->second.end()) {
-        throw std::logic_error("Missing primary connection zero stream, cannot create streams");
+        createStreamContext(cnx_stream_iter->second.cnx, datagram_stream_id);
     }
 
     if (!use_reliable_transport)
         return datagram_stream_id;
 
     next_stream_id += 4;
+
+    if (_is_server_mode)
+        next_stream_id |= 0x1;
 
     PicoQuicTransport::StreamContext* stream_cnx = createStreamContext(cnx_stream_iter->second.cnx, next_stream_id);
 
