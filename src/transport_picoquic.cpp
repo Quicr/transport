@@ -197,6 +197,7 @@ pq_event_cb(picoquic_cnx_t* cnx,
                 transport->setStatus(TransportStatus::Ready);
                 log_msg << "Connection established to server " << stream_cnx->peer_addr_text
                         << " stream_id: " << stream_id;
+                transport->on_connection_status(stream_cnx, TransportStatus::Ready);
                 transport->logger.log(LogLevel::info, log_msg.str());
             }
 
