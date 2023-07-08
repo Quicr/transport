@@ -12,6 +12,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <atomic>
 
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -132,6 +133,8 @@ class PicoQuicTransport : public ITransport
                       uint8_t* bytes, size_t length);
 
 
+    void update_datagram_ready_status(picoquic_cnx_t *cnx, bool value);
+
     /*
    * Internal Public Variables
      */
@@ -139,7 +142,8 @@ class PicoQuicTransport : public ITransport
     bool _is_server_mode;
     bool _is_unidirectional{ false };
     bool debug {false};
-
+    // current status of our knowledge of picoquic datagram ready status set
+    std::atomic<bool> pq_datagram_ready { false };
 
   private:
     TransportContextId createClient();
@@ -173,6 +177,7 @@ class PicoQuicTransport : public ITransport
    *   bits. Stream ID is therefore incremented by 4.
      */
     std::atomic<StreamId> next_stream_id;
+
     std::map<TransportContextId, std::map<StreamId, StreamContext>> active_streams;
 
     std::shared_ptr<queue_timer_service> _timer;

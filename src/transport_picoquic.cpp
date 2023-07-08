@@ -502,6 +502,17 @@ PicoQuicTransport::shutdown()
     picoquic_config_clear(&config);
 }
 
+void
+PicoQuicTransport::update_datagram_ready_status(picoquic_cnx_t *cnx, bool value) {
+    if(cnx == nullptr) {
+        return;
+    }
+
+    if (pq_datagram_ready != value) {
+        picoquic_mark_datagram_ready(cnx, value);
+    }
+}
+
 TransportStatus
 PicoQuicTransport::status() const
 {
@@ -730,23 +741,25 @@ PicoQuicTransport::close([[maybe_unused]] const TransportContextId& context_id)
 void
 PicoQuicTransport::checkTxData()
 {
-    for (auto& c_pair : active_streams) {
-        for (auto& s_pair : active_streams[c_pair.first]) {
+    // std::map<TransportContextId, std::map<StreamId, StreamContext>> active_streams;
+    for (auto& [tcid, streams] : active_streams) {
+        for (auto& [sid, stream] : streams) {
 
-            if (s_pair.first != 0) {
-                if (s_pair.second.tx_data->size() > 0)
+            if (sid != 0) {
+                // QUIC Stream
+                if (stream.tx_data->size() > 0)
                     (void)picoquic_mark_active_stream(
-                      s_pair.second.cnx, s_pair.first, 1, static_cast<StreamContext*>(&s_pair.second));
+                      stream.cnx, sid, 1, static_cast<StreamContext*>(&stream));
             } else {
-                if (s_pair.second.tx_data->size() > 0) {
+                // QUIC Datagram
+                if (stream.tx_data->size() > 0) {
                     // reinsert by wake is one way to get picoquic to callback sooner
                     // picoquic_reinsert_by_wake_time(s_pair.second.cnx->quic, s_pair.second.cnx, cur_time);
                     // Only send tx data here when using picoquic queueing, otherwise let the callbacks handle it
                     // sendTxData(&s_pair.second, NULL, 1400);
-
-                    (void)picoquic_mark_datagram_ready(s_pair.second.cnx, 1);
+                    (void)picoquic_mark_datagram_ready(stream.cnx, 1);
                 } else {
-                    (void)picoquic_mark_datagram_ready(s_pair.second.cnx, 1);
+                    (void)picoquic_mark_datagram_ready(stream.cnx, 0);
                 }
             }
         }
@@ -756,7 +769,7 @@ PicoQuicTransport::checkTxData()
 void
 PicoQuicTransport::sendTxData(StreamContext* stream_cnx, [[maybe_unused]] uint8_t* bytes_ctx, size_t max_len)
 {
-    if (bytes_ctx == NULL) {
+    if (bytes_ctx == nullptr) {
         metrics.send_null_bytes_ctx++;
         return;
     }
@@ -766,26 +779,28 @@ PicoQuicTransport::sendTxData(StreamContext* stream_cnx, [[maybe_unused]] uint8_
         if (max_len >= out_data.value().size()) {
             metrics.dgram_sent++;
 
-            uint8_t* buf = NULL;
+            uint8_t* buf = nullptr;
 
             if (stream_cnx->stream_id == 0) {
                 buf = picoquic_provide_datagram_buffer_ex(bytes_ctx,
                                                           out_data.value().size(),
-                                                          /*stream_cnx->tx_data.size() > 1 ? 1 : 0*/ 1);
+                                                          1);
 
             } else {
                 buf = picoquic_provide_stream_data_buffer(bytes_ctx,
                                                           out_data->size(),
                                                           0,
-                                                          /*stream_cnx->tx_data.size() > 1 ? 1 : 0*/ 1);
+                                                          1);
             }
 
-            if (buf != NULL) {
+            if (buf != nullptr) {
                 std::memcpy(buf, out_data.value().data(), out_data.value().size());
-
                 stream_cnx->tx_data->pop();
             }
         }
+    } else {
+        // has_value false
+        picoquic_provide_datagram_buffer_ex(bytes_ctx, 0, 0);
     }
 }
 
@@ -808,8 +823,10 @@ PicoQuicTransport::enqueue(const TransportContextId& context_id,
 
         if (stream_cnx != ctx->second.end()) {
             metrics.enqueued_objs++;
+            // add the app data to the queue
+            // mark the stream active if it isn't already
             stream_cnx->second.tx_data->push(bytes, ttl_ms, priority);
-
+            update_datagram_ready_status(stream_cnx->second.cnx, true);
         } else {
             std::cerr << "enqueue dropped due to invalid stream: " << stream_id << std::endl;
             return TransportError::InvalidStreamId;
