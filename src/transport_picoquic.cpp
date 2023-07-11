@@ -508,9 +508,9 @@ PicoQuicTransport::update_datagram_ready_status(picoquic_cnx_t *cnx, bool value)
         return;
     }
 
-    if (pq_datagram_ready != value) {
-        picoquic_mark_datagram_ready(cnx, value);
-    }
+    //std::cout << "datagram status update: " << value << std::endl;
+    picoquic_mark_datagram_ready(cnx, (int) value);
+
 }
 
 TransportStatus
@@ -757,9 +757,11 @@ PicoQuicTransport::checkTxData()
                     // picoquic_reinsert_by_wake_time(s_pair.second.cnx->quic, s_pair.second.cnx, cur_time);
                     // Only send tx data here when using picoquic queueing, otherwise let the callbacks handle it
                     // sendTxData(&s_pair.second, NULL, 1400);
-                    (void)picoquic_mark_datagram_ready(stream.cnx, 1);
+                    //picoquic_mark_datagram_ready(stream.cnx, 1);
+                    update_datagram_ready_status(stream.cnx, true);
                 } else {
-                    (void)picoquic_mark_datagram_ready(stream.cnx, 0);
+                    //picoquic_mark_datagram_ready(stream.cnx, 0);
+                    update_datagram_ready_status(stream.cnx, false);
                 }
             }
         }
@@ -800,6 +802,8 @@ PicoQuicTransport::sendTxData(StreamContext* stream_cnx, [[maybe_unused]] uint8_
         }
     } else {
         // has_value false
+        //std::cout << "send: picoquic_provide_datagram_buffer_ex masrking inactive" << std::endl;
+
         picoquic_provide_datagram_buffer_ex(bytes_ctx, 0, 0);
     }
 }
