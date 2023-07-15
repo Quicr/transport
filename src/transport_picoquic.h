@@ -124,7 +124,7 @@ class PicoQuicTransport : public ITransport
     void deleteStreamContext(const TransportContextId& context_id,
                              const StreamId& stream_id);
 
-    void checkTxData();
+    bool checkTxData();
     void sendTxData(StreamContext *stream_cnx, uint8_t* bytes_ctx, size_t max_len);
     void on_connection_status(StreamContext *stream_cnx,
                               const TransportStatus status);
