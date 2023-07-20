@@ -623,6 +623,8 @@ PicoQuicTransport::server()
         quic_ctx = NULL;
     }
 
+
+
     log_msg << "picoquic packet loop ended with " << ret;
     logger.log(LogLevel::info, log_msg.str());
 
@@ -759,6 +761,9 @@ PicoQuicTransport::sendTxData(StreamContext* stream_cnx, [[maybe_unused]] uint8_
         metrics.send_null_bytes_ctx++;
         return;
     }
+
+    if (!stream_cnx->tx_data) // Ignore if not yet constructed
+        return;
 
     const auto& out_data = stream_cnx->tx_data->front();
     if (out_data.has_value()) {

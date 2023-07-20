@@ -34,7 +34,8 @@ UDPTransport::~UDPTransport()
 
   logger.log(LogLevel::info, "Closing transport threads");
   for (auto &thread : running_threads) {
-    thread.join();
+    if (thread.joinable())
+        thread.join();
   }
 }
 
