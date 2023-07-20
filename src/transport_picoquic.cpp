@@ -270,16 +270,12 @@ pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode, void* ca
                 packet_loop_time_check_arg_t* targ = static_cast<packet_loop_time_check_arg_t*>(callback_arg);
 
                 /*
-                log_msg << "packet_loop_time_check time: "
-                    << targ->current_time << " delta: " << targ->delta_t;
-                transport->logger.log(LogLevel::info, log_msg.str());
-                */
-
                 // TODO: Add config to set this value. This will change the loop select
                 //   wait time to delta value in microseconds. Default is <= 10 seconds
                 if (targ->delta_t > 1000) {
                     targ->delta_t = 1000;
                 }
+                */
 
                 if (!prev_time) {
                     prev_time = targ->current_time;
@@ -328,8 +324,6 @@ pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode, void* ca
 
                     return PICOQUIC_NO_ERROR_TERMINATE_PACKET_LOOP;
                 }
-
-                transport->checkTxData();
 
                 break;
             }
@@ -729,32 +723,6 @@ PicoQuicTransport::close([[maybe_unused]] const TransportContextId& context_id)
 }
 
 void
-PicoQuicTransport::checkTxData()
-{
-    for (auto& c_pair : active_streams) {
-        for (auto& s_pair : active_streams[c_pair.first]) {
-
-            if (s_pair.first != 0) {
-                if (s_pair.second.tx_data->size() > 0)
-                    (void)picoquic_mark_active_stream(
-                      s_pair.second.cnx, s_pair.first, 1, static_cast<StreamContext*>(&s_pair.second));
-            } else {
-                if (s_pair.second.tx_data->size() > 0) {
-                    // reinsert by wake is one way to get picoquic to callback sooner
-                    // picoquic_reinsert_by_wake_time(s_pair.second.cnx->quic, s_pair.second.cnx, cur_time);
-                    // Only send tx data here when using picoquic queueing, otherwise let the callbacks handle it
-                    // sendTxData(&s_pair.second, NULL, 1400);
-
-                    (void)picoquic_mark_datagram_ready(s_pair.second.cnx, 1);
-                } else {
-                    (void)picoquic_mark_datagram_ready(s_pair.second.cnx, 1);
-                }
-            }
-        }
-    }
-}
-
-void
 PicoQuicTransport::sendTxData(StreamContext* stream_cnx, [[maybe_unused]] uint8_t* bytes_ctx, size_t max_len)
 {
     if (bytes_ctx == NULL) {
@@ -775,13 +743,13 @@ PicoQuicTransport::sendTxData(StreamContext* stream_cnx, [[maybe_unused]] uint8_
             if (stream_cnx->stream_id == 0) {
                 buf = picoquic_provide_datagram_buffer_ex(bytes_ctx,
                                                           out_data.value().size(),
-                                                          /*stream_cnx->tx_data.size() > 1 ? 1 : 0*/ 1);
+                                                          stream_cnx->tx_data->empty() ? picoquic_datagram_not_active : picoquic_datagram_active_any_path);
 
             } else {
                 buf = picoquic_provide_stream_data_buffer(bytes_ctx,
                                                           out_data->size(),
                                                           0,
-                                                          /*stream_cnx->tx_data.size() > 1 ? 1 : 0*/ 1);
+                                                          !stream_cnx->tx_data->empty());
             }
 
             if (buf != NULL) {
@@ -814,12 +782,19 @@ PicoQuicTransport::enqueue(const TransportContextId& context_id,
             metrics.enqueued_objs++;
             stream_cnx->second.tx_data->push(bytes, ttl_ms, priority);
 
+            if (!stream_id)
+                (void)picoquic_mark_datagram_ready(stream_cnx->second.cnx, 1);
+            else
+                (void)picoquic_mark_active_stream(
+                  stream_cnx->second.cnx, stream_id, 1, static_cast<StreamContext*>(&stream_cnx->second));
+
         } else {
             std::cerr << "enqueue dropped due to invalid stream: " << stream_id << std::endl;
             return TransportError::InvalidStreamId;
         }
     } else {
-        std::cerr << "enqueue dropped due to invalid contextId: " << context_id << std::endl;
+        //std::cerr << "enqueue dropped due to invalid contextId: " << context_id << std::endl;
+        //TODO: Add metrics to report invalid context
         return TransportError::InvalidContextId;
     }
     return TransportError::None;
