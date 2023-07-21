@@ -186,7 +186,7 @@ pq_event_cb(picoquic_cnx_t* cnx,
             }
 
             picoquic_enable_keep_alive(cnx, 3000000);
-            (void)picoquic_mark_datagram_ready(cnx, 1);
+            //(void)picoquic_mark_datagram_ready(cnx, 1);
 
             if (transport->_is_server_mode) {
                 transport->on_new_connection(stream_cnx);
@@ -733,21 +733,24 @@ PicoQuicTransport::sendTxData(StreamContext* stream_cnx, [[maybe_unused]] uint8_
     if (!stream_cnx->tx_data) // Ignore if not yet constructed
         return;
 
+    if (stream_cnx->tx_data->empty())
+        return;
+
     const auto& out_data = stream_cnx->tx_data->front();
     if (out_data.has_value()) {
         if (max_len >= out_data.value().size()) {
-            metrics.dgram_sent++;
 
             uint8_t* buf = NULL;
 
             if (stream_cnx->stream_id == 0) {
+                metrics.dgram_sent++;
                 buf = picoquic_provide_datagram_buffer_ex(bytes_ctx,
                                                           out_data.value().size(),
                                                           stream_cnx->tx_data->empty() ? picoquic_datagram_not_active : picoquic_datagram_active_any_path);
 
             } else {
                 buf = picoquic_provide_stream_data_buffer(bytes_ctx,
-                                                          out_data->size(),
+                                                          out_data.value().size(),
                                                           0,
                                                           !stream_cnx->tx_data->empty());
             }

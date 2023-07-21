@@ -344,7 +344,6 @@ namespace qtransport {
 
                if (ticks > expiry_tick) {
                    // TODO: Add metrics
-                   std::cout << "item expired, skipping" << std::endl;
                    continue;
                }
 
@@ -382,7 +381,6 @@ namespace qtransport {
                    _queue_index++;
 
                    // TODO: Add metrics
-                   std::cout << "item expired, skipping" << std::endl;
                    continue;
                }
 
