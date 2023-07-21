@@ -93,7 +93,6 @@ namespace qtransport {
             if (!_queue[priority]) {
                 _queue[priority] = std::make_unique<timeQueue>(_duration_ms, _interval_ms,
                                                                _timer, _initial_queue_size);
-                std::cerr << "Creating priority queue pri: " << static_cast<int>(priority) << std::endl;
             }
 
             auto& queue = _queue[priority];

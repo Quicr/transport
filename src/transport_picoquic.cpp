@@ -540,7 +540,7 @@ TransportContextId
 PicoQuicTransport::start()
 {
     uint64_t current_time = picoquic_current_time();
-    debug_set_stream(stdout); // Enable picoquic debug
+    //debug_set_stream(stdout); // Enable picoquic debug
 
     (void)picoquic_config_set_option(&config, picoquic_option_ALPN, QUICR_ALPN);
     (void)picoquic_config_set_option(&config, picoquic_option_MAX_CONNECTIONS, "100");

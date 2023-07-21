@@ -339,10 +339,6 @@ namespace qtransport {
 
                if (value_index >= bucket.size()) {
                    // TODO: Add metrics
-                   std::cout << "Bucket was cleared, skipping"
-                             << " b: " << bucket_index << " v: " << value_index << " e: " << expiry_tick
-                             << " tick: " << ticks << " bi: " << _bucket_index
-                             << std::endl;
                    continue;
                }
 
@@ -379,7 +375,6 @@ namespace qtransport {
                    _queue_index++;
 
                    // TODO: Add metrics
-                   std::cout << "Bucket was cleared, skipping" << std::endl;
                    continue;
                }
 
