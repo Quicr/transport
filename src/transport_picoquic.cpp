@@ -758,7 +758,8 @@ PicoQuicTransport::sendTxData(StreamContext* stream_cnx, [[maybe_unused]] uint8_
         }
     }
     else {
-        picoquic_provide_datagram_buffer_ex(bytes_ctx, 0, picoquic_datagram_not_active);
+        if (stream_cnx->stream_id == 0)
+            picoquic_provide_datagram_buffer_ex(bytes_ctx, 0, picoquic_datagram_not_active);
     }
 }
 
