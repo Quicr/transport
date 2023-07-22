@@ -186,7 +186,7 @@ pq_event_cb(picoquic_cnx_t* cnx,
             }
 
             picoquic_enable_keep_alive(cnx, 3000000);
-            //(void)picoquic_mark_datagram_ready(cnx, 1);
+            (void)picoquic_mark_datagram_ready(cnx, 1);
 
             if (transport->_is_server_mode) {
                 transport->on_new_connection(stream_cnx);
@@ -269,13 +269,11 @@ pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode, void* ca
 
                 packet_loop_time_check_arg_t* targ = static_cast<packet_loop_time_check_arg_t*>(callback_arg);
 
-                /*
                 // TODO: Add config to set this value. This will change the loop select
                 //   wait time to delta value in microseconds. Default is <= 10 seconds
-                if (targ->delta_t > 1000) {
-                    targ->delta_t = 1000;
+                if (targ->delta_t > 60000) {
+                    targ->delta_t = 60000;
                 }
-                */
 
                 if (!prev_time) {
                     prev_time = targ->current_time;
@@ -733,9 +731,6 @@ PicoQuicTransport::sendTxData(StreamContext* stream_cnx, [[maybe_unused]] uint8_
     if (!stream_cnx->tx_data) // Ignore if not yet constructed
         return;
 
-    if (stream_cnx->tx_data->empty())
-        return;
-
     const auto& out_data = stream_cnx->tx_data->front();
     if (out_data.has_value()) {
         if (max_len >= out_data.value().size()) {
@@ -761,6 +756,9 @@ PicoQuicTransport::sendTxData(StreamContext* stream_cnx, [[maybe_unused]] uint8_
                 stream_cnx->tx_data->pop();
             }
         }
+    }
+    else {
+        picoquic_provide_datagram_buffer_ex(bytes_ctx, 0, picoquic_datagram_not_active);
     }
 }
 
@@ -790,7 +788,6 @@ PicoQuicTransport::enqueue(const TransportContextId& context_id,
             else
                 (void)picoquic_mark_active_stream(
                   stream_cnx->second.cnx, stream_id, 1, static_cast<StreamContext*>(&stream_cnx->second));
-
         } else {
             std::cerr << "enqueue dropped due to invalid stream: " << stream_id << std::endl;
             return TransportError::InvalidStreamId;
