@@ -99,7 +99,6 @@ namespace qtransport {
             auto& queue = _queue[priority];
             queue->push(value, ttl);
             //std::cerr << "added object " << num_objects << std::endl;
-            num_objects++;
         }
 
         /**
@@ -155,8 +154,6 @@ namespace qtransport {
                 if (_queue[i]) {
                     const auto& obj = _queue[i]->pop();
                     if (obj.has_value()) {
-                        //std::cerr << "removed object " << num_objects << std::endl;
-                        num_objects--;
                         return;
                     }
                 }
@@ -181,7 +178,6 @@ namespace qtransport {
         size_t _initial_queue_size;
         size_t _duration_ms;
         size_t _interval_ms;
-        uint64_t num_objects {0};
 
         std::array<std::unique_ptr<timeQueue>, PMAX> _queue;
 
