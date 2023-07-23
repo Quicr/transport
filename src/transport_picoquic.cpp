@@ -767,7 +767,6 @@ PicoQuicTransport::checkTxData()
 void
 PicoQuicTransport::sendTxData(StreamContext* stream_cnx, [[maybe_unused]] uint8_t* bytes_ctx, size_t max_len)
 {
-    static int s = 0;
     if (bytes_ctx == nullptr) {
         //std::cerr << "N;";
         metrics.send_null_bytes_ctx++;
@@ -794,7 +793,6 @@ PicoQuicTransport::sendTxData(StreamContext* stream_cnx, [[maybe_unused]] uint8_
             if (buf != nullptr) {
                 std::memcpy(buf, out_data.value().data(), out_data.value().size());
                 stream_cnx->tx_data->pop();
-                s++;
             }
         }
     }
