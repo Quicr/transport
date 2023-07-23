@@ -793,11 +793,8 @@ PicoQuicTransport::sendTxData(StreamContext* stream_cnx, [[maybe_unused]] uint8_
             }
             if (buf != nullptr) {
                 std::memcpy(buf, out_data.value().data(), out_data.value().size());
-                //std::cerr << "Sending data " << stream_cnx->tx_data->size() << std::endl;
                 stream_cnx->tx_data->pop();
                 s++;
-            } else {
-                std::cerr << "Sending data, but null picoqiuc buffer "  << std::endl;
             }
         }
     }
@@ -825,8 +822,6 @@ PicoQuicTransport::enqueue(const TransportContextId& context_id,
             // add the app data to the queue
             // mark the stream active if it isn't already
             stream_cnx->second.tx_data->push(bytes, ttl_ms, priority);
-            //std::cerr << "E:[" << e << "," << stream_cnx->second.tx_data->size() << "]";
-            //e++;
             if(!pq_datagram_ready) {
                 pq_datagram_ready = true;
             }
