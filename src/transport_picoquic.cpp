@@ -53,7 +53,7 @@ namespace {
      */
     constexpr StreamId make_datagram_stream_id(bool is_server, bool is_unidirectional)
     {
-        return 0; // ::make_stream_id(0, is_server, is_unidirectional);
+        return 0;
     }
 } // namespace
 
@@ -531,10 +531,7 @@ PicoQuicTransport::createStream(const TransportContextId& context_id, bool use_r
     if (!use_reliable_transport)
         return datagram_stream_id;
 
-    next_stream_id += 4;
-
-    if (_is_server_mode)
-        next_stream_id |= 0x1;
+    next_stream_id = ::make_stream_id(next_stream_id + 4, _is_server_mode, _is_unidirectional);
 
     PicoQuicTransport::StreamContext* stream_cnx = createStreamContext(cnx_stream_iter->second.cnx, next_stream_id);
 
@@ -761,6 +758,9 @@ PicoQuicTransport::sendTxData(StreamContext* stream_cnx, [[maybe_unused]] uint8_
         return;
     }
 
+    if (!stream_cnx->tx_data)
+        return;
+
     const auto& out_data = stream_cnx->tx_data->front();
     if (out_data.has_value()) {
         if (max_len >= out_data.value().size()) {
@@ -867,8 +867,8 @@ void
 PicoQuicTransport::on_recv_data(StreamContext* stream_cnx, uint8_t* bytes, size_t length)
 {
     if (stream_cnx == NULL || length == 0) {
-      logger.log(LogLevel::warn, "On receive data has null context");
-      return;
+        logger.log(LogLevel::warn, "On receive data has null context");
+        return;
     }
 
     std::vector<uint8_t> data(bytes, bytes + length);
