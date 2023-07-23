@@ -733,13 +733,13 @@ PicoQuicTransport::sendTxData(StreamContext* stream_cnx, [[maybe_unused]] uint8_
             if (stream_cnx->stream_id == 0) {
                 buf = picoquic_provide_datagram_buffer_ex(bytes_ctx,
                                                           out_data.value().size(),
-                                                          /*stream_cnx->tx_data.size() > 1 ? 1 : 0*/ 1);
+                                                          stream_cnx->tx_data->empty() ? picoquic_datagram_not_active : picoquic_datagram_active_any_path);
 
             } else {
                 buf = picoquic_provide_stream_data_buffer(bytes_ctx,
                                                           out_data->size(),
                                                           0,
-                                                          /*stream_cnx->tx_data.size() > 1 ? 1 : 0*/ 1);
+                                                          !stream_cnx->tx_data->empty());
             }
 
             if (buf != NULL) {
