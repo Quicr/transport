@@ -81,7 +81,7 @@ namespace qtransport {
      * @param value     The value to push onto the queue.
      * @param ttl       The time to live of the value in milliseconds.
      * @param priority  The priority of the value (range is 0 - PMAX)
-         */
+     */
         void push(DataType& value, uint32_t ttl, uint8_t priority = 0)
         {
             std::lock_guard<std::mutex> lock(_mutex);
@@ -98,6 +98,8 @@ namespace qtransport {
 
             auto& queue = _queue[priority];
             queue->push(value, ttl);
+            //std::cerr << "added object " << num_objects << std::endl;
+            num_objects++;
         }
 
         /**
@@ -153,6 +155,8 @@ namespace qtransport {
                 if (_queue[i]) {
                     const auto& obj = _queue[i]->pop();
                     if (obj.has_value()) {
+                        //std::cerr << "removed object " << num_objects << std::endl;
+                        num_objects--;
                         return;
                     }
                 }
@@ -160,7 +164,16 @@ namespace qtransport {
         }
 
         // TODO: Consider changing empty/size to look at timeQueue sizes - maybe support blocking pops
-        size_t size() const { return _queue.size(); }
+        size_t size() const {
+            uint64_t count = 0;
+            for (size_t i = 0; i < _queue.size(); i++) {
+                if (_queue[i]) {
+                    count += _queue[i]->size();
+                }
+            }
+            return count;
+        }
+
         bool empty() const { return _queue.empty(); }
 
       private:
@@ -168,6 +181,7 @@ namespace qtransport {
         size_t _initial_queue_size;
         size_t _duration_ms;
         size_t _interval_ms;
+        uint64_t num_objects {0};
 
         std::array<std::unique_ptr<timeQueue>, PMAX> _queue;
 

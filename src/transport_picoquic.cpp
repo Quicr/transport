@@ -69,6 +69,7 @@ pq_event_cb(picoquic_cnx_t* cnx,
             void* callback_ctx,
             void* v_stream_ctx)
 {
+    static int s = 0;
     PicoQuicTransport* transport = static_cast<PicoQuicTransport*>(callback_ctx);
     PicoQuicTransport::StreamContext* stream_cnx = static_cast<PicoQuicTransport::StreamContext*>(v_stream_ctx);
 
@@ -83,11 +84,13 @@ pq_event_cb(picoquic_cnx_t* cnx,
 
         case picoquic_callback_prepare_datagram: {
             // length is the max allowed data length
-            if (stream_cnx == NULL) {
+            if (stream_cnx == nullptr) {
                 // picoquic doesn't provide stream context for datagram/stream_id==-0
                 stream_cnx = transport->getZeroStreamContext(cnx);
             }
             transport->metrics.dgram_prepare_send++;
+            transport->metrics.num_entries_queue = stream_cnx->tx_data->size();
+            s++;
             transport->sendTxData(stream_cnx, bytes, length);
             break;
         }
@@ -223,6 +226,7 @@ int
 pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode, void* callback_ctx, void* callback_arg)
 {
 
+    static int l = 0;
     PicoQuicTransport* transport = static_cast<PicoQuicTransport*>(callback_ctx);
     int ret = 0;
     std::ostringstream log_msg;
@@ -271,22 +275,46 @@ pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode, void* ca
 
                 packet_loop_time_check_arg_t* targ = static_cast<packet_loop_time_check_arg_t*>(callback_arg);
 
-                if (targ->delta_t > 10) {
+                if(!transport->pq_datagram_ready) {
+                    //std::cerr << "update_datagram_ready_status false, no data yet" << std::endl;
+                    transport->update_datagram_ready_status(picoquic_get_first_cnx(quic), false);
+                    targ->delta_t = 10000; // 1 second
+                } else {
+                    if(targ->delta_t > 10000) {
+                        //std::cerr << "delta_t > 100000 \n";
+                        // ensure we send the queued data immediately
+                        if (transport->checkTxData()) {
+                            targ->delta_t = 0;
+                            transport->update_datagram_ready_status(picoquic_get_first_cnx(quic), true);
+                        } else {
+                            //std::cerr <<"\t No data in queue, will 10 ms and set datagram status to false";
+                            targ->delta_t = 10000;
+                            transport->update_datagram_ready_status(picoquic_get_first_cnx(quic), false);
+                        }
+                    }
+                }
+
+
+#if 0
                     if(transport->checkTxData()) {
                         targ->delta_t = 0;
-                        transport->update_datagram_ready_status(picoquic_get_first_cnx(quic), 1);
+                        //std::cerr << "delta_t == 0" << std::endl;
+                        transport->update_datagram_ready_status(picoquic_get_first_cnx(quic), true);
                     } else {
                         // TODO: calculate per media type, what's the next delta to send ,call it periodic rate.
                         //   then compute new delta_t by checking (delta_t, periodic_rate)
-                        transport->update_datagram_ready_status(picoquic_get_first_cnx(quic), 0);
+                        transport->update_datagram_ready_status(picoquic_get_first_cnx(quic), false);
                         targ->delta_t = 10;
+                        //std::cerr << "delta_t == 10" << std::endl;
                     }
-                }
+#endif
 
                 if (!prev_time) {
                     prev_time = targ->current_time;
                     prev_metrics = transport->metrics;
                 }
+
+                //std::cerr << "Time loop, relative delta =" << targ->current_time - prev_time << std::endl;
 
                 transport->metrics.time_checks++;
 
@@ -296,6 +324,9 @@ pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode, void* ca
                         std::ostringstream log_msg;
                         log_msg << "Metrics: " << std::endl
                                 << "   time checks        : " << transport->metrics.time_checks << std::endl
+                                << "   time checks,dg_ready: " << transport->metrics.num_datagram_ready_time_check << std::endl
+                                << "   time checks,dg_n_ready: " << transport->metrics.num_datagram_not_ready_time_check << std::endl
+                                << "   num_entries           : " << transport->metrics.num_entries_queue << std::endl
                                 << "   send with null ctx : " << transport->metrics.send_null_bytes_ctx << std::endl
                                 << "   dgram_recv         : " << transport->metrics.dgram_received << std::endl
                                 << "   enqueued_objs      : " << transport->metrics.enqueued_objs << std::endl
@@ -507,10 +538,8 @@ PicoQuicTransport::update_datagram_ready_status(picoquic_cnx_t *cnx, bool value)
     if(cnx == nullptr) {
         return;
     }
-
     //std::cout << "datagram status update: " << value << std::endl;
-    picoquic_mark_datagram_ready(cnx, (int) pq_datagram_ready);
-
+    picoquic_mark_datagram_ready(cnx, (int) value);
 }
 
 TransportStatus
@@ -746,15 +775,16 @@ PicoQuicTransport::checkTxData()
     for (auto& [tcid, streams] : active_streams) {
         for (auto& [sid, stream] : streams) {
             if (sid != 0) {
-                if (stream.tx_data->size() > 0)
-                    (void)picoquic_mark_active_stream(
-                      stream.cnx, sid, 1, static_cast<StreamContext*>(&stream));
+                if (stream.tx_data->size() > 0) {
+                    (void) picoquic_mark_active_stream(
+                            stream.cnx, sid, 1, static_cast<StreamContext *>(&stream));
+                }
             } else {
                 // QUIC Datagram
+                //std::cerr << "\nDatagram Stream has :" << stream.tx_data->size() << " Items. "<< std::endl;
                 if (stream.tx_data->size() > 0) {
                     available = true;
-                } else {
-                    available = false;
+                    break;
                 }
             }
         }
@@ -766,22 +796,23 @@ PicoQuicTransport::checkTxData()
 void
 PicoQuicTransport::sendTxData(StreamContext* stream_cnx, [[maybe_unused]] uint8_t* bytes_ctx, size_t max_len)
 {
+    static int s = 0;
     if (bytes_ctx == nullptr) {
+        //std::cerr << "N;";
         metrics.send_null_bytes_ctx++;
         return;
     }
+
 
     const auto& out_data = stream_cnx->tx_data->front();
     if (out_data.has_value()) {
         if (max_len >= out_data.value().size()) {
             metrics.dgram_sent++;
-
             uint8_t* buf = nullptr;
-
             if (stream_cnx->stream_id == 0) {
                 buf = picoquic_provide_datagram_buffer_ex(bytes_ctx,
                                                           out_data.value().size(),
-                                                          1);
+                                                          (stream_cnx->tx_data->size() - 1) > 0);
 
             } else {
                 buf = picoquic_provide_stream_data_buffer(bytes_ctx,
@@ -789,17 +820,15 @@ PicoQuicTransport::sendTxData(StreamContext* stream_cnx, [[maybe_unused]] uint8_
                                                           0,
                                                           1);
             }
-
             if (buf != nullptr) {
                 std::memcpy(buf, out_data.value().data(), out_data.value().size());
+                //std::cerr << "Sending data " << stream_cnx->tx_data->size() << std::endl;
                 stream_cnx->tx_data->pop();
+                s++;
+            } else {
+                std::cerr << "Sending data, but null picoqiuc buffer "  << std::endl;
             }
         }
-    } else {
-        // has_value false
-        //std::cout << "send: picoquic_provide_datagram_buffer_ex masrking inactive" << std::endl;
-
-        picoquic_provide_datagram_buffer_ex(bytes_ctx, 0, 0);
     }
 }
 
@@ -810,6 +839,7 @@ PicoQuicTransport::enqueue(const TransportContextId& context_id,
                            const uint8_t priority,
                            const uint32_t ttl_ms)
 {
+    static int e = 0;
     if (bytes.empty()) {
         std::cerr << "enqueue dropped due bytes empty" << std::endl;
         return TransportError::None;
@@ -825,7 +855,11 @@ PicoQuicTransport::enqueue(const TransportContextId& context_id,
             // add the app data to the queue
             // mark the stream active if it isn't already
             stream_cnx->second.tx_data->push(bytes, ttl_ms, priority);
-            pq_datagram_ready = true;
+            //std::cerr << "E:[" << e << "," << stream_cnx->second.tx_data->size() << "]";
+            //e++;
+            if(!pq_datagram_ready) {
+                pq_datagram_ready = true;
+            }
         } else {
             std::cerr << "enqueue dropped due to invalid stream: " << stream_id << std::endl;
             return TransportError::InvalidStreamId;
@@ -834,6 +868,7 @@ PicoQuicTransport::enqueue(const TransportContextId& context_id,
         std::cerr << "enqueue dropped due to invalid contextId: " << context_id << std::endl;
         return TransportError::InvalidContextId;
     }
+
     return TransportError::None;
 }
 

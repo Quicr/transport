@@ -115,17 +115,32 @@ int main() {
   std::stringstream s_log;
 
   uint32_t *msg_num = (uint32_t *)&data_buf;
-
+  int num_messges = 1000;
+/**
   while (true) {
-    for (int i = 0; i < 12; i++) {
-      (*msg_num)++;
-      auto data = bytes(data_buf, data_buf + sizeof(data_buf));
-
-      client->enqueue(tcid, server.proto == TransportProtocol::UDP ? 1 : stream_id,
+    while(num_messges > 0) {
+        //std::cerr << "mesg: " << *msg_num << std::endl;
+        (*msg_num)++;
+        auto data = bytes(data_buf, data_buf + sizeof(data_buf));
+        client->enqueue(tcid, server.proto == TransportProtocol::UDP ? 1 : stream_id,
                         std::move(data));
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        num_messges -= 1;
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds(20));
-  }
+
+    std::this_thread::sleep_for(std::chrono::seconds (5));
+    **/
+
+    while (true) {
+        for (int i = 0; i < 10; i++) {
+            (*msg_num)++;
+            auto data = bytes(data_buf, data_buf + sizeof(data_buf));
+
+            client->enqueue(tcid, server.proto == TransportProtocol::UDP ? 1 : stream_id,
+                            std::move(data));
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
 
   client->closeStream(tcid, stream_id);
 

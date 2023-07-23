@@ -53,6 +53,6 @@ endif()
 ### Applications
 ###
 
-if(BUILD_TESTING AND QTRANSPORT_BUILD_TESTS)
+#if(BUILD_TESTING AND QTRANSPORT_BUILD_TESTS)
   add_subdirectory(cmd)
-endif()
+#endif()

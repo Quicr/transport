@@ -44,6 +44,9 @@ class PicoQuicTransport : public ITransport
         uint64_t dgram_received {0};
         uint64_t time_checks {0};
         uint64_t enqueued_objs {0 };
+        uint64_t num_datagram_ready_time_check {0};
+        uint64_t num_entries_queue {0};
+        uint64_t num_datagram_not_ready_time_check {0};
 
         auto operator<=>(const Metrics&) const = default;
     } metrics;
