@@ -124,7 +124,7 @@ int main() {
       client->enqueue(tcid, server.proto == TransportProtocol::UDP ? 1 : stream_id,
                         std::move(data));
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
   }
 
   client->closeStream(tcid, stream_id);

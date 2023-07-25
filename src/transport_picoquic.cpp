@@ -596,14 +596,10 @@ PicoQuicTransport::start()
 
 void PicoQuicTransport::pq_runner() {
 
-    while (picoquic_runner_queue.size() > 0) {
-        auto cb = std::move(picoquic_runner_queue.pop());
-        if (cb) {
+    do {
+        if(auto cb = std::move(picoquic_runner_queue.pop()))
             (*cb)();
-        } else {
-            break;
-        }
-    }
+    } while (picoquic_runner_queue.size() > 0);
 }
 
 void
@@ -800,12 +796,12 @@ PicoQuicTransport::enqueue(const TransportContextId& context_id,
             stream_cnx->second.tx_data->push(bytes, ttl_ms, priority);
 
             if (!stream_id) {
-                picoquic_runner_queue.push([=, this]() {
+                picoquic_runner_queue.push([=]() {
                     picoquic_mark_datagram_ready(stream_cnx->second.cnx, 1);
                 });
 
             } else {
-                picoquic_runner_queue.push([=, this]() {
+                picoquic_runner_queue.push([=]() {
                     picoquic_mark_active_stream(
                       stream_cnx->second.cnx, stream_id, 1, static_cast<StreamContext*>(&stream_cnx->second));
                 });

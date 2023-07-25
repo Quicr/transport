@@ -171,7 +171,13 @@ namespace qtransport {
         }
 
         bool empty() const {
-            return size() == 0;
+            for (size_t i = 0; i < _queue.size(); i++) {
+                if (_queue[i] && !_queue[i]->empty()) {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
       private:
