@@ -159,8 +159,20 @@ namespace qtransport {
         }
 
         // TODO: Consider changing empty/size to look at timeQueue sizes - maybe support blocking pops
-        size_t size() const { return _queue.size(); }
-        bool empty() const { return _queue.empty(); }
+        size_t size() const {
+            size_t sz=0;
+            for (size_t i = 0; i < _queue.size(); i++) {
+                if (_queue[i]) {
+                    sz += _queue[i]->size();
+                }
+            }
+
+            return sz;
+        }
+
+        bool empty() const {
+            return size() == 0;
+        }
 
       private:
         std::mutex _mutex;

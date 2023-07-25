@@ -53,7 +53,7 @@ namespace {
      */
     constexpr StreamId make_datagram_stream_id(bool is_server, bool is_unidirectional)
     {
-        return 0; // ::make_stream_id(0, is_server, is_unidirectional);
+        return 0;
     }
 } // namespace
 
@@ -531,10 +531,7 @@ PicoQuicTransport::createStream(const TransportContextId& context_id, bool use_r
     if (!use_reliable_transport)
         return datagram_stream_id;
 
-    next_stream_id += 4;
-
-    if (_is_server_mode)
-        next_stream_id |= 0x1;
+    next_stream_id = ::make_stream_id(next_stream_id + 4, _is_server_mode, _is_unidirectional);
 
     PicoQuicTransport::StreamContext* stream_cnx = createStreamContext(cnx_stream_iter->second.cnx, next_stream_id);
 
@@ -637,8 +634,6 @@ PicoQuicTransport::server()
         picoquic_free(quic_ctx);
         quic_ctx = NULL;
     }
-
-
 
     log_msg << "picoquic packet loop ended with " << ret;
     logger.log(LogLevel::info, log_msg.str());
@@ -751,24 +746,21 @@ PicoQuicTransport::sendTxData(StreamContext* stream_cnx, [[maybe_unused]] uint8_
         return;
     }
 
-    if (!stream_cnx->tx_data) // Ignore if not yet constructed
-        return;
-
     const auto& out_data = stream_cnx->tx_data->front();
     if (out_data.has_value()) {
         if (max_len >= out_data.value().size()) {
+            metrics.dgram_sent++;
 
             uint8_t* buf = NULL;
 
             if (stream_cnx->stream_id == 0) {
-                metrics.dgram_sent++;
                 buf = picoquic_provide_datagram_buffer_ex(bytes_ctx,
                                                           out_data.value().size(),
                                                           stream_cnx->tx_data->empty() ? picoquic_datagram_not_active : picoquic_datagram_active_any_path);
 
             } else {
                 buf = picoquic_provide_stream_data_buffer(bytes_ctx,
-                                                          out_data.value().size(),
+                                                          out_data->size(),
                                                           0,
                                                           !stream_cnx->tx_data->empty());
             }
@@ -781,7 +773,8 @@ PicoQuicTransport::sendTxData(StreamContext* stream_cnx, [[maybe_unused]] uint8_
         }
     }
     else {
-        picoquic_provide_datagram_buffer_ex(bytes_ctx, 0, picoquic_datagram_not_active);
+        if (stream_cnx->stream_id == 0)
+            picoquic_provide_datagram_buffer_ex(bytes_ctx, 0, picoquic_datagram_not_active);
     }
 }
 
@@ -875,8 +868,8 @@ void
 PicoQuicTransport::on_recv_data(StreamContext* stream_cnx, uint8_t* bytes, size_t length)
 {
     if (stream_cnx == NULL || length == 0) {
-      logger.log(LogLevel::warn, "On receive data has null context");
-      return;
+        logger.log(LogLevel::warn, "On receive data has null context");
+        return;
     }
 
     std::vector<uint8_t> data(bytes, bytes + length);
