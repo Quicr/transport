@@ -117,14 +117,14 @@ int main() {
   uint32_t *msg_num = (uint32_t *)&data_buf;
 
   while (true) {
-    for (int i = 0; i < 12; i++) {
+    for (int i = 0; i < 10; i++) {
       (*msg_num)++;
       auto data = bytes(data_buf, data_buf + sizeof(data_buf));
 
       client->enqueue(tcid, server.proto == TransportProtocol::UDP ? 1 : stream_id,
                         std::move(data));
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
 
   client->closeStream(tcid, stream_id);

@@ -112,7 +112,7 @@ class PicoQuicTransport : public ITransport
       const StreamId & stream_id) override;
 
     /*
-   * Internal public methods
+     * Internal public methods
      */
     void setStatus(TransportStatus status);
 
@@ -130,6 +130,14 @@ class PicoQuicTransport : public ITransport
     void on_recv_data(StreamContext *stream_cnx,
                       uint8_t* bytes, size_t length);
 
+    /**
+     * @brief Function run the queue functions within the picoquic thread via the pq_loop_cb
+     *
+     * @details Function runs the picoquic specific functions in the same thread that runs the
+     *      the event loop. This allows picoquic to be thread safe.  All picoquic functions that
+     *      other threads want to call should queue those in `picoquic_runner_queue`.
+     */
+    void pq_runner();
 
     /*
    * Internal Public Variables
@@ -156,6 +164,8 @@ class PicoQuicTransport : public ITransport
     picoquic_quic_t* quic_ctx;
     picoquic_tp_t local_tp_options;
     safeQueue<std::function<void()>> cbNotifyQueue;
+
+    safeQueue<std::function<void()>> picoquic_runner_queue;     /// Threads queue functions that picoquic will call via the pq_loop_cb call
 
     std::atomic<bool> stop;
     std::atomic<TransportStatus> transportStatus;

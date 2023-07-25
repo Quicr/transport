@@ -222,7 +222,6 @@ pq_event_cb(picoquic_cnx_t* cnx,
 int
 pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode, void* callback_ctx, void* callback_arg)
 {
-
     PicoQuicTransport* transport = static_cast<PicoQuicTransport*>(callback_ctx);
     int ret = 0;
     std::ostringstream log_msg;
@@ -230,6 +229,8 @@ pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode, void* ca
     if (transport == NULL) {
         return PICOQUIC_ERROR_UNEXPECTED_ERROR;
     } else {
+        transport->pq_runner();
+
         log_msg << "Loop got cb_mode: ";
 
         switch (cb_mode) {
@@ -271,8 +272,8 @@ pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode, void* ca
 
                 // TODO: Add config to set this value. This will change the loop select
                 //   wait time to delta value in microseconds. Default is <= 10 seconds
-                if (targ->delta_t > 60000) {
-                    targ->delta_t = 60000;
+                if (targ->delta_t > 5000) {
+                    targ->delta_t = 5000;
                 }
 
                 if (!prev_time) {
@@ -400,6 +401,7 @@ PicoQuicTransport::createStreamContext(picoquic_cnx_t* cnx, uint64_t stream_id)
       tconfig.time_queue_max_duration, tconfig.time_queue_bucket_interval, _timer, tconfig.time_queue_init_queue_size);
 
     sockaddr* addr;
+
     picoquic_get_peer_addr(cnx, &addr);
     std::memset(stream_cnx->peer_addr_text, 0, sizeof(stream_cnx->peer_addr_text));
 
@@ -423,10 +425,15 @@ PicoQuicTransport::createStreamContext(picoquic_cnx_t* cnx, uint64_t stream_id)
             break;
     }
 
-    (void)picoquic_set_app_stream_ctx(cnx, stream_id, stream_cnx);
+    picoquic_runner_queue.push([=, this]() {
+        picoquic_set_app_stream_ctx(cnx, stream_id, stream_cnx);
+    });
 
-    if (stream_id)
-        (void)picoquic_mark_active_stream(cnx, stream_id, 1, stream_cnx);
+    if (stream_id) {
+        picoquic_runner_queue.push([=, this]() {
+                picoquic_mark_active_stream(cnx, stream_id, 1, stream_cnx);
+        });
+    }
 
     return stream_cnx;
 }
@@ -481,7 +488,9 @@ PicoQuicTransport::shutdown()
         picoQuicThread.join();
     }
 
+    picoquic_runner_queue.stopWaiting();
     cbNotifyQueue.stopWaiting();
+
     if (cbNotifyThread.joinable()) {
         logger.log(LogLevel::info, "Closing transport callback notifier thread");
         cbNotifyThread.join();
@@ -562,6 +571,8 @@ PicoQuicTransport::start()
 
     picoquic_set_default_tp(quic_ctx, &local_tp_options);
 
+    picoquic_runner_queue.setLimit(2000);
+
     cbNotifyQueue.setLimit(2000);
     cbNotifyThread = std::thread(&PicoQuicTransport::cbNotifier, this);
 
@@ -584,6 +595,18 @@ PicoQuicTransport::start()
     }
 
     return cid;
+}
+
+void PicoQuicTransport::pq_runner() {
+
+    while (picoquic_runner_queue.size() > 0) {
+        auto cb = std::move(picoquic_runner_queue.pop());
+        if (cb) {
+            (*cb)();
+        } else {
+            break;
+        }
+    }
 }
 
 void
@@ -783,11 +806,17 @@ PicoQuicTransport::enqueue(const TransportContextId& context_id,
             metrics.enqueued_objs++;
             stream_cnx->second.tx_data->push(bytes, ttl_ms, priority);
 
-            if (!stream_id)
-                (void)picoquic_mark_datagram_ready(stream_cnx->second.cnx, 1);
-            else
-                (void)picoquic_mark_active_stream(
-                  stream_cnx->second.cnx, stream_id, 1, static_cast<StreamContext*>(&stream_cnx->second));
+            if (!stream_id) {
+                picoquic_runner_queue.push([=, this]() {
+                    picoquic_mark_datagram_ready(stream_cnx->second.cnx, 1);
+                });
+
+            } else {
+                picoquic_runner_queue.push([=, this]() {
+                    picoquic_mark_active_stream(
+                      stream_cnx->second.cnx, stream_id, 1, static_cast<StreamContext*>(&stream_cnx->second));
+                });
+            }
         } else {
             std::cerr << "enqueue dropped due to invalid stream: " << stream_id << std::endl;
             return TransportError::InvalidStreamId;
