@@ -348,26 +348,24 @@ PicoQuicTransport::deleteStreamContext(const TransportContextId& context_id, con
     if (iter != active_streams.end()) {
 
         if (stream_id == 0) { // Delete context if stream ID is zero
-            for (const auto& stream_p : iter->second) {
-                if (stream_p.first == 0) {
-                    on_connection_status((StreamContext*)&stream_p.second, TransportStatus::Disconnected);
-                    continue;
-                }
+            StreamContext* s_cnx = &active_streams[context_id][stream_id];
 
-                (void)picoquic_mark_active_stream(stream_p.second.cnx, stream_id, 0, NULL);
-                if (not _is_server_mode) {
-                    (void)picoquic_add_to_stream(stream_p.second.cnx, stream_id, NULL, 0, 1);
-                }
+            on_connection_status(s_cnx, TransportStatus::Disconnected);
+            picoquic_close_immediate(s_cnx->cnx);
 
-                iter->second.erase(stream_id);
-            }
+            active_streams.erase(iter);
 
-            (void)active_streams.erase(iter);
         } else {
             const auto& stream_iter = iter->second.find(stream_id);
 
             if (stream_iter != iter->second.end()) {
-                (void)picoquic_mark_active_stream(stream_iter->second.cnx, stream_id, 0, NULL);
+
+                picoquic_runner_queue.push([=]() {
+                    picoquic_mark_active_stream(stream_iter->second.cnx, stream_id, 0, NULL);
+                    picoquic_add_to_stream(stream_iter->second.cnx, stream_id, NULL, 0, 1);
+                    picoquic_discard_stream(stream_iter->second.cnx, stream_id, 0);
+                });
+
                 (void)iter->second.erase(stream_id);
             }
         }
@@ -425,7 +423,7 @@ PicoQuicTransport::createStreamContext(picoquic_cnx_t* cnx, uint64_t stream_id)
             break;
     }
 
-    picoquic_runner_queue.push([=, this]() {
+    picoquic_runner_queue.push([=]() {
         picoquic_set_app_stream_ctx(cnx, stream_id, stream_cnx);
     });
 
@@ -596,10 +594,9 @@ PicoQuicTransport::start()
 
 void PicoQuicTransport::pq_runner() {
 
-    do {
-        if(auto cb = std::move(picoquic_runner_queue.pop()))
-            (*cb)();
-    } while (picoquic_runner_queue.size() > 0);
+    while (auto cb = std::move(picoquic_runner_queue.pop())) {
+        (*cb)();
+    }
 }
 
 void
@@ -756,11 +753,10 @@ PicoQuicTransport::sendTxData(StreamContext* stream_cnx, [[maybe_unused]] uint8_
 
             } else {
                 buf = picoquic_provide_stream_data_buffer(bytes_ctx,
-                                                          out_data->size(),
+                                                          out_data.value().size(),
                                                           0,
                                                           !stream_cnx->tx_data->empty());
             }
-
             if (buf != NULL) {
                 std::memcpy(buf, out_data.value().data(), out_data.value().size());
 
@@ -797,13 +793,15 @@ PicoQuicTransport::enqueue(const TransportContextId& context_id,
 
             if (!stream_id) {
                 picoquic_runner_queue.push([=]() {
-                    picoquic_mark_datagram_ready(stream_cnx->second.cnx, 1);
+                    if (stream_cnx->second.cnx != NULL)
+                        picoquic_mark_datagram_ready(stream_cnx->second.cnx, 1);
                 });
 
             } else {
                 picoquic_runner_queue.push([=]() {
-                    picoquic_mark_active_stream(
-                      stream_cnx->second.cnx, stream_id, 1, static_cast<StreamContext*>(&stream_cnx->second));
+                    if (stream_cnx->second.cnx != NULL)
+                        picoquic_mark_active_stream(
+                          stream_cnx->second.cnx, stream_id, 1, static_cast<StreamContext*>(&stream_cnx->second));
                 });
             }
         } else {

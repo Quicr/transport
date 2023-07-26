@@ -12,16 +12,16 @@
 
 namespace qtransport {
     /**
- * @brief Priority queue that uses time_queue for each priority
- *
- * @details Order is maintained for objects pushed by priority.
- *          During each `front()`/`pop()` the queue will always
- *          pop the lower priority objects first. Lower priority
- *          objects will be serviced first in the order they were
- *          added to the queue.
- *
- * @tparam DataType   The element type to be stored.
- * @tparam PMAX       Max priorities to allow - Range becomes 0 - PMAX
+     * @brief Priority queue that uses time_queue for each priority
+     *
+     * @details Order is maintained for objects pushed by priority.
+     *          During each `front()`/`pop()` the queue will always
+     *          pop the lower priority objects first. Lower priority
+     *          objects will be serviced first in the order they were
+     *          added to the queue.
+     *
+     * @tparam DataType   The element type to be stored.
+     * @tparam PMAX       Max priorities to allow - Range becomes 0 - PMAX
      */
     template<typename DataType, uint8_t PMAX = 32>
     class priority_queue
@@ -47,17 +47,17 @@ namespace qtransport {
 
       public:
         /**
-     * Construct a priority queue
+         * Construct a priority queue
          */
         priority_queue(std::shared_ptr<queue_timer_service> timer) { priority_queue(1000, 1, _timer, 1000); }
 
         /**
-     * Construct a priority queue
-     *
-     * @param duration              Max duration of time for the queue
-     * @param interval              Interval per bucket, Default is 1
-     * @param timer                 Shared pointer to timer service
-     * @param initial_queue_size     Number of default fifo queue size (reserve)
+         * Construct a priority queue
+         *
+         * @param duration              Max duration of time for the queue
+         * @param interval              Interval per bucket, Default is 1
+         * @param timer                 Shared pointer to timer service
+         * @param initial_queue_size     Number of default fifo queue size (reserve)
          */
         priority_queue(size_t duration,
                        size_t interval,
@@ -76,11 +76,11 @@ namespace qtransport {
         }
 
         /**
-     * @brief Pushes a new value onto the queue with a time to live and priority
-     *
-     * @param value     The value to push onto the queue.
-     * @param ttl       The time to live of the value in milliseconds.
-     * @param priority  The priority of the value (range is 0 - PMAX)
+         * @brief Pushes a new value onto the queue with a time to live and priority
+         *
+         * @param value     The value to push onto the queue.
+         * @param ttl       The time to live of the value in milliseconds.
+         * @param priority  The priority of the value (range is 0 - PMAX)
          */
         void push(DataType& value, uint32_t ttl, uint8_t priority = 0)
         {
@@ -91,8 +91,7 @@ namespace qtransport {
             }
 
             if (!_queue[priority]) {
-                _queue[priority] = std::make_unique<timeQueue>(_duration_ms, _interval_ms,
-                                                               _timer, _initial_queue_size);
+                _queue[priority] = std::make_unique<timeQueue>(_duration_ms, _interval_ms, _timer, _initial_queue_size);
             }
 
             auto& queue = _queue[priority];
@@ -100,9 +99,9 @@ namespace qtransport {
         }
 
         /**
-     * @brief Get the first object from queue
-     *
-     * @return std::nullopt if queue is empty, otherwise reference to object
+         * @brief Get the first object from queue
+         *
+         * @return std::nullopt if queue is empty, otherwise reference to object
          */
         std::optional<DataType> front()
         {
@@ -121,9 +120,9 @@ namespace qtransport {
         }
 
         /**
-     * @brief Get and remove the first object from queue
-     *
-     * @return std::nullopt if queue is empty, otherwise reference to object
+         * @brief Get and remove the first object from queue
+         *
+         * @return std::nullopt if queue is empty, otherwise reference to object
          */
         std::optional<DataType> pop_front()
         {
@@ -142,7 +141,7 @@ namespace qtransport {
         }
 
         /**
-     * @brief Pop/remove the first object from queue
+         * @brief Pop/remove the first object from queue
          */
         void pop()
         {
@@ -159,8 +158,9 @@ namespace qtransport {
         }
 
         // TODO: Consider changing empty/size to look at timeQueue sizes - maybe support blocking pops
-        size_t size() const {
-            size_t sz=0;
+        size_t size() const
+        {
+            size_t sz = 0;
             for (size_t i = 0; i < _queue.size(); i++) {
                 if (_queue[i]) {
                     sz += _queue[i]->size();
@@ -170,7 +170,8 @@ namespace qtransport {
             return sz;
         }
 
-        bool empty() const {
+        bool empty() const
+        {
             for (size_t i = 0; i < _queue.size(); i++) {
                 if (_queue[i] && !_queue[i]->empty()) {
                     return false;
