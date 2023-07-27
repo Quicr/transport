@@ -227,7 +227,9 @@ pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode, void* ca
     std::ostringstream log_msg;
 
     if (transport == NULL) {
+        std::cerr << "picoquic transport was called with NULL transport" << std::endl;
         return PICOQUIC_ERROR_UNEXPECTED_ERROR;
+
     } else {
         transport->pq_runner();
 
@@ -328,7 +330,8 @@ pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode, void* ca
             }
 
             default:
-                ret = PICOQUIC_ERROR_UNEXPECTED_ERROR;
+                //ret = PICOQUIC_ERROR_UNEXPECTED_ERROR;
+                transport->logger.log(LogLevel::warn, "pq_loop_cb() does not implement " + std::to_string(cb_mode));
                 break;
         }
     }
