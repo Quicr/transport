@@ -260,7 +260,7 @@ UDPTransport::fd_reader()
                         (struct sockaddr*)&remoteAddr,
                         &remoteAddrLen);
 
-    if (rLen < 0) {
+    if (rLen < 0 || stop) {
       if ((errno == EAGAIN) || (stop)) {
         // timeout on read or stop issued
         continue;
@@ -416,8 +416,10 @@ UDPTransport::connect_client()
     throw std::runtime_error("socket() failed");
   }
 
-  // TODO: Add config for this value
+  // TODO: Add config for these values
   size_t snd_rcv_max = 2000000;
+  timeval rcv_timeout { .tv_sec = 0, .tv_usec = 10000 };
+
 
   int err =
     setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &snd_rcv_max, sizeof(snd_rcv_max));
@@ -436,6 +438,16 @@ UDPTransport::connect_client()
     logger.log(LogLevel::fatal, s_log.str());
     throw std::runtime_error(s_log.str());
   }
+
+  err =
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &rcv_timeout, sizeof(rcv_timeout));
+  if (err != 0) {
+    s_log << "client_connect: Unable to set receive timeout: "
+          << strerror(errno);
+    logger.log(LogLevel::fatal, s_log.str());
+    throw std::runtime_error(s_log.str());
+  }
+
 
   struct sockaddr_in srvAddr;
   srvAddr.sin_family = AF_INET;
@@ -532,6 +544,7 @@ UDPTransport::connect_server()
 
   // TODO: Add config for this value
   size_t snd_rcv_max = 2000000;
+  timeval rcv_timeout { .tv_sec = 0, .tv_usec = 10000 };
 
   err =
     setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &snd_rcv_max, sizeof(snd_rcv_max));
@@ -550,6 +563,16 @@ UDPTransport::connect_server()
     logger.log(LogLevel::fatal, s_log.str());
     throw std::runtime_error(s_log.str());
   }
+
+  err =
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &rcv_timeout, sizeof(rcv_timeout));
+  if (err != 0) {
+    s_log << "client_connect: Unable to set receive timeout: "
+          << strerror(errno);
+    logger.log(LogLevel::fatal, s_log.str());
+    throw std::runtime_error(s_log.str());
+  }
+
 
   struct sockaddr_in srv_addr;
   memset((char*)&srv_addr, 0, sizeof(srv_addr));
