@@ -17,6 +17,10 @@ private:
 public:
   Delegate(cmdLogger &logger) : logger(logger) { msgcount = 0; }
 
+  void stop() {
+      server.reset();
+  }
+
   void setServerTransport(std::shared_ptr<ITransport> server) {
     this->server = server;
   }
@@ -99,6 +103,7 @@ int main() {
   }
 
   server.reset();
+  d.stop();
 
   return 0;
 }

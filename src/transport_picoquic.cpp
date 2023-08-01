@@ -174,6 +174,8 @@ pq_event_cb(picoquic_cnx_t* cnx,
 
             if (not transport->_is_server_mode) {
                 transport->setStatus(TransportStatus::Disconnected);
+
+                // TODO: Fix picoquic. Apparently picoquic is not processing return values for this callback
                 return PICOQUIC_NO_ERROR_TERMINATE_PACKET_LOOP;
             }
 
@@ -229,6 +231,9 @@ pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode, void* ca
     if (transport == NULL) {
         std::cerr << "picoquic transport was called with NULL transport" << std::endl;
         return PICOQUIC_ERROR_UNEXPECTED_ERROR;
+
+    } else if (transport->status() == TransportStatus::Disconnected) {
+        return PICOQUIC_NO_ERROR_TERMINATE_PACKET_LOOP;
 
     } else {
         transport->pq_runner();
@@ -742,6 +747,7 @@ PicoQuicTransport::close([[maybe_unused]] const TransportContextId& context_id)
 void
 PicoQuicTransport::sendTxData(StreamContext* stream_cnx, [[maybe_unused]] uint8_t* bytes_ctx, size_t max_len)
 {
+
     if (bytes_ctx == NULL) {
         metrics.send_null_bytes_ctx++;
         return;
