@@ -102,6 +102,22 @@ UDPTransport::closeStream(const TransportContextId& context_id,
   }
 }
 
+bool
+UDPTransport::getPeerAddrInfo(const TransportContextId& context_id,
+                              sockaddr_storage* addr)
+{
+  // Locate the given transport context
+  auto it = remote_contexts.find(context_id);
+
+  // If not found, return false
+  if (it == remote_contexts.end()) return false;
+
+  // Copy the address information
+  std::memcpy(addr, &it->second.addr, sizeof(it->second.addr));
+
+  return true;
+}
+
 void
 UDPTransport::close(const TransportContextId& context_id)
 {
