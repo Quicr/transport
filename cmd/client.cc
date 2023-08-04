@@ -116,7 +116,7 @@ main()
         std::this_thread::sleep_for(std::chrono::milliseconds(250));
     }
 
-    StreamId stream_id = client->createStream(tcid, false);
+    StreamId stream_id = client->createStream(tcid, true);
 
     std::stringstream s_log;
 

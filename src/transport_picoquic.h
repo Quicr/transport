@@ -66,8 +66,11 @@ class PicoQuicTransport : public ITransport
         std::unique_ptr<timeQueue> rx_data;                  /// Pending objects received from the network
         std::unique_ptr<priority_queue<bytes_t>> tx_data;    /// Pending objects to be written to the network
 
-        bytes_t stream_current_object;                       /// Current object that is being sent as a byte stream
-        size_t stream_current_object_offset {0};             /// Pointer offset to next byte to send
+        bytes_t stream_tx_object;                           /// Current object that is being sent as a byte stream
+        size_t stream_tx_object_offset{0};                  /// Pointer offset to next byte to send
+
+        bytes_t stream_rx_object;                           /// Current object that is being received via byte stream
+        uint32_t stream_rx_object_size;                     /// Receive object data size to append up to before sending to app
     };
 
 
@@ -132,14 +135,16 @@ class PicoQuicTransport : public ITransport
     void deleteStreamContext(const TransportContextId& context_id,
                              const StreamId& stream_id);
 
-    void sendNextDatagram(StreamContext *stream_cnx, uint8_t* bytes_ctx, size_t max_len);
-    void sendStreamBytes(StreamContext *stream_cnx, uint8_t* bytes_ctx, size_t max_len);
+    void send_next_datagram(StreamContext *stream_cnx, uint8_t* bytes_ctx, size_t max_len);
+    void send_stream_bytes(StreamContext *stream_cnx, uint8_t* bytes_ctx, size_t max_len);
 
     void on_connection_status(StreamContext *stream_cnx,
                               const TransportStatus status);
     void on_new_connection(StreamContext *stream_cnx);
-    void on_recv_data(StreamContext *stream_cnx,
-                      uint8_t* bytes, size_t length);
+    void on_recv_datagram(StreamContext *stream_cnx,
+                          uint8_t* bytes, size_t length);
+    void on_recv_stream_bytes(StreamContext *stream_cnx,
+                             uint8_t* bytes, size_t length);
 
     /**
      * @brief Function run the queue functions within the picoquic thread via the pq_loop_cb

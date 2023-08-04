@@ -88,7 +88,7 @@ pq_event_cb(picoquic_cnx_t* cnx,
                 stream_cnx = transport->getZeroStreamContext(cnx);
             }
             transport->metrics.dgram_prepare_send++;
-            transport->sendNextDatagram(stream_cnx, bytes, length);
+            transport->send_next_datagram(stream_cnx, bytes, length);
             break;
         }
 
@@ -122,7 +122,7 @@ pq_event_cb(picoquic_cnx_t* cnx,
             }
 
             transport->metrics.dgram_received++;
-            transport->on_recv_data(stream_cnx, bytes, length);
+            transport->on_recv_datagram(stream_cnx, bytes, length);
             break;
         }
 
@@ -136,7 +136,7 @@ pq_event_cb(picoquic_cnx_t* cnx,
                 stream_cnx = transport->createStreamContext(cnx, stream_id);
             }
             // length is the amount of data received
-            transport->on_recv_data(stream_cnx, bytes, length);
+            transport->on_recv_stream_bytes(stream_cnx, bytes, length);
 
             if (is_fin)
                 transport->deleteStreamContext(reinterpret_cast<uint64_t>(cnx), stream_id);
@@ -210,7 +210,7 @@ pq_event_cb(picoquic_cnx_t* cnx,
 
         case picoquic_callback_prepare_to_send: {
             transport->metrics.stream_prepare_send++;
-            transport->sendStreamBytes(stream_cnx, bytes, length);
+            transport->send_stream_bytes(stream_cnx, bytes, length);
             break;
         }
 
@@ -762,7 +762,7 @@ PicoQuicTransport::close([[maybe_unused]] const TransportContextId& context_id)
 }
 
 void
-PicoQuicTransport::sendNextDatagram(StreamContext* stream_cnx, uint8_t* bytes_ctx, size_t max_len)
+PicoQuicTransport::send_next_datagram(StreamContext* stream_cnx, uint8_t* bytes_ctx, size_t max_len)
 {
 
     if (bytes_ctx == NULL) {
@@ -799,9 +799,8 @@ PicoQuicTransport::sendNextDatagram(StreamContext* stream_cnx, uint8_t* bytes_ct
 }
 
 void
-PicoQuicTransport::sendStreamBytes(StreamContext* stream_cnx, uint8_t* bytes_ctx, size_t max_len)
+PicoQuicTransport::send_stream_bytes(StreamContext* stream_cnx, uint8_t* bytes_ctx, size_t max_len)
 {
-
     if (bytes_ctx == NULL) {
         metrics.send_null_bytes_ctx++;
         return;
@@ -812,62 +811,76 @@ PicoQuicTransport::sendStreamBytes(StreamContext* stream_cnx, uint8_t* bytes_ctx
     }
 
     std::vector<uint8_t> data;
-    data.reserve(max_len);
+    data.reserve(4 /* len */ + max_len );
 
-    if (stream_cnx->stream_current_object.empty()) {
+    uint32_t data_len = 0;                                  /// Length of data to follow the 4 byte length
+    size_t offset = 0;
+    int is_still_active = 0;
+
+    if (stream_cnx->stream_tx_object.empty()) {
         auto obj = stream_cnx->tx_data->pop_front();
 
         if (obj.has_value()) {
             metrics.stream_objects_sent++;
 
-            if (obj->size() > max_len) {
-                stream_cnx->stream_current_object_offset = max_len;
-                data.insert(data.end(), obj->begin(), obj->end());
+            stream_cnx->stream_tx_object = std::move(obj.value());
+
+            if (stream_cnx->stream_tx_object.size() > max_len) {
+                stream_cnx->stream_tx_object_offset = max_len;
+                data_len = max_len;
+                is_still_active = 1;
 
             } else {
-                stream_cnx->stream_current_object_offset = 0;
-                stream_cnx->stream_current_object.clear();
+                data_len = stream_cnx->stream_tx_object.size();
+                stream_cnx->stream_tx_object_offset = 0;
             }
-
-
-            if ()
-
-            // Write the length to the data (4 bytes, little endian for now
-            uint8_t *len_ptr = reinterpret_cast<uint8_t *>(&len);
-            for (int i=0; i < 4; i++) {
-                data.push_back(*(len_ptr+i));
-            }
-
-            // Append the the data
-            data.insert(data.end(), stream_cnx->stream_current_object.begin(), stream_cnx->stream_current_object.begin() + len);
-
-
 
         } else {
-            // No current data for byte stream to send
+            // queue is empty during pop
             return;
         }
     }
+    else { // Have existing object with remaining bytes to send.
+        data_len = stream_cnx->stream_tx_object.size() - stream_cnx->stream_tx_object_offset;
+        offset = stream_cnx->stream_tx_object_offset;
+
+        if (data_len > max_len) {
+            stream_cnx->stream_tx_object_offset += max_len;
+            data_len = max_len;
+            is_still_active = 1;
+
+        } else {
+            stream_cnx->stream_tx_object_offset = 0;
+        }
+    }
+
+    // Write the length to the data (4 bytes), little endian for now
+    uint8_t *len_ptr = reinterpret_cast<uint8_t *>(&data_len);
+    for (int i=0; i < 4; i++) {
+        data.push_back(*(len_ptr+i));
+    }
+
+    // Append the the data
+    data.insert(data.end(),
+                stream_cnx->stream_tx_object.begin() + offset,
+                stream_cnx->stream_tx_object.begin() + offset + data_len);
+
+    if (stream_cnx->stream_tx_object_offset == 0) {
+        // Zero offset at this point means the object was fully sent
+        stream_cnx->stream_tx_object.clear();
+    }
 
 
-
-
-
-    auto data = stream_cnx->stream_current_object.data();
-    size_t remaining_data = stream_cnx->stream_current_object.size() - stream_cnx->stream_current_object_offset;
-
-
+    if (!is_still_active && !stream_cnx->tx_data->empty())
+        is_still_active = 1;
 
     uint8_t* buf = picoquic_provide_stream_data_buffer(bytes_ctx,
-                                              out_data.value().size(),
-                                              0,
-                                              stream_cnx->tx_data->empty() ? 0 : 1);
-    if (buf != NULL) {
-        std::memcpy(buf, out_data.value().data(), out_data.value().size());
+                                                       data.size(),
+                                                       0,
+                                                       is_still_active);
 
-    } else {
-        // This would only happen if we requested more than max_len or on some memory allocation error
-        return;
+    if (buf != NULL) {
+        std::memcpy(buf, data.data(), data.size());
     }
 }
 
@@ -964,10 +977,10 @@ PicoQuicTransport::on_new_connection(StreamContext* stream_cnx)
 }
 
 void
-PicoQuicTransport::on_recv_data(StreamContext* stream_cnx, uint8_t* bytes, size_t length)
+PicoQuicTransport::on_recv_datagram(StreamContext* stream_cnx, uint8_t* bytes, size_t length)
 {
     if (stream_cnx == NULL || length == 0) {
-        logger.log(LogLevel::warn, "On receive data has null context");
+        logger.log(LogLevel::warn, "On receive datagram has null context");
         return;
     }
 
@@ -989,4 +1002,39 @@ PicoQuicTransport::on_recv_data(StreamContext* stream_cnx, uint8_t* bytes, size_
     } else {
         stream_cnx->in_data_cb_skip_count++;
     }
+}
+
+void PicoQuicTransport::on_recv_stream_bytes(StreamContext* stream_cnx, uint8_t* bytes, size_t length)
+{
+    if (stream_cnx == NULL || length == 0) {
+        logger.log(LogLevel::warn, "on_recv_stream_bytes has null context");
+        return;
+    }
+
+    if (stream_cnx->stream_rx_object.empty()) {
+        if (length < 4) {
+            logger.log(LogLevel::debug, "on_recv_stream_bytes is less than 4, cannot process");
+
+            // TODO: Really should reset stream in this case
+            return;
+        }
+
+        // Start of new object being received
+        std::memcpy(&stream_cnx->stream_rx_object_size, bytes, 4);
+
+        if (stream_cnx->stream_rx_object_size > 40000000) {
+            logger.log(LogLevel::debug,
+                       "on_recv_stream_bytes data length is too large: " + std::to_string(stream_cnx->stream_rx_object_size));
+            stream_cnx->stream_rx_object_size = 0;
+
+            // TODO: Really should reset stream in this case
+            return;
+        }
+
+        stream_cnx->stream_rx_object.reserve(stream_cnx->stream_rx_object_size);
+
+        stream_cnx->stream_rx_object.insert(stream_cnx->stream_rx_object.begin(), length - 4, bytes + 4);
+
+    }
+
 }
