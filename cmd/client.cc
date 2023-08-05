@@ -109,7 +109,7 @@ main()
     logger.log(LogLevel::info, "after set client transport client use_count: " + std::to_string(client.use_count()));
 
     auto tcid = client->start();
-    uint8_t data_buf[1200]{ 0 };
+    uint8_t data_buf[4200]{ 0 };
 
     while (client->status() != TransportStatus::Ready) {
         logger.log(LogLevel::info, "Waiting for client to be ready");
@@ -126,7 +126,6 @@ main()
         for (int i = 0; i < 10; i++) {
             (*msg_num)++;
             auto data = bytes(data_buf, data_buf + sizeof(data_buf));
-
 
             client->enqueue(tcid, server.proto == TransportProtocol::UDP ? 1 : stream_id, std::move(data));
         }
