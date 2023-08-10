@@ -69,6 +69,9 @@ public:
   void closeStream(const TransportContextId& context_id,
                    StreamId streamId) override;
 
+  virtual bool getPeerAddrInfo(const TransportContextId& context_id,
+                               sockaddr_storage* addr) override;
+
   StreamId createStream(const TransportContextId& context_id,
                         bool use_reliable_transport) override;
 

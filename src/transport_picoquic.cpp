@@ -410,6 +410,7 @@ PicoQuicTransport::createStreamContext(picoquic_cnx_t* cnx, uint64_t stream_id)
 
     picoquic_get_peer_addr(cnx, &addr);
     std::memset(stream_cnx->peer_addr_text, 0, sizeof(stream_cnx->peer_addr_text));
+    std::memcpy(&stream_cnx->peer_addr, addr, sizeof(stream_cnx->peer_addr));
 
     switch (addr->sa_family) {
         case AF_INET:
@@ -737,6 +738,27 @@ void
 PicoQuicTransport::closeStream(const TransportContextId& context_id, const StreamId stream_id)
 {
     deleteStreamContext(context_id, stream_id);
+}
+
+bool PicoQuicTransport::getPeerAddrInfo(const TransportContextId& context_id,
+                                        sockaddr_storage* addr)
+{
+    // Locate the specified transport context
+    auto it = active_streams.find(context_id);
+
+    // If not found, return false
+    if (it == active_streams.end()) return false;
+
+    // Try to locate stream 0
+    auto it_stream = it->second.find(0);
+
+    // If not found, it suggests the connection is actually closed
+    if (it_stream == it->second.end()) return false;
+
+    // Copy the address
+    std::memcpy(addr, &it_stream->second.peer_addr, sizeof(sockaddr_storage));
+
+    return true;
 }
 
 void

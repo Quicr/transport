@@ -5,6 +5,7 @@
 #include <optional>
 #include <queue>
 #include <vector>
+#include <sys/socket.h>
 
 #include "logger.h"
 
@@ -243,6 +244,17 @@ public:
    */
   virtual void closeStream(const TransportContextId& context_id,
                            StreamId stream_id) = 0;
+
+  /**
+   * @brief Get the peer IP address and port associated with the stream
+   *
+   * @param[in]  context_id	Identifying the connection
+   * @param[out] addr	Peer address
+   *
+   * @returns True if the address was successfully returned, false otherwise
+   */
+  virtual bool getPeerAddrInfo(const TransportContextId& context_id,
+                               sockaddr_storage* addr) = 0;
 
   /**
    * @brief Enqueue application data within the transport

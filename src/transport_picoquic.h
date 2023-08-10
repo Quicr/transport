@@ -54,6 +54,7 @@ class PicoQuicTransport : public ITransport
         uint64_t stream_id;
         TransportContextId context_id;
         picoquic_cnx_t *cnx;
+        sockaddr_storage peer_addr;
         char peer_addr_text[45];
         uint16_t peer_port;
         uint64_t in_data_cb_skip_count {0};                  /// Number of times callback was skipped due to size
@@ -96,6 +97,9 @@ class PicoQuicTransport : public ITransport
     void close(const TransportContextId& context_id) override;
     void closeStream(const TransportContextId& context_id,
                      StreamId stream_id) override;
+
+    virtual bool getPeerAddrInfo(const TransportContextId& context_id,
+                                 sockaddr_storage* addr) override;
 
     StreamId createStream(const TransportContextId& context_id,
                           bool use_reliable_transport) override;
