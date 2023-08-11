@@ -810,8 +810,6 @@ PicoQuicTransport::send_stream_bytes(StreamContext* stream_cnx, uint8_t* bytes_c
         return; // Only for steams
     }
 
-    std::vector<uint8_t> data;
-
     uint32_t data_len = 0;                                  /// Length of data to follow the 4 byte length
     size_t offset = 0;
     int is_still_active = 0;
@@ -1040,9 +1038,9 @@ void PicoQuicTransport::on_recv_stream_bytes(StreamContext* stream_cnx, uint8_t*
     bool object_complete = false;
 
     if (stream_cnx->stream_rx_object == nullptr) {
-        if (length < 4) {
+        if (length < 5) {
             logger.log(LogLevel::warn, (std::ostringstream()
-                                        << "on_recv_stream_bytes is less than 4, cannot process sid: "
+                                        << "on_recv_stream_bytes is less than 5, cannot process sid: "
                                         << std::to_string(stream_cnx->stream_id)).str());
 
             // TODO: Should reset stream in this case
