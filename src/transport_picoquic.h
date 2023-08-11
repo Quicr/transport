@@ -38,6 +38,12 @@ class PicoQuicTransport : public ITransport
         uint64_t dgram_spurious {0};
         uint64_t dgram_prepare_send {0};
         uint64_t dgram_sent {0};
+        uint64_t stream_prepare_send {0};
+        uint64_t stream_objects_sent {0};
+        uint64_t stream_bytes_sent {0};
+        uint64_t stream_bytes_recv {0};
+        uint64_t stream_objects_recv {0};
+        uint64_t stream_rx_callbacks {0};
         uint64_t send_null_bytes_ctx {0};
         uint64_t dgram_lost {0};
         uint64_t dgram_received {0};
@@ -60,6 +66,15 @@ class PicoQuicTransport : public ITransport
         uint64_t in_data_cb_skip_count {0};                  /// Number of times callback was skipped due to size
         std::unique_ptr<timeQueue> rx_data;                  /// Pending objects received from the network
         std::unique_ptr<priority_queue<bytes_t>> tx_data;    /// Pending objects to be written to the network
+
+        uint8_t* stream_tx_object {nullptr};                 /// Current object that is being sent as a byte stream
+        size_t stream_tx_object_size {0};                    /// Size of the tx object
+        size_t stream_tx_object_offset{0};                   /// Pointer offset to next byte to send
+
+        uint8_t* stream_rx_object {nullptr};                 /// Current object that is being received via byte stream
+        uint32_t stream_rx_object_size;                      /// Receive object data size to append up to before sending to app
+        size_t stream_rx_object_offset{0};                   /// Pointer offset to next byte to append
+
     };
 
 
@@ -127,12 +142,16 @@ class PicoQuicTransport : public ITransport
     void deleteStreamContext(const TransportContextId& context_id,
                              const StreamId& stream_id);
 
-    void sendTxData(StreamContext *stream_cnx, uint8_t* bytes_ctx, size_t max_len);
+    void send_next_datagram(StreamContext *stream_cnx, uint8_t* bytes_ctx, size_t max_len);
+    void send_stream_bytes(StreamContext *stream_cnx, uint8_t* bytes_ctx, size_t max_len);
+
     void on_connection_status(StreamContext *stream_cnx,
                               const TransportStatus status);
     void on_new_connection(StreamContext *stream_cnx);
-    void on_recv_data(StreamContext *stream_cnx,
-                      uint8_t* bytes, size_t length);
+    void on_recv_datagram(StreamContext *stream_cnx,
+                          uint8_t* bytes, size_t length);
+    void on_recv_stream_bytes(StreamContext *stream_cnx,
+                             uint8_t* bytes, size_t length);
 
     /**
      * @brief Function run the queue functions within the picoquic thread via the pq_loop_cb
@@ -172,6 +191,7 @@ class PicoQuicTransport : public ITransport
     safeQueue<std::function<void()>> picoquic_runner_queue;     /// Threads queue functions that picoquic will call via the pq_loop_cb call
 
     std::atomic<bool> stop;
+    std::mutex _state_mutex;                                    /// Used for stream/context/state updates
     std::atomic<TransportStatus> transportStatus;
     std::thread picoQuicThread;
     std::thread cbNotifyThread;

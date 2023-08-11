@@ -53,7 +53,7 @@ public:
       if (data.has_value()) {
         msgcount++;
 
-        uint32_t *msg_num = (uint32_t *)data.value().data();
+        uint32_t *msg_num = (uint32_t *)data->data();
 
         if (prev_msg_num && (*msg_num - prev_msg_num) > 1) {
             s_log.str(std::string());

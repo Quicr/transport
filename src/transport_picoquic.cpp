@@ -88,7 +88,7 @@ pq_event_cb(picoquic_cnx_t* cnx,
                 stream_cnx = transport->getZeroStreamContext(cnx);
             }
             transport->metrics.dgram_prepare_send++;
-            transport->sendTxData(stream_cnx, bytes, length);
+            transport->send_next_datagram(stream_cnx, bytes, length);
             break;
         }
 
@@ -122,7 +122,7 @@ pq_event_cb(picoquic_cnx_t* cnx,
             }
 
             transport->metrics.dgram_received++;
-            transport->on_recv_data(stream_cnx, bytes, length);
+            transport->on_recv_datagram(stream_cnx, bytes, length);
             break;
         }
 
@@ -130,11 +130,13 @@ pq_event_cb(picoquic_cnx_t* cnx,
             is_fin = true;
             // fall through to picoquic_callback_stream_data
         case picoquic_callback_stream_data: {
+            transport->metrics.stream_rx_callbacks++;
+
             if (stream_cnx == NULL) {
                 stream_cnx = transport->createStreamContext(cnx, stream_id);
             }
             // length is the amount of data received
-            transport->on_recv_data(stream_cnx, bytes, length);
+            transport->on_recv_stream_bytes(stream_cnx, bytes, length);
 
             if (is_fin)
                 transport->deleteStreamContext(reinterpret_cast<uint64_t>(cnx), stream_id);
@@ -207,7 +209,8 @@ pq_event_cb(picoquic_cnx_t* cnx,
         }
 
         case picoquic_callback_prepare_to_send: {
-            transport->sendTxData(stream_cnx, bytes, length);
+            transport->metrics.stream_prepare_send++;
+            transport->send_stream_bytes(stream_cnx, bytes, length);
             break;
         }
 
@@ -296,9 +299,10 @@ pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode, void* ca
                         std::ostringstream log_msg;
                         log_msg << "Metrics: " << std::endl
                                 << "   time checks        : " << transport->metrics.time_checks << std::endl
-                                << "   send with null ctx : " << transport->metrics.send_null_bytes_ctx << std::endl
-                                << "   dgram_recv         : " << transport->metrics.dgram_received << std::endl
                                 << "   enqueued_objs      : " << transport->metrics.enqueued_objs << std::endl
+                                << "   send with null ctx : " << transport->metrics.send_null_bytes_ctx << std::endl
+                                << "   ----[ Datagrams ] --------------" << std::endl
+                                << "   dgram_recv         : " << transport->metrics.dgram_received << std::endl
                                 << "   dgram_sent         : " << transport->metrics.dgram_sent << std::endl
                                 << "   dgram_prepare_send : " << transport->metrics.dgram_prepare_send << " ("
                                 << transport->metrics.dgram_prepare_send - prev_metrics.dgram_prepare_send << ")"
@@ -306,7 +310,14 @@ pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode, void* ca
                                 << "   dgram_lost         : " << transport->metrics.dgram_lost << std::endl
                                 << "   dgram_ack          : " << transport->metrics.dgram_ack << std::endl
                                 << "   dgram_spurious     : " << transport->metrics.dgram_spurious << " ("
-                                << transport->metrics.dgram_spurious + transport->metrics.dgram_ack << ")" << std::endl;
+                                << transport->metrics.dgram_spurious + transport->metrics.dgram_ack << ")" << std::endl
+                                << "   ----[ Streams ] --------------" << std::endl
+                                << "   stream_prepare_send: " << transport->metrics.stream_prepare_send << std::endl
+                                << "   stream_objects_sent: " << transport->metrics.stream_objects_sent << std::endl
+                                << "   stream_bytes_sent  : " << transport->metrics.stream_bytes_sent << std::endl
+                                << "   stream_rx_callbacks: " << transport->metrics.stream_rx_callbacks << std::endl
+                                << "   stream_objects_recv: " << transport->metrics.stream_objects_recv << std::endl
+                                << "   stream_bytes_recv  : " << transport->metrics.stream_bytes_recv << std::endl;
 
                         transport->logger.log(LogLevel::debug, log_msg.str());
                         prev_metrics = transport->metrics;
@@ -351,6 +362,8 @@ PicoQuicTransport::deleteStreamContext(const TransportContextId& context_id, con
     log_msg << "Delete stream context for id: " << stream_id;
     logger.log(LogLevel::info, log_msg.str());
 
+    std::lock_guard<std::mutex> lock(_state_mutex);
+
     const auto& iter = active_streams.find(context_id);
 
     if (iter != active_streams.end()) {
@@ -371,7 +384,8 @@ PicoQuicTransport::deleteStreamContext(const TransportContextId& context_id, con
                 picoquic_runner_queue.push([=]() {
                     picoquic_mark_active_stream(stream_iter->second.cnx, stream_id, 0, NULL);
                     picoquic_add_to_stream(stream_iter->second.cnx, stream_id, NULL, 0, 1);
-                    picoquic_discard_stream(stream_iter->second.cnx, stream_id, 0);
+                    // TODO: Is this needed if we already set the stream FIN?
+                    //       picoquic_discard_stream(stream_iter->second.cnx, stream_id, 0);
                 });
 
                 (void)iter->second.erase(stream_id);
@@ -386,6 +400,7 @@ PicoQuicTransport::getZeroStreamContext(picoquic_cnx_t* cnx)
     if (cnx == NULL)
         return NULL;
 
+    // This should be safe since it's not removed unless the connection is removed. Zero is reserved for datagram
     return &active_streams[reinterpret_cast<uint64_t>(cnx)][0];
 }
 
@@ -394,6 +409,8 @@ PicoQuicTransport::createStreamContext(picoquic_cnx_t* cnx, uint64_t stream_id)
 {
     if (cnx == NULL)
         return NULL;
+
+    std::lock_guard<std::mutex> lock(_state_mutex);
 
     StreamContext* stream_cnx = &active_streams[reinterpret_cast<uint64_t>(cnx)][stream_id];
     stream_cnx->stream_id = stream_id;
@@ -767,7 +784,7 @@ PicoQuicTransport::close([[maybe_unused]] const TransportContextId& context_id)
 }
 
 void
-PicoQuicTransport::sendTxData(StreamContext* stream_cnx, [[maybe_unused]] uint8_t* bytes_ctx, size_t max_len)
+PicoQuicTransport::send_next_datagram(StreamContext* stream_cnx, uint8_t* bytes_ctx, size_t max_len)
 {
 
     if (bytes_ctx == NULL) {
@@ -775,34 +792,139 @@ PicoQuicTransport::sendTxData(StreamContext* stream_cnx, [[maybe_unused]] uint8_
         return;
     }
 
+    if (stream_cnx->stream_id != 0) {
+        // Only for datagrams
+        return;
+    }
+
     const auto& out_data = stream_cnx->tx_data->front();
     if (out_data.has_value()) {
-        if (max_len >= out_data.value().size()) {
+        if (max_len >= out_data->size()) {
             metrics.dgram_sent++;
 
             uint8_t* buf = NULL;
 
-            if (stream_cnx->stream_id == 0) {
-                buf = picoquic_provide_datagram_buffer_ex(bytes_ctx,
-                                                          out_data.value().size(),
-                                                          stream_cnx->tx_data->empty() ? picoquic_datagram_not_active : picoquic_datagram_active_any_path);
+            buf = picoquic_provide_datagram_buffer_ex(bytes_ctx,
+                                                      out_data->size(),
+                                                      stream_cnx->tx_data->empty() ? picoquic_datagram_not_active : picoquic_datagram_active_any_path);
 
-            } else {
-                buf = picoquic_provide_stream_data_buffer(bytes_ctx,
-                                                          out_data.value().size(),
-                                                          0,
-                                                          !stream_cnx->tx_data->empty());
-            }
             if (buf != NULL) {
-                std::memcpy(buf, out_data.value().data(), out_data.value().size());
+                std::memcpy(buf, out_data->data(), out_data->size());
 
                 stream_cnx->tx_data->pop();
             }
         }
     }
     else {
-        if (stream_cnx->stream_id == 0)
-            picoquic_provide_datagram_buffer_ex(bytes_ctx, 0, picoquic_datagram_not_active);
+        picoquic_provide_datagram_buffer_ex(bytes_ctx, 0, picoquic_datagram_not_active);
+    }
+}
+
+void
+PicoQuicTransport::send_stream_bytes(StreamContext* stream_cnx, uint8_t* bytes_ctx, size_t max_len)
+{
+    if (bytes_ctx == NULL) {
+        metrics.send_null_bytes_ctx++;
+        return;
+    }
+
+    if (stream_cnx->stream_id == 0) {
+        return; // Only for steams
+    }
+
+    uint32_t data_len = 0;                                  /// Length of data to follow the 4 byte length
+    size_t offset = 0;
+    int is_still_active = 0;
+
+    if (stream_cnx->stream_tx_object == nullptr) {
+
+        if (max_len < 5) {
+            // Not enough bytes to send
+            logger.log(LogLevel::info, (std::ostringstream()
+                                        << "Not enough bytes to send stream size header sid: "
+                                        << stream_cnx->stream_id).str());
+            return;
+        }
+
+        auto obj = stream_cnx->tx_data->pop_front();
+        if (obj.has_value()) {
+            metrics.stream_objects_sent++;
+            max_len -= 4; // Subtract out the length header that will be added
+
+            stream_cnx->stream_tx_object = new uint8_t[obj->size()];
+            stream_cnx->stream_tx_object_size = obj->size();
+            std::memcpy(stream_cnx->stream_tx_object, obj->data(), obj->size());
+
+            if (obj->size() > max_len) {
+                stream_cnx->stream_tx_object_offset = max_len;
+                data_len = max_len;
+                is_still_active = 1;
+
+            } else {
+                data_len = obj->size();
+                stream_cnx->stream_tx_object_offset = 0;
+            }
+
+        } else {
+            // queue is empty during pop
+            return;
+        }
+    }
+    else { // Have existing object with remaining bytes to send.
+        data_len = stream_cnx->stream_tx_object_size - stream_cnx->stream_tx_object_offset;
+        offset = stream_cnx->stream_tx_object_offset;
+
+        if (data_len > max_len) {
+            stream_cnx->stream_tx_object_offset += max_len;
+            data_len = max_len;
+            is_still_active = 1;
+
+        } else {
+            stream_cnx->stream_tx_object_offset = 0;
+        }
+    }
+
+    metrics.stream_bytes_sent += data_len;
+
+    if (!is_still_active && !stream_cnx->tx_data->empty())
+        is_still_active = 1;
+
+    uint8_t *buf = nullptr;
+
+    if (offset == 0) {
+        // New object being written, add length (4 bytes), little endian for now
+        uint32_t obj_length = stream_cnx->stream_tx_object_size;
+
+        buf = picoquic_provide_stream_data_buffer(bytes_ctx,
+                                                  data_len + 4,
+                                                  0,
+                                                  is_still_active);
+        if (buf != NULL) {
+            std::memcpy(buf, reinterpret_cast<uint8_t *>(&obj_length), 4);
+            buf += 4;
+        } else {
+            // Error allocating memory to write
+            return;
+        }
+    } else {
+        buf = picoquic_provide_stream_data_buffer(bytes_ctx,
+                                                  data_len,
+                                                  0,
+                                                  is_still_active);
+
+        if (buf == NULL) {
+            // Error allocating memory to write
+            return;
+        }
+    }
+
+    // Write data
+    std::memcpy(buf, stream_cnx->stream_tx_object + offset, data_len);
+
+    if (stream_cnx->stream_tx_object_offset == 0 && stream_cnx->stream_tx_object != nullptr) {
+        // Zero offset at this point means the object was fully sent
+        delete []stream_cnx->stream_tx_object;
+        stream_cnx->stream_tx_object = nullptr;
     }
 }
 
@@ -817,6 +939,8 @@ PicoQuicTransport::enqueue(const TransportContextId& context_id,
         std::cerr << "enqueue dropped due bytes empty" << std::endl;
         return TransportError::None;
     }
+
+    std::lock_guard<std::mutex> lock(_state_mutex);
 
     const auto& ctx = active_streams.find(context_id);
 
@@ -855,6 +979,8 @@ PicoQuicTransport::enqueue(const TransportContextId& context_id,
 std::optional<std::vector<uint8_t>>
 PicoQuicTransport::dequeue(const TransportContextId& context_id, const StreamId& stream_id)
 {
+    std::lock_guard<std::mutex> lock(_state_mutex);
+
     auto cnx_it = active_streams.find(context_id);
 
     if (cnx_it != active_streams.end()) {
@@ -895,10 +1021,10 @@ PicoQuicTransport::on_new_connection(StreamContext* stream_cnx)
 }
 
 void
-PicoQuicTransport::on_recv_data(StreamContext* stream_cnx, uint8_t* bytes, size_t length)
+PicoQuicTransport::on_recv_datagram(StreamContext* stream_cnx, uint8_t* bytes, size_t length)
 {
     if (stream_cnx == NULL || length == 0) {
-        logger.log(LogLevel::warn, "On receive data has null context");
+        logger.log(LogLevel::warn, "On receive datagram has null context");
         return;
     }
 
@@ -908,7 +1034,9 @@ PicoQuicTransport::on_recv_data(StreamContext* stream_cnx, uint8_t* bytes, size_
     bool too_many_in_queue = false;
 
     if (cbNotifyQueue.size() > 200) {
-        std::cout << "cbNotifyQueue size: " << cbNotifyQueue.size() << std::endl;
+        logger.log(LogLevel::info, (std::ostringstream()
+                                    << "on_recv_datagram cbNotifyQueue size"
+                                    << cbNotifyQueue.size()).str());
     }
 
     if (too_many_in_queue || stream_cnx->rx_data->size() < 2 || stream_cnx->in_data_cb_skip_count > 30) {
@@ -919,5 +1047,118 @@ PicoQuicTransport::on_recv_data(StreamContext* stream_cnx, uint8_t* bytes, size_
         cbNotifyQueue.push([=, this]() { delegate.on_recv_notify(context_id, stream_id); });
     } else {
         stream_cnx->in_data_cb_skip_count++;
+    }
+}
+
+void PicoQuicTransport::on_recv_stream_bytes(StreamContext* stream_cnx, uint8_t* bytes, size_t length)
+{
+    if (stream_cnx == NULL || length == 0) {
+        logger.log(LogLevel::warn, "on_recv_stream_bytes has null context");
+        return;
+    }
+
+    bool object_complete = false;
+
+    if (stream_cnx->stream_rx_object == nullptr) {
+        if (length < 5) {
+            logger.log(LogLevel::warn, (std::ostringstream()
+                                        << "on_recv_stream_bytes is less than 5, cannot process sid: "
+                                        << std::to_string(stream_cnx->stream_id)).str());
+
+            // TODO: Should reset stream in this case
+            return;
+        }
+
+        // Start of new object being received is the 4 byte length value
+        std::memcpy(&stream_cnx->stream_rx_object_size, bytes, 4);
+        bytes += 4;
+        length -= 4;
+
+        if (stream_cnx->stream_rx_object_size > 40000000) { // Safety check
+            logger.log(LogLevel::warn, (std::ostringstream()
+                                        << "on_recv_stream_bytes sid: " << stream_cnx->stream_id
+                                        << " data length is too large: "
+                                        << std::to_string(stream_cnx->stream_rx_object_size)).str());
+            stream_cnx->stream_rx_object_size = 0;
+
+            // TODO: Should reset stream in this case
+            return;
+        }
+
+        if (stream_cnx->stream_rx_object_size <= length) {
+            object_complete = true;
+
+            std::vector<uint8_t> data(bytes, bytes + stream_cnx->stream_rx_object_size);
+            stream_cnx->rx_data->push(std::move(data), tconfig.time_queue_rx_ttl);
+
+            bytes += stream_cnx->stream_rx_object_size;
+            length -= stream_cnx->stream_rx_object_size;
+            metrics.stream_bytes_recv += stream_cnx->stream_rx_object_size;
+        }
+        else {
+            // Need to wait for more data, create new object buffer
+            stream_cnx->stream_rx_object = new uint8_t[stream_cnx->stream_rx_object_size];
+
+            stream_cnx->stream_rx_object_offset = length;
+            std::memcpy(stream_cnx->stream_rx_object, bytes, length);
+            length = 0;
+        }
+    }
+    else { // Existing object, append
+        size_t remaining_len = stream_cnx->stream_rx_object_size - stream_cnx->stream_rx_object_offset;
+
+        if (remaining_len > length) {
+            remaining_len = length;
+            length = 0;
+        } else {
+            object_complete = true;
+            length -= remaining_len;
+        }
+
+        metrics.stream_bytes_recv += remaining_len;
+
+        std::memcpy(stream_cnx->stream_rx_object + stream_cnx->stream_rx_object_offset, bytes, remaining_len);
+        bytes += remaining_len;
+
+        if (object_complete) {
+            std::vector<uint8_t> data(stream_cnx->stream_rx_object, stream_cnx->stream_rx_object + stream_cnx->stream_rx_object_size);
+            stream_cnx->rx_data->push(std::move(data), tconfig.time_queue_rx_ttl);
+
+            delete []stream_cnx->stream_rx_object;
+            stream_cnx->stream_rx_object = nullptr;
+            stream_cnx->stream_rx_object_size = 0;
+            stream_cnx->stream_rx_object_offset = 0;
+        }
+        else {
+            stream_cnx->stream_rx_object_offset += remaining_len;
+        }
+    }
+
+    if (object_complete) {
+        metrics.stream_objects_recv++;
+
+        bool too_many_in_queue = false;
+        if (cbNotifyQueue.size() > 200) {
+            logger.log(LogLevel::warn, (std::ostringstream()
+                                        << "on_recv_stream_bytes sid: " << stream_cnx->stream_id
+                                        << "cbNotifyQueue size" << cbNotifyQueue.size()).str());
+
+        }
+
+        if (too_many_in_queue || stream_cnx->rx_data->size() < 2 || stream_cnx->in_data_cb_skip_count > 30) {
+            stream_cnx->in_data_cb_skip_count = 0;
+            TransportContextId context_id = stream_cnx->context_id;
+            StreamId stream_id = stream_cnx->stream_id;
+
+            cbNotifyQueue.push([=, this]() { delegate.on_recv_notify(context_id, stream_id); });
+        } else {
+            stream_cnx->in_data_cb_skip_count++;
+        }
+    }
+
+    if (length > 0) {
+        logger.log(LogLevel::info, (std::ostringstream()
+                                     << "on_stream_bytes has remaining bytes: " << length).str());
+        on_recv_stream_bytes(stream_cnx, bytes, length);
     }
 }
