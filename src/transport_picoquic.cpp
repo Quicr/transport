@@ -282,8 +282,8 @@ pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode, void* ca
 
                 // TODO: Add config to set this value. This will change the loop select
                 //   wait time to delta value in microseconds. Default is <= 10 seconds
-                if (targ->delta_t > 5000) {
-                    targ->delta_t = 5000;
+                if (targ->delta_t > 1000) {
+                    targ->delta_t = 1000;
                 }
 
                 if (!prev_time) {
