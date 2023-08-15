@@ -122,13 +122,7 @@ void
 UDPTransport::close(const TransportContextId& context_id)
 {
 
-  if (not isServerMode) {
-    if (fd >= 0) {
-      ::close(fd);
-    }
-    fd = -1;
-
-  } else {
+  if (isServerMode) {
     addrKey ak;
 
     addr_to_key(remote_contexts[context_id].addr, ak);
@@ -231,7 +225,7 @@ UDPTransport::fd_writer()
         err << "Error sending on UDP socket: " << strerror(errno);
         logger.log(LogLevel::error, err.str());
 
-        continue;
+        break;
 
       } else if (numSent != (int)cd.value().data.size()) {
         continue;
@@ -285,7 +279,7 @@ UDPTransport::fd_reader()
         std::ostringstream err;
         err << "Error reading from UDP socket: " << strerror(errno);
         logger.log(LogLevel::error, err.str());
-        continue;
+        break;
       }
     }
 
