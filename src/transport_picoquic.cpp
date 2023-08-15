@@ -364,34 +364,34 @@ PicoQuicTransport::deleteStreamContext(const TransportContextId& context_id, con
 
     std::lock_guard<std::mutex> lock(_state_mutex);
 
-    const auto& iter = active_streams.find(context_id);
+    const auto& active_stream_it = active_streams.find(context_id);
+    if (active_stream_it == active_streams.end())
+        return;
 
-    if (iter != active_streams.end()) {
+    if (stream_id == 0) {
+        StreamContext* s_cnx = &active_streams[context_id][stream_id];
 
-        if (stream_id == 0) { // Delete context if stream ID is zero
-            StreamContext* s_cnx = &active_streams[context_id][stream_id];
+        on_connection_status(s_cnx, TransportStatus::Disconnected);
+        picoquic_close_immediate(s_cnx->cnx);
 
-            on_connection_status(s_cnx, TransportStatus::Disconnected);
-            picoquic_close_immediate(s_cnx->cnx);
-
-            active_streams.erase(iter);
-
-        } else {
-            const auto& stream_iter = iter->second.find(stream_id);
-
-            if (stream_iter != iter->second.end()) {
-
-                picoquic_runner_queue.push([=]() {
-                    picoquic_mark_active_stream(stream_iter->second.cnx, stream_id, 0, NULL);
-                    picoquic_add_to_stream(stream_iter->second.cnx, stream_id, NULL, 0, 1);
-                    // TODO: Is this needed if we already set the stream FIN?
-                    //       picoquic_discard_stream(stream_iter->second.cnx, stream_id, 0);
-                });
-
-                (void)iter->second.erase(stream_id);
-            }
-        }
+        active_streams.erase(active_stream_it);
+        return;
     }
+
+    auto& [ctx_id, stream_contexts] = *active_stream_it;
+    const auto& stream_iter = stream_contexts.find(stream_id);
+    if (stream_iter == stream_contexts.end())
+        return;
+
+    const auto& [_, ctx] = *stream_iter;
+    picoquic_runner_queue.push([=, cnx = ctx.cnx]() {
+        picoquic_mark_active_stream(cnx, stream_id, 0, NULL);
+        picoquic_add_to_stream(cnx, stream_id, NULL, 0, 1);
+        // TODO: Is this needed if we already set the stream FIN?
+        // picoquic_discard_stream(stream_iter->second.cnx, stream_id, 0);
+    });
+
+    (void)stream_contexts.erase(stream_id);
 }
 
 PicoQuicTransport::StreamContext*
