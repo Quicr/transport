@@ -43,7 +43,7 @@ namespace qtransport {
      */
     class queue_timer_service
     {
-      public:
+    public:
         using tick_type = int;
         using duration_t = std::chrono::microseconds;
 
@@ -53,9 +53,13 @@ namespace qtransport {
          */
         struct timer_context
         {
-            tick_type delta;          /// Delta (distance) in ticks since last call
-            tick_type ticks;          /// Current tick value when updated
-            tick_type previous_ticks; /// Previous tick value when last updated
+            tick_type delta {0};              /// Delta (distance) in ticks since last call
+            tick_type ticks {0};              /// Current tick value when updated
+
+
+
+            uint64_t time_diff {0};
+            std::chrono::time_point<std::chrono::steady_clock> prev_time = std::chrono::steady_clock::now();
         };
 
         virtual void get_ticks(const duration_t& interval, timer_context& ctx) = 0;
@@ -67,13 +71,13 @@ namespace qtransport {
      */
     class queue_timer_thread : public queue_timer_service
     {
-      private:
+    private:
         /*=======================================================================*/
         // Internal type definitions
         /*=======================================================================*/
-        using clock_type = std::chrono::high_resolution_clock;
+        using clock_type = std::chrono::steady_clock;
 
-      public:
+    public:
         /**
          * @brief
          * @param interval The interval at which ticks should update.
@@ -81,8 +85,8 @@ namespace qtransport {
         queue_timer_thread() { _tick_thread = std::thread(&queue_timer_thread::tick_loop, this); }
 
         queue_timer_thread(const queue_timer_thread& other)
-          : _ticks{ other._ticks.load() }
-          , _stop{ other._stop.load() }
+                : _ticks{ other._ticks.load() }
+                , _stop{ other._stop.load() }
         {
             _tick_thread = std::thread(&queue_timer_thread::tick_loop, this);
         }
@@ -104,16 +108,30 @@ namespace qtransport {
 
         void get_ticks(const duration_t& interval, timer_context& ctx) override
         {
+            auto now_time = std::chrono::steady_clock::now();
+            ctx.time_diff = std::chrono::duration_cast<std::chrono::milliseconds>(now_time - ctx.prev_time).count();
+            ctx.prev_time = now_time;
+
+            if (ctx.time_diff > 400) {
+                std::cerr << "=====> Time diff: " << ctx.time_diff << std::endl;
+            }
+
             auto increment = std::max(interval, _interval) / _interval;
 
-            ctx.ticks = _ticks / increment;
+            tick_type ticks = _ticks / increment;
 
-            ctx.delta = ctx.previous_ticks > 0 ? ctx.ticks - ctx.previous_ticks : 0;
+            ctx.delta = ctx.ticks ? ticks - ctx.ticks : 0;
 
-            ctx.previous_ticks = ctx.ticks;
+            if (ctx.delta > 100) {
+                std::cerr << "=====> Large tick jump of " << ctx.delta
+                          << " time_diff: " << ctx.time_diff
+                          << std::endl;
+            }
+
+            ctx.ticks = ticks;
         }
 
-      private:
+    private:
         void tick_loop()
         {
             const auto check_delay = _interval / 2;
@@ -133,7 +151,7 @@ namespace qtransport {
             }
         }
 
-      private:
+    private:
         /// The current ticks since the timer began.
         std::atomic<uint64_t> _ticks{ 0 };
 
@@ -182,9 +200,9 @@ namespace qtransport {
         struct queue_value_type
         {
             queue_value_type(index_type bucket_index, index_type value_index, uint64_t expiry_tick)
-              : _bucket_index{ bucket_index }
-              , _value_index{ value_index }
-              , _expiry_tick(expiry_tick)
+                    : _bucket_index{ bucket_index }
+                    , _value_index{ value_index }
+                    , _expiry_tick(expiry_tick)
             {
             }
 
@@ -195,7 +213,7 @@ namespace qtransport {
 
         using queue_type = std::vector<queue_value_type>;
 
-      public:
+    public:
         /**
          * @brief Construct a time_queue with defaults or supplied parameters
          *
@@ -207,10 +225,10 @@ namespace qtransport {
          * @throws          std::runtime_error If the timer is null.
          */
         time_queue(size_t duration, size_t interval, std::shared_ptr<queue_timer_service> timer)
-          : _duration{ duration }
-          , _interval{ interval }
-          , _total_buckets{ _duration / _interval }
-          , _timer(timer)
+                : _duration{ duration }
+                , _interval{ interval }
+                , _total_buckets{ _duration / _interval }
+                , _timer(timer)
         {
 
             if (duration == 0 || duration % interval != 0 || duration == interval) {
@@ -232,6 +250,8 @@ namespace qtransport {
          * @param interval                  Interval size of each bucket. Value must be > 0 and != duration
          * @param timer                     Shared pointer to timer service
          * @param initial_queue_size        Initial size of the queue to reserve.
+         * @param spike_duration            Spike duration in intervals to allow spike, ZERO disables spike processing
+         * @param spike_period              Spike period in intervals to allow one duration spike per this period
          *
          * @throws std::invalid_argument    If the duration or interval do not meet requirements.
          * @throws std::runtime_error       If the timer is null.
@@ -239,9 +259,13 @@ namespace qtransport {
         time_queue(size_t duration,
                    size_t interval,
                    std::shared_ptr<queue_timer_service> timer,
-                   size_t initial_queue_size)
-          : time_queue(duration, interval, timer)
+                   size_t initial_queue_size,
+                   size_t spike_duration=0,
+                   size_t spike_period=30000)
+                : time_queue(duration, interval, timer)
         {
+            _spike_duration = spike_duration;
+            _spike_period = spike_period;
             _queue.reserve(initial_queue_size);
         }
 
@@ -265,7 +289,7 @@ namespace qtransport {
 
             // Insert object forward in time based on current bucket, which may wrap
             const index_type future_bucket_index =
-              (_bucket_index + (std::min(ttl, _duration) / _interval) - 1) % _total_buckets;
+                    (_bucket_index + (std::min(ttl, _duration) / _interval) - 1) % _total_buckets;
 
             internal_push(value, future_bucket_index, ticks + ttl);
         }
@@ -295,11 +319,12 @@ namespace qtransport {
             std::lock_guard<std::mutex> lock(_mutex);
 
             const tick_type ticks = advance();
+            
             const tick_type expiry_tick = ticks + ttl;
 
             // Insert object forward in time based on current bucket, which may wrap
             const auto future_bucket_index =
-              (_bucket_index + (std::min(ttl, _duration) / _interval) - 1) % _total_buckets;
+                    (_bucket_index + (std::min(ttl, _duration) / _interval) - 1) % _total_buckets;
 
             internal_push(std::move(value), future_bucket_index, expiry_tick);
         }
@@ -316,7 +341,7 @@ namespace qtransport {
 
             const auto future_bucket_index = (_bucket_index + (_duration / _interval) - 1) % _total_buckets;
 
-            internal_push(std::move(value), _bucket_index + 1, ticks + 1);
+            internal_push(std::move(value), future_bucket_index, ticks + 1);
         }
 
         /**
@@ -334,6 +359,14 @@ namespace qtransport {
                 auto& bucket = _buckets.at(bucket_index);
 
                 if (value_index >= bucket.size() || ticks > expiry_tick) {
+//                    std::cerr << "pop Object has expired, time diff: " << _timer_ctx.time_diff
+//                    << " queue_index: " <<_queue_index << " queue_size: " << _queue.size()
+//                    << " value_index: " << value_index
+//                    << " bucket_index: " << bucket_index
+//                    << " bucket_size: " << bucket.size()
+//                    << " tick_delta: " << _timer_ctx.delta
+//                    << " " << ticks << " > " << expiry_tick
+//                    << std::endl;
                     continue;
                 }
 
@@ -361,10 +394,18 @@ namespace qtransport {
                 auto& bucket = _buckets.at(bucket_index);
 
                 if (value_index >= bucket.size() || ticks > expiry_tick) {
+//                    std::cerr << "front Object has expired, time diff: " << _timer_ctx.time_diff
+//                              << " queue_index: " <<_queue_index << " queue_size: " << _queue.size()
+//                              << " value_index: " << value_index
+//                              << " bucket_index: " << bucket_index
+//                              << " bucket_size: " << bucket.size()
+//                              << " tick_delta: " << _timer_ctx.delta
+//                              << " " << ticks << " > " << expiry_tick
+//                              << std::endl;
                     _queue_index++;
                     continue;
                 }
-
+                
                 return bucket.at(value_index);
             }
 
@@ -377,21 +418,31 @@ namespace qtransport {
         size_t size() const { return _queue.size() - _queue_index; }
         bool empty() const { return (_queue.empty() || _queue_index >= _queue.size()); }
 
-      private:
+    private:
         /**
          * @brief Based on current time, adjust and move the bucket index with time
          *        (sliding window)
          *
          * @returns Current tick value at time of advance
          */
-        inline tick_type advance()
+        tick_type advance()
         {
             _timer->get_ticks(Duration_t(_interval), _timer_ctx);
+
+            if (_queue_index && _queue.size() >= _total_buckets && _queue_index >= _queue.size()) {
+                std::cerr << "queue index " << _queue_index << " >= " << _queue.size() << std::endl;
+                _queue.clear();
+                _queue_index = 0;
+            }
 
             if (_timer_ctx.delta == 0)
                 return _timer_ctx.ticks;
 
             if (_timer_ctx.delta >= static_cast<tick_type>(_total_buckets)) {
+//                std::cerr << "Bucket expired ticks: " << _timer_ctx.ticks
+//                          << " delta: " << _timer_ctx.delta
+//                          << " queue_size: " << _queue.size()
+//                          << std::endl;
                 _buckets.clear();
                 _buckets.resize(_total_buckets);
 
@@ -401,16 +452,11 @@ namespace qtransport {
                 return _timer_ctx.ticks;
             }
 
-            if (_queue_index && _queue_index >= _queue.size()) {
-                _queue.clear();
-                _queue_index = 0;
-            }
-
-            for (int i = 0; i < _timer_ctx.delta; i++) {
+            for (int i = 0; i < _timer_ctx.delta / _interval; i++) {
                 _buckets[(_bucket_index + i) % _total_buckets].clear();
             }
 
-            _bucket_index = (_bucket_index + _timer_ctx.delta) % _total_buckets;
+            _bucket_index = (_bucket_index + (_timer_ctx.delta / _interval)) % _total_buckets;
 
             return _timer_ctx.ticks;
         }
@@ -426,7 +472,7 @@ namespace qtransport {
             _queue.emplace_back(index, _buckets[index].size() - 1, expiry_tick);
         }
 
-      private:
+    private:
         std::mutex _mutex;
 
         /// The duration of the entire queue.
@@ -450,8 +496,21 @@ namespace qtransport {
         /// The index of the first valid item in the queue.
         index_type _queue_index{ 0 };
 
+        /**
+         * spike_expire_tick is set to a tick value in the future every latency interval.
+         * A value of zero indicates that the latency spike is reset and can start again.
+         * If the current tick value is greater than spike_expire_tick then objects will
+         * be expired and skipped/dropped.  If they are less than or equal to this value, then
+         * they will be allowed even though the TTL might be expired. This directly solves
+         * for latency spikes that happen on interval, such as WiFi scanning spikes.
+         */
+        tick_type _spike_expire_tick {0};
+        size_t _spike_duration {0};             /// Duration in ticks to allow spike in latency
+        size_t _spike_period {0};               /// Period in ticks for allowed duration spike in latency
+
+
         /// Instance of timer to get time ticks
-        queue_timer_service::timer_context _timer_ctx{ 0, 0, 0 };
+        queue_timer_service::timer_context _timer_ctx{ 0, 0};
         std::shared_ptr<queue_timer_service> _timer{ nullptr };
     };
 

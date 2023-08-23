@@ -74,7 +74,7 @@ struct TransportConfig
   const uint32_t time_queue_init_queue_size {1000};     /// Initial queue size to reserve upfront
   const uint32_t time_queue_max_duration {1000};        /// Max duration for the time queue in milliseconds
   const uint32_t time_queue_bucket_interval {1};        /// The bucket interval in milliseconds
-  const uint32_t time_queue_rx_ttl { 250 };             /// Receive queue TTL
+  const uint32_t time_queue_rx_ttl { 500 };             /// Receive queue TTL
   bool debug {false};                                   /// Enable debug logging/processing
 };
 
@@ -276,7 +276,7 @@ public:
                                  const StreamId & streamId,
                                  std::vector<uint8_t>&& bytes,
                                  const uint8_t priority = 1,
-                                 const uint32_t ttl_ms = 300) = 0;
+                                 const uint32_t ttl_ms=350) = 0;
 
   /**
    * @brief Dequeue application data from transport queue

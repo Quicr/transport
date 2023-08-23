@@ -143,6 +143,19 @@ public:
   }
 
   /**
+   * @brief Check if queue is empty
+   *
+   * @returns True if empty, false if not
+   */
+   bool empty()
+  {
+       if (size() > 0)
+           return true;
+
+       return false;
+  }
+
+  /**
    * @brief Put the queue in a state such that threads will not wait
    *
    * @return Nothing

@@ -786,7 +786,6 @@ PicoQuicTransport::close([[maybe_unused]] const TransportContextId& context_id)
 void
 PicoQuicTransport::send_next_datagram(StreamContext* stream_cnx, uint8_t* bytes_ctx, size_t max_len)
 {
-
     if (bytes_ctx == NULL) {
         metrics.send_null_bytes_ctx++;
         return;
@@ -797,9 +796,20 @@ PicoQuicTransport::send_next_datagram(StreamContext* stream_cnx, uint8_t* bytes_
         return;
     }
 
+    static auto prev_time = std::chrono::steady_clock::now();
+    auto now_time = std::chrono::steady_clock::now();
+    auto time_diff = std::chrono::duration_cast<std::chrono::milliseconds>(now_time - prev_time).count();
+    prev_time = now_time;
+
+    if (time_diff > 100)
+        std::cerr << "=====> next dgram time diff " << time_diff << std::endl;
+
+
     const auto& out_data = stream_cnx->tx_data->front();
     if (out_data.has_value()) {
         if (max_len >= out_data->size()) {
+            stream_cnx->tx_data->pop();
+
             metrics.dgram_sent++;
 
             uint8_t* buf = NULL;
@@ -810,9 +820,10 @@ PicoQuicTransport::send_next_datagram(StreamContext* stream_cnx, uint8_t* bytes_
 
             if (buf != NULL) {
                 std::memcpy(buf, out_data->data(), out_data->size());
-
-                stream_cnx->tx_data->pop();
             }
+        }
+        else {
+            picoquic_provide_datagram_buffer_ex(bytes_ctx, 0, picoquic_datagram_active_any_path);
         }
     }
     else {
