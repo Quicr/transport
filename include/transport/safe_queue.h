@@ -147,15 +147,9 @@ public:
    *
    * @returns True if empty, false if not
    */
-   bool empty()
-  {
-       if (size() > 0)
-           return true;
+  bool empty() const { return size() > 0; }
 
-       return false;
-  }
-
-  /**
+    /**
    * @brief Put the queue in a state such that threads will not wait
    *
    * @return Nothing

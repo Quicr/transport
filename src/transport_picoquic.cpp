@@ -1042,15 +1042,13 @@ PicoQuicTransport::on_recv_datagram(StreamContext* stream_cnx, uint8_t* bytes, s
     std::vector<uint8_t> data(bytes, bytes + length);
     stream_cnx->rx_data->push(std::move(data), tconfig.time_queue_rx_ttl);
 
-    bool too_many_in_queue = false;
-
     if (cbNotifyQueue.size() > 200) {
         logger.log(LogLevel::info, (std::ostringstream()
                                     << "on_recv_datagram cbNotifyQueue size"
                                     << cbNotifyQueue.size()).str());
     }
 
-    if (too_many_in_queue || stream_cnx->rx_data->size() < 2 || stream_cnx->in_data_cb_skip_count > 30) {
+    if (stream_cnx->rx_data->size() < 2 || stream_cnx->in_data_cb_skip_count > 30) {
         stream_cnx->in_data_cb_skip_count = 0;
         TransportContextId context_id = stream_cnx->context_id;
         StreamId stream_id = stream_cnx->stream_id;

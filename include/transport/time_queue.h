@@ -55,11 +55,6 @@ namespace qtransport {
         {
             tick_type delta {0};              /// Delta (distance) in ticks since last call
             tick_type ticks {0};              /// Current tick value when updated
-
-
-
-            uint64_t time_diff {0};
-            std::chrono::time_point<std::chrono::steady_clock> prev_time = std::chrono::steady_clock::now();
         };
 
         virtual void get_ticks(const duration_t& interval, timer_context& ctx) = 0;
@@ -109,24 +104,12 @@ namespace qtransport {
         void get_ticks(const duration_t& interval, timer_context& ctx) override
         {
             auto now_time = std::chrono::steady_clock::now();
-            ctx.time_diff = std::chrono::duration_cast<std::chrono::milliseconds>(now_time - ctx.prev_time).count();
-            ctx.prev_time = now_time;
-
-            if (ctx.time_diff > 400) {
-                std::cerr << "=====> Time diff: " << ctx.time_diff << std::endl;
-            }
 
             auto increment = std::max(interval, _interval) / _interval;
 
             tick_type ticks = _ticks / increment;
 
             ctx.delta = ctx.ticks ? ticks - ctx.ticks : 0;
-
-            if (ctx.delta > 100) {
-                std::cerr << "=====> Large tick jump of " << ctx.delta
-                          << " time_diff: " << ctx.time_diff
-                          << std::endl;
-            }
 
             ctx.ticks = ticks;
         }
@@ -359,14 +342,14 @@ namespace qtransport {
                 auto& bucket = _buckets.at(bucket_index);
 
                 if (value_index >= bucket.size() || ticks > expiry_tick) {
-//                    std::cerr << "pop Object has expired, time diff: " << _timer_ctx.time_diff
-//                    << " queue_index: " <<_queue_index << " queue_size: " << _queue.size()
-//                    << " value_index: " << value_index
-//                    << " bucket_index: " << bucket_index
-//                    << " bucket_size: " << bucket.size()
-//                    << " tick_delta: " << _timer_ctx.delta
-//                    << " " << ticks << " > " << expiry_tick
-//                    << std::endl;
+                    std::cerr << "pop Object has expired"
+                    << " queue_index: " <<_queue_index << " queue_size: " << _queue.size()
+                    << " value_index: " << value_index
+                    << " bucket_index: " << bucket_index
+                    << " bucket_size: " << bucket.size()
+                    << " tick_delta: " << _timer_ctx.delta
+                    << " " << ticks << " > " << expiry_tick
+                    << std::endl;
                     continue;
                 }
 
@@ -394,14 +377,14 @@ namespace qtransport {
                 auto& bucket = _buckets.at(bucket_index);
 
                 if (value_index >= bucket.size() || ticks > expiry_tick) {
-//                    std::cerr << "front Object has expired, time diff: " << _timer_ctx.time_diff
-//                              << " queue_index: " <<_queue_index << " queue_size: " << _queue.size()
-//                              << " value_index: " << value_index
-//                              << " bucket_index: " << bucket_index
-//                              << " bucket_size: " << bucket.size()
-//                              << " tick_delta: " << _timer_ctx.delta
-//                              << " " << ticks << " > " << expiry_tick
-//                              << std::endl;
+                    std::cerr << "front Object has expired"
+                              << " queue_index: " <<_queue_index << " queue_size: " << _queue.size()
+                              << " value_index: " << value_index
+                              << " bucket_index: " << bucket_index
+                              << " bucket_size: " << bucket.size()
+                              << " tick_delta: " << _timer_ctx.delta
+                              << " " << ticks << " > " << expiry_tick
+                              << std::endl;
                     _queue_index++;
                     continue;
                 }
@@ -439,10 +422,10 @@ namespace qtransport {
                 return _timer_ctx.ticks;
 
             if (_timer_ctx.delta >= static_cast<tick_type>(_total_buckets)) {
-//                std::cerr << "Bucket expired ticks: " << _timer_ctx.ticks
-//                          << " delta: " << _timer_ctx.delta
-//                          << " queue_size: " << _queue.size()
-//                          << std::endl;
+                std::cerr << "Bucket expired ticks: " << _timer_ctx.ticks
+                          << " delta: " << _timer_ctx.delta
+                          << " queue_size: " << _queue.size()
+                          << std::endl;
                 _buckets.clear();
                 _buckets.resize(_total_buckets);
 
