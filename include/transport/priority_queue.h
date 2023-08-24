@@ -148,11 +148,9 @@ namespace qtransport {
             std::lock_guard<std::mutex> lock(_mutex);
 
             for (size_t i = 0; i < _queue.size(); i++) {
-                if (_queue[i]) {
-                    const auto& obj = _queue[i]->pop();
-                    if (obj.has_value()) {
-                        return;
-                    }
+                if (_queue[i] && !_queue[i]->empty()) {
+                    _queue[i]->move_front();
+                    return;
                 }
             }
         }

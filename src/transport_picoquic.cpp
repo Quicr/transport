@@ -801,10 +801,6 @@ PicoQuicTransport::send_next_datagram(StreamContext* stream_cnx, uint8_t* bytes_
     auto time_diff = std::chrono::duration_cast<std::chrono::milliseconds>(now_time - prev_time).count();
     prev_time = now_time;
 
-    if (time_diff > 100)
-        std::cerr << "=====> next dgram time diff " << time_diff << std::endl;
-
-
     const auto& out_data = stream_cnx->tx_data->front();
     if (out_data.has_value()) {
         if (max_len >= out_data->size()) {
