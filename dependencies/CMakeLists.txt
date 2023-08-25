@@ -30,3 +30,5 @@ set (OPENSSL_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/boringssl/include")
 set (PICOQUIC_PTLS_SUBMODULE ON)
 set (picoquic_BUILD_TESTS OFF)
 add_subdirectory( picoquic )
+
+add_subdirectory(logger)

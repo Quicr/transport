@@ -5,7 +5,7 @@
 
 #include <transport/transport.h>
 
-#include "cmdLogger.h"
+#include <cantina/logger.h>
 
 using namespace qtransport;
 
@@ -18,11 +18,11 @@ struct Delegate : public ITransport::TransportDelegate
     std::shared_ptr<ITransport> client;
     uint64_t msgcount;
     TransportContextId tcid;
-    cmdLogger& logger;
+    cantina::LoggerPointer logger;
 
   public:
-    Delegate(cmdLogger& logger)
-      : logger(logger)
+    Delegate(const cantina::LoggerPointer& logger)
+      : logger(std::make_shared<cantina::Logger>("CMD", logger))
     {
         msgcount = 0;
         tcid = 0;
@@ -39,16 +39,12 @@ struct Delegate : public ITransport::TransportDelegate
     void on_connection_status(const TransportContextId& context_id, const TransportStatus status)
     {
         tcid = context_id;
-        std::stringstream s_log;
-        s_log << "Connection state change context: " << context_id << ", " << int(status);
-        logger.log(LogLevel::info, s_log.str());
+        logger->info << "Connection state change context: " << context_id << ", " << int(status) << std::flush;
     }
     void on_new_connection(const TransportContextId& /* context_id */, const TransportRemote& /* remote */) {}
 
     void on_recv_notify(const TransportContextId& context_id, const StreamId& streamId)
     {
-        std::stringstream s_log;
-
         static uint32_t prev_msg_num = 0;
 
         while (true) {
@@ -60,12 +56,10 @@ struct Delegate : public ITransport::TransportDelegate
                 uint32_t* msg_num = (uint32_t*)data.value().data();
 
                 if (prev_msg_num && (*msg_num - prev_msg_num) > 1) {
-                    s_log.str(std::string());
-                    s_log << "cid: " << context_id << " sid: " << streamId << "  length: " << data->size()
-                          << "  RecvMsg (" << msgcount << ")"
-                          << "  msg_num: " << *msg_num << "  prev_num: " << prev_msg_num << "("
-                          << *msg_num - prev_msg_num << ")";
-                    logger.log(LogLevel::info, s_log.str());
+                    logger->info << "cid: " << context_id << " sid: " << streamId << "  length: " << data->size()
+                                 << "  RecvMsg (" << msgcount << ")"
+                                 << "  msg_num: " << *msg_num << "  prev_num: " << prev_msg_num << "("
+                                 << *msg_num - prev_msg_num << ")" << std::flush;
                 }
 
                 prev_msg_num = *msg_num;
@@ -78,7 +72,7 @@ struct Delegate : public ITransport::TransportDelegate
     void on_new_stream(const TransportContextId& /* context_id */, const StreamId& /* streamId */) {}
 };
 
-cmdLogger logger;
+cantina::LoggerPointer logger = std::make_shared<cantina::Logger>();
 Delegate d(logger);
 
 int
@@ -103,22 +97,20 @@ main()
 
     auto client = ITransport::make_client_transport(server, tconfig, d, logger);
 
-    logger.log(LogLevel::info, "client use_count: " + std::to_string(client.use_count()));
+    logger->info << "client use_count: " << client.use_count() << std::flush;
 
     d.setClientTransport(client);
-    logger.log(LogLevel::info, "after set client transport client use_count: " + std::to_string(client.use_count()));
+    logger->info << "after set client transport client use_count: " << client.use_count() << std::flush;
 
     auto tcid = client->start();
     uint8_t data_buf[4200]{ 0 };
 
     while (client->status() != TransportStatus::Ready) {
-        logger.log(LogLevel::info, "Waiting for client to be ready");
+        logger->Log("Waiting for client to be ready");
         std::this_thread::sleep_for(std::chrono::milliseconds(250));
     }
 
     StreamId stream_id = client->createStream(tcid, true);
-
-    std::stringstream s_log;
 
     uint32_t* msg_num = (uint32_t*)&data_buf;
 
@@ -140,8 +132,8 @@ main()
 
     client->closeStream(tcid, stream_id);
 
-    logger.log(LogLevel::info, "Done with transport, closing");
+    logger->Log("Done with transport, closing");
     client.reset();
     d.stop();
-    logger.log(LogLevel::info, "Program done");
+    logger->Log("Program done");
 }

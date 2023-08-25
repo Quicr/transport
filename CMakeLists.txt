@@ -31,7 +31,8 @@ add_library(quicr-transport
         )
 
 target_link_libraries(quicr-transport
-        PUBLIC
+    PUBLIC
+        cantina::logger
         picoquic-core)
 target_include_directories(quicr-transport PUBLIC include src )
 set_target_properties(quicr-transport
