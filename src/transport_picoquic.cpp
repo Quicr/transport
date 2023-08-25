@@ -417,9 +417,7 @@ PicoQuicTransport::createStreamContext(picoquic_cnx_t* cnx, uint64_t stream_id)
     stream_cnx->context_id = reinterpret_cast<uint64_t>(cnx);
     stream_cnx->cnx = cnx;
 
-    stream_cnx->rx_data = std::make_unique<timeQueue>(
-      tconfig.time_queue_max_duration, tconfig.time_queue_bucket_interval, _timer,
-      tconfig.time_queue_init_queue_size, 0, 0);
+    stream_cnx->rx_data = std::make_unique<safeQueue<bytes_t>>(tconfig.time_queue_size_rx);
 
     stream_cnx->tx_data = std::make_unique<priority_queue<bytes_t>>(
       tconfig.time_queue_max_duration, tconfig.time_queue_bucket_interval, _timer, tconfig.time_queue_init_queue_size);
@@ -1037,7 +1035,7 @@ PicoQuicTransport::on_recv_datagram(StreamContext* stream_cnx, uint8_t* bytes, s
     }
 
     std::vector<uint8_t> data(bytes, bytes + length);
-    stream_cnx->rx_data->push(std::move(data), tconfig.time_queue_rx_ttl);
+    stream_cnx->rx_data->push(std::move(data));
 
     if (cbNotifyQueue.size() > 200) {
         logger.log(LogLevel::info, (std::ostringstream()
@@ -1095,7 +1093,7 @@ void PicoQuicTransport::on_recv_stream_bytes(StreamContext* stream_cnx, uint8_t*
             object_complete = true;
 
             std::vector<uint8_t> data(bytes, bytes + stream_cnx->stream_rx_object_size);
-            stream_cnx->rx_data->push(std::move(data), tconfig.time_queue_rx_ttl);
+            stream_cnx->rx_data->push(std::move(data));
 
             bytes += stream_cnx->stream_rx_object_size;
             length -= stream_cnx->stream_rx_object_size;
@@ -1128,7 +1126,7 @@ void PicoQuicTransport::on_recv_stream_bytes(StreamContext* stream_cnx, uint8_t*
 
         if (object_complete) {
             std::vector<uint8_t> data(stream_cnx->stream_rx_object, stream_cnx->stream_rx_object + stream_cnx->stream_rx_object_size);
-            stream_cnx->rx_data->push(std::move(data), tconfig.time_queue_rx_ttl);
+            stream_cnx->rx_data->push(std::move(data));
 
             delete []stream_cnx->stream_rx_object;
             stream_cnx->stream_rx_object = nullptr;

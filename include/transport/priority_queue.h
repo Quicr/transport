@@ -131,7 +131,7 @@ namespace qtransport {
 
             for (size_t i = 0; i < _queue.size(); i++) {
                 if (_queue[i]) {
-                    const auto& obj = _queue[i]->pop();
+                    const auto& obj = _queue[i]->pop_front();
                     if (obj.has_value()) {
                         return obj;
                     }
@@ -150,7 +150,7 @@ namespace qtransport {
 
             for (size_t i = 0; i < _queue.size(); i++) {
                 if (_queue[i] && !_queue[i]->empty()) {
-                    _queue[i]->move_front();
+                    _queue[i]->pop();
                     return;
                 }
             }

@@ -44,7 +44,7 @@ namespace qtransport {
     class queue_timer_service
     {
     public:
-        using tick_type = int;
+        using tick_type = size_t;
         using duration_t = std::chrono::microseconds;
 
         /**
@@ -216,7 +216,6 @@ namespace qtransport {
                 , _total_buckets{ _duration / _interval }
                 , _timer(timer)
         {
-
             if (duration == 0 || duration % interval != 0 || duration == interval) {
                 throw std::invalid_argument("Invalid time_queue constructor args");
             }
@@ -237,8 +236,10 @@ namespace qtransport {
          * @param interval                  Interval value in duration_t unit of each bucket, > 0 and != duration
          * @param timer                     Shared pointer to timer service
          * @param initial_queue_size        Initial size of the queue to reserve.
-         * @param spike_period_interval     Spike period interval defines the time allowed for one spike, ZERO disables spikes
-         * @param spike_duration            Spike allowed duration, max time to allow spike in ticks
+         * @param spike_period_interval     Spike period interval is in Duration_t that defines the time allowed
+         *                                  for one spike, ZERO disables spikes
+         * @param spike_duration            Spike allowed duration is in Duration_t that defines the max time
+         *                                  to allow spike in ticks
          *
          * @throws std::invalid_argument    If the duration or interval do not meet requirements.
          * @throws std::runtime_error       If the timer is null.
@@ -251,8 +252,8 @@ namespace qtransport {
                    size_t spike_duration)
                 : time_queue(duration, interval, timer)
         {
-            _spike_duration = spike_duration;
-            _spike_period_interval = spike_period_interval;
+            _spike_duration = spike_duration / interval;
+            _spike_period_interval = spike_period_interval / interval;
             _queue.reserve(initial_queue_size);
         }
 
@@ -266,80 +267,30 @@ namespace qtransport {
         /**
          * @brief Pushes a new value onto the queue with a time-to-live.
          * @param value The value to push onto the queue.
-         * @param ttl   The time to live relative count of Duration_t(interval).
+         * @param ttl   Time to live for an object using the unit of Duration_t
          */
         void push(const T& value, size_t ttl)
         {
-            std::lock_guard<std::mutex> lock(_mutex);
-
-            const tick_type ticks = advance();
-
-            // Insert object forward in time based on current bucket, which may wrap
-            const index_type future_bucket_index =
-                    (_bucket_index + (std::min(ttl, _duration) / _interval) - 1) % _total_buckets;
-
-            internal_push(value, future_bucket_index, ticks + ttl);
-        }
-
-        /**
-         * @brief Pushes a new value onto the queue with a time to live of Interval.
-         * @param value The value to push onto the queue.
-         */
-        void push(const T& value)
-        {
-            std::lock_guard<std::mutex> lock(_mutex);
-
-            const tick_type ticks = advance();
-
-            const auto future_bucket_index = (_bucket_index + _total_buckets - 1) % _total_buckets;
-
-            internal_push(value, future_bucket_index, ticks + 1);
+            internal_push(value, ttl);
         }
 
         /**
          * @brief Pushes a new value onto the queue with a time to live.
          * @param value The value to push onto the queue.
-         * @param ttl   TThe time to live relative count of Duration_t(interval)
+         * @param ttl   Time to live for an object using the unit of Duration_t
          */
         void push(T&& value, size_t ttl)
         {
-            std::lock_guard<std::mutex> lock(_mutex);
-
-            const tick_type ticks = advance();
-            
-            const tick_type expiry_tick = ticks + ttl;
-
-            // Insert object forward in time based on current bucket, which may wrap
-            const auto future_bucket_index =
-                    (_bucket_index + (std::min(ttl, _duration) / _interval) - 1) % _total_buckets;
-
-            internal_push(std::move(value), future_bucket_index, expiry_tick);
+            internal_push(std::move(value), ttl);
         }
 
         /**
-         * @brief Pushes a new value onto the queue with a time to live of Interval.
-         * @param value The value to push onto the queue.
-         */
-        void push(T&& value)
-        {
-            std::lock_guard<std::mutex> lock(_mutex);
-
-            const tick_type ticks = advance();
-
-            const auto future_bucket_index = (_bucket_index + (_total_buckets - 1)) % _total_buckets;
-
-            internal_push(std::move(value), future_bucket_index, ticks + 1);
-        }
-
-        /**
-         * @brief Increment front
+         * @brief Pop (increment) front
          *
          * @details This method should be called after front when the object is processed. This
          *      will move the queue forward. If at the end of the queue, it'll be cleared and reset.
          */
-         bool move_front() {
-            std::lock_guard<std::mutex> lock(_mutex);
-
+         void pop() {
             if (_queue_index < _queue.size()) {
                 _queue_index++;
 
@@ -354,10 +305,8 @@ namespace qtransport {
          *
          * @returns The popped value, else nullopt.
          */
-        std::optional<T> pop()
+        std::optional<T> pop_front()
         {
-            std::lock_guard<std::mutex> lock(_mutex);
-
             const tick_type ticks = advance();
 
             while (_queue_index < _queue.size()) {
@@ -383,8 +332,6 @@ namespace qtransport {
          */
         std::optional<T> front()
         {
-            std::lock_guard<std::mutex> lock(_mutex);
-
             const tick_type ticks = advance();
 
             while (_queue_index < _queue.size()) {
@@ -499,9 +446,7 @@ namespace qtransport {
                 }
             }
 
-
             _bucket_index = (_bucket_index + _timer_ctx.delta) % _total_buckets;
-
 
             return _timer_ctx.ticks;
         }
@@ -511,15 +456,26 @@ namespace qtransport {
          * then emplaces the location info into the queue.
          */
         template<typename Value>
-        inline void internal_push(Value value, index_type index, tick_type expiry_tick)
+        inline void internal_push(Value value, size_t ttl)
         {
+            if (ttl > _duration) {
+                throw std::invalid_argument("TTL is greater than max duration");
+            }
+
+            ttl = ttl / _interval;
+
+            const tick_type ticks = advance();
+
+            const tick_type expiry_tick = ticks + ttl;
+
+            // Insert object forward in time based on current bucket, which may wrap
+            const index_type index = (_bucket_index + ttl - 1) % _total_buckets;
+
             _buckets[index].push_back(value);
             _queue.emplace_back(index, _buckets[index].size() - 1, expiry_tick);
         }
 
     private:
-        std::mutex _mutex;
-
         /// The duration in ticks of the entire queue.
         size_t _duration;
 
@@ -541,10 +497,11 @@ namespace qtransport {
         /// The index of the first valid item in the queue.
         index_type _queue_index{ 0 };
 
-        size_t _spike_duration {0};             /// Duration in ticks a spike can last in ticks
-        size_t _spike_period_interval {0};      /// Interval in ticks that a spike can happen
-        size_t _spike_duration_end {0};         /// End tick number for duration of spike
-        size_t _spike_period_end {0};           /// End tick number for period of allowed spike
+
+        tick_type _spike_duration {0};             /// Duration in ticks a spike can last in ticks
+        tick_type _spike_period_interval {0};      /// Interval in ticks that a spike can happen
+        tick_type _spike_duration_end {0};         /// End tick number for duration of spike
+        tick_type _spike_period_end {0};           /// End tick number for period of allowed spike
 
 
         /// Instance of timer to get time ticks
