@@ -63,7 +63,7 @@ ITransport::make_client_transport(const json& server_config,
                                   TransportDelegate& delegate,
                                   LogHandler& logger)
 {
-  TransportProtocol protocol = server_config["protocol"];
+  TransportProtocol protocol = server_config.template get<TransportRemote>().proto;
   switch (protocol) {
     case TransportProtocol::UDP:
       return std::make_shared<UDPTransport>(server_config, delegate, false, logger);
@@ -91,7 +91,7 @@ ITransport::make_server_transport(const json& server_config,
                                   TransportDelegate& delegate,
                                   LogHandler& logger)
 {
-  TransportProtocol protocol = server_config["protocol"];
+  TransportProtocol protocol = server_config.template get<TransportRemote>().proto;
   switch (protocol) {
     case TransportProtocol::UDP:
       return std::make_shared<UDPTransport>(server_config, delegate, true, logger);
