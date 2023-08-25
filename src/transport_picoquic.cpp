@@ -418,7 +418,8 @@ PicoQuicTransport::createStreamContext(picoquic_cnx_t* cnx, uint64_t stream_id)
     stream_cnx->cnx = cnx;
 
     stream_cnx->rx_data = std::make_unique<timeQueue>(
-      tconfig.time_queue_max_duration, tconfig.time_queue_bucket_interval, _timer, tconfig.time_queue_init_queue_size);
+      tconfig.time_queue_max_duration, tconfig.time_queue_bucket_interval, _timer,
+      tconfig.time_queue_init_queue_size, 0, 0);
 
     stream_cnx->tx_data = std::make_unique<priority_queue<bytes_t>>(
       tconfig.time_queue_max_duration, tconfig.time_queue_bucket_interval, _timer, tconfig.time_queue_init_queue_size);

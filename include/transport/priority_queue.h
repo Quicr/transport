@@ -91,7 +91,8 @@ namespace qtransport {
             }
 
             if (!_queue[priority]) {
-                _queue[priority] = std::make_unique<timeQueue>(_duration_ms, _interval_ms, _timer, _initial_queue_size);
+                _queue[priority] = std::make_unique<timeQueue>(_duration_ms, _interval_ms, _timer,
+                                                               _initial_queue_size, 0, 0);
             }
 
             auto& queue = _queue[priority];

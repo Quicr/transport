@@ -153,7 +153,10 @@ namespace qtransport {
      *        values given a specific ttl.
      *
      * @tparam T            The element type to be stored.
-     * @tparam Duration_t   The duration type to check for.
+     * @tparam Duration_t   The duration type to check for. All the variables that are interval, duration, ttl, ...
+     *                      are of this unit. Ticks are of this unit. For example,
+     *                      setting to millisecond will define the unit for ticks and all associated variables
+     *                      to be millisecond.
      */
     template<typename T, typename Duration_t>
     class time_queue
@@ -200,8 +203,8 @@ namespace qtransport {
         /**
          * @brief Construct a time_queue with defaults or supplied parameters
          *
-         * @param duration  Duration of the queue. Value must be > 0, != and a multiple of interval.
-         * @param interval  Interval size of each bucket, > 0 and != duration
+         * @param duration  Duration of the queue in interval units. Value must be > 0, != and a multiple of interval.
+         * @param interval  Interval value in duration_t unit of each bucket, > 0 and != duration
          * @param timer     Shared pointer to timer service
          *
          * @throws          std::invalid_argument If the duration or interval do not meet requirements.
@@ -229,8 +232,9 @@ namespace qtransport {
         /**
          * @brief Construct a time_queue with defaults or supplied parameters
          *
-         * @param duration                  Duration of the queue, > 0, != and a multiple of interval.
-         * @param interval                  Interval size of each bucket. Value must be > 0 and != duration
+         * @param duration                  Duration of the queue in interval units. Value must be > 0, != and
+         *                                  a multiple of interval.
+         * @param interval                  Interval value in duration_t unit of each bucket, > 0 and != duration
          * @param timer                     Shared pointer to timer service
          * @param initial_queue_size        Initial size of the queue to reserve.
          * @param spike_period_interval     Spike period interval defines the time allowed for one spike, ZERO disables spikes
@@ -243,8 +247,8 @@ namespace qtransport {
                    size_t interval,
                    std::shared_ptr<queue_timer_service> timer,
                    size_t initial_queue_size,
-                   size_t spike_period_interval=30000,
-                   size_t spike_duration=5000)
+                   size_t spike_period_interval,
+                   size_t spike_duration)
                 : time_queue(duration, interval, timer)
         {
             _spike_duration = spike_duration;
@@ -262,7 +266,7 @@ namespace qtransport {
         /**
          * @brief Pushes a new value onto the queue with a time-to-live.
          * @param value The value to push onto the queue.
-         * @param ttl   The time to live of the value, according to Duration_t.
+         * @param ttl   The time to live relative count of Duration_t(interval).
          */
         void push(const T& value, size_t ttl)
         {
@@ -287,7 +291,7 @@ namespace qtransport {
 
             const tick_type ticks = advance();
 
-            const auto future_bucket_index = (_bucket_index + (_total_buckets - 1) % _total_buckets;
+            const auto future_bucket_index = (_bucket_index + _total_buckets - 1) % _total_buckets;
 
             internal_push(value, future_bucket_index, ticks + 1);
         }
@@ -295,7 +299,7 @@ namespace qtransport {
         /**
          * @brief Pushes a new value onto the queue with a time to live.
          * @param value The value to push onto the queue.
-         * @param ttl   The time to live of the value, according to Duration_t.
+         * @param ttl   TThe time to live relative count of Duration_t(interval)
          */
         void push(T&& value, size_t ttl)
         {
@@ -357,8 +361,8 @@ namespace qtransport {
             const tick_type ticks = advance();
 
             while (_queue_index < _queue.size()) {
-                auto& [bucket_index, value_index, expiry_tick] = _queue.at(_queue_index++);
-                auto& bucket = _buckets.at(bucket_index);
+                const auto& [bucket_index, value_index, expiry_tick] = _queue.at(_queue_index++);
+                const auto& bucket = _buckets.at(bucket_index);
 
                 if (value_index >= bucket.size() || (ticks > expiry_tick && !in_spike(ticks))) {
                     continue;
@@ -384,10 +388,14 @@ namespace qtransport {
             const tick_type ticks = advance();
 
             while (_queue_index < _queue.size()) {
-                auto& [bucket_index, value_index, expiry_tick] = _queue.at(_queue_index);
-                auto& bucket = _buckets.at(bucket_index);
+                const auto& [bucket_index, value_index, expiry_tick] = _queue.at(_queue_index);
+                const auto& bucket = _buckets.at(bucket_index);
 
                 if (value_index >= bucket.size() || (ticks > expiry_tick && !in_spike(ticks))) {
+                    /**
+                     * TODO: Below log is only added for debugging right now. This should be removed when stable or
+                     *    when we have a logger.
+                     */
                     std::cerr << "===> front Object has expired"
                               << " queue_index: " <<_queue_index << " queue_size: " << _queue.size()
                               << " value_index: " << value_index
@@ -396,6 +404,7 @@ namespace qtransport {
                               << " tick_delta: " << _timer_ctx.delta
                               << " " << ticks << " > " << expiry_tick
                               << std::endl;
+
                     _queue_index++;
                     continue;
                 }
@@ -419,13 +428,20 @@ namespace qtransport {
          * @note This should be called only when the front/pop would expire an
          *      object due to TTL being expired.
          *
-         * @details Latency spike
+         * @details Latency spikes are when latency normally is constant but then suddenly spikes up
+         *      10 or more times greater, such as from 10ms to 120ms for a few seconds. Often
+         *      the latency spikes are short lived and are noise with no realized loss.
+         *      Enforcing TTL with latency spikes results in drops during the spike. This method
+         *      will allow one spike for a `_spike_duration` in ticks per `_spike_period_interval`
+         *      in ticks. A zero value for `_spike_period_interval` disables spike allowance.
+         *
+         * @param current_tick      Current tick value when calling this method
          *
          * @retun True if currently in spike duration and the TTL should be allowed/not expired
          *      False if not in spike duration and the object should be expired.
          */
          bool in_spike(tick_type current_tick) {
-             if (_spike_period_interval == 0) { // zero means disabled, so return fast as possible
+             if (_spike_period_interval == 0) {
                  // Disabled
                  return false;
              }
@@ -473,7 +489,17 @@ namespace qtransport {
                 return _timer_ctx.ticks;
             }
 
-            _buckets[_bucket_index].clear();
+            if (_spike_period_interval) {
+                // Only clear the current index when supporting spikes
+                _buckets[_bucket_index].clear();
+
+            } else {
+                for (int i = 0; i < _timer_ctx.delta; i++) {
+                    _buckets[(_bucket_index + i) % _total_buckets].clear();
+                }
+            }
+
+
             _bucket_index = (_bucket_index + _timer_ctx.delta) % _total_buckets;
 
 
@@ -494,10 +520,10 @@ namespace qtransport {
     private:
         std::mutex _mutex;
 
-        /// The duration of the entire queue.
+        /// The duration in ticks of the entire queue.
         size_t _duration;
 
-        /// The interval at which buckets are cleared.
+        /// The interval at which buckets are cleared in ticks.
         size_t _interval;
 
         /// The total amount of buckets. Value is calculated by duration / interval.
@@ -515,7 +541,7 @@ namespace qtransport {
         /// The index of the first valid item in the queue.
         index_type _queue_index{ 0 };
 
-        size_t _spike_duration {0};             /// Duration a spike can last in ticks
+        size_t _spike_duration {0};             /// Duration in ticks a spike can last in ticks
         size_t _spike_period_interval {0};      /// Interval in ticks that a spike can happen
         size_t _spike_duration_end {0};         /// End tick number for duration of spike
         size_t _spike_period_end {0};           /// End tick number for period of allowed spike
