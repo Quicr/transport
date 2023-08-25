@@ -54,7 +54,7 @@ struct connData
 class UDPTransport : public ITransport
 {
 public:
-  UDPTransport(const TransportRemote& server,
+  UDPTransport(const json& server,
                TransportDelegate& delegate,
                bool isServerMode,
                LogHandler& logger);

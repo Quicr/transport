@@ -32,7 +32,8 @@ add_library(quicr-transport
 
 target_link_libraries(quicr-transport
         PUBLIC
-        picoquic-core)
+        picoquic-core
+        nlohmann_json::nlohmann_json)
 target_include_directories(quicr-transport PUBLIC include src )
 set_target_properties(quicr-transport
         PROPERTIES

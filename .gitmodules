@@ -9,3 +9,6 @@
 	path = dependencies/picoquic
 	url = https://github.com/quicr/picoquic
 	branch = master
+[submodule "dependencies/json"]
+	path = dependencies/json
+	url = https://github.com/nlohmann/json

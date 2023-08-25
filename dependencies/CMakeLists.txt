@@ -30,3 +30,13 @@ set (OPENSSL_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/boringssl/include")
 set (PICOQUIC_PTLS_SUBMODULE ON)
 set (picoquic_BUILD_TESTS OFF)
 add_subdirectory( picoquic )
+
+# Quiet warnings
+set_property(GLOBAL PROPERTY RULE_MESSAGES OFF)
+target_compile_options(picotls-core PRIVATE -w)
+target_compile_options(picotls-openssl PRIVATE -w)
+target_compile_options(picoquic-core PRIVATE -w)
+
+if (NOT TARGET nlohmann_json)
+    add_subdirectory(json)
+endif()

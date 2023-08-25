@@ -462,8 +462,8 @@ PicoQuicTransport::createStreamContext(picoquic_cnx_t* cnx, uint64_t stream_id)
     return stream_cnx;
 }
 
-PicoQuicTransport::PicoQuicTransport(const TransportRemote& server,
-                                     const TransportConfig& tcfg,
+PicoQuicTransport::PicoQuicTransport(const json& server_config,
+                                     const json& transport_config,
                                      TransportDelegate& delegate,
                                      bool _is_server_mode,
                                      LogHandler& logger)
@@ -471,25 +471,24 @@ PicoQuicTransport::PicoQuicTransport(const TransportRemote& server,
   , _is_server_mode(_is_server_mode)
   , stop(false)
   , transportStatus(TransportStatus::Connecting)
-  , serverInfo(server)
+  , serverInfo(server_config.template get<TransportRemote>())
   , delegate(delegate)
-  , tconfig(tcfg)
+  , tconfig(transport_config.template get<TransportConfig>())
   , next_stream_id{ ::make_datagram_stream_id(_is_server_mode, _is_unidirectional) }
 {
-    debug = tcfg.debug;
+    debug = tconfig.debug;
 
     picoquic_config_init(&config);
 
-    if (_is_server_mode && tcfg.tls_cert_filename == NULL) {
+    if (_is_server_mode && tconfig.tls_cert_filename.empty()) {
         throw InvalidConfigException("Missing cert filename");
-    } else if (tcfg.tls_cert_filename != NULL) {
-        (void)picoquic_config_set_option(&config, picoquic_option_CERT, tcfg.tls_cert_filename);
+    }
 
-        if (tcfg.tls_key_filename != NULL) {
-            (void)picoquic_config_set_option(&config, picoquic_option_KEY, tcfg.tls_key_filename);
-        } else {
-            throw InvalidConfigException("Missing cert key filename");
-        }
+    if (!tconfig.tls_cert_filename.empty()) {
+        (void)picoquic_config_set_option(&config, picoquic_option_CERT, tconfig.tls_cert_filename.c_str());
+
+        if (tconfig.tls_key_filename.empty()) throw InvalidConfigException("Missing cert key filename");
+        (void)picoquic_config_set_option(&config, picoquic_option_KEY, tconfig.tls_key_filename.c_str());
     }
 
     _timer = std::make_shared<queue_timer_thread>();

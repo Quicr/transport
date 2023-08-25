@@ -97,8 +97,8 @@ class PicoQuicTransport : public ITransport
     };
 
   public:
-    PicoQuicTransport(const TransportRemote& server,
-                      const TransportConfig& tcfg,
+    PicoQuicTransport(const json& server,
+                      const json& tcfg,
                       TransportDelegate& delegate,
                       bool _is_server_mode,
                       LogHandler& logger);

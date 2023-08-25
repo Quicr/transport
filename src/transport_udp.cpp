@@ -39,7 +39,7 @@ UDPTransport::~UDPTransport()
   }
 }
 
-UDPTransport::UDPTransport(const TransportRemote& server,
+UDPTransport::UDPTransport(const json& server_config,
                            TransportDelegate& delegate,
                            bool isServerMode,
                            LogHandler& logger)
@@ -47,7 +47,7 @@ UDPTransport::UDPTransport(const TransportRemote& server,
   , logger(logger)
   , fd(-1)
   , isServerMode(isServerMode)
-  , serverInfo(server)
+  , serverInfo(server_config.template get<TransportRemote>())
   , delegate(delegate)
 {
 }

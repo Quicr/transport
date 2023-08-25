@@ -1,5 +1,9 @@
 #pragma once
 
+#include "logger.h"
+
+#include <nlohmann/json.hpp>
+
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -7,7 +11,7 @@
 #include <vector>
 #include <sys/socket.h>
 
-#include "logger.h"
+using json = nlohmann::json;
 
 namespace qtransport {
 
@@ -64,19 +68,25 @@ struct TransportRemote
   TransportProtocol proto; // Protocol to use for the transport
 };
 
+void to_json(json& j, const TransportRemote& config);
+void from_json(const json& j, TransportRemote& config);
+
 /**
  * Transport configuration parameters
  */
 struct TransportConfig
 {
-  const char *tls_cert_filename;                        /// QUIC TLS certificate to use
-  const char *tls_key_filename;                         /// QUIC TLS private key to use
-  const uint32_t time_queue_init_queue_size {1000};     /// Initial queue size to reserve upfront
-  const uint32_t time_queue_max_duration {1000};        /// Max duration for the time queue in milliseconds
-  const uint32_t time_queue_bucket_interval {1};        /// The bucket interval in milliseconds
-  const uint32_t time_queue_rx_ttl { 250 };             /// Receive queue TTL
+  std::string tls_cert_filename;                        /// QUIC TLS certificate to use
+  std::string tls_key_filename;                         /// QUIC TLS private key to use
+  uint32_t time_queue_init_queue_size {1000};     /// Initial queue size to reserve upfront
+  uint32_t time_queue_max_duration {1000};        /// Max duration for the time queue in milliseconds
+  uint32_t time_queue_bucket_interval {1};        /// The bucket interval in milliseconds
+  uint32_t time_queue_rx_ttl { 250 };             /// Receive queue TTL
   bool debug {false};                                   /// Enable debug logging/processing
 };
+
+void to_json(json& j, const TransportConfig& config);
+void from_json(const json& j, TransportConfig& config);
 
 /**
  * @brief ITransport interface
@@ -174,8 +184,8 @@ public:
    * @return shared_ptr for the under lining transport.
    */
   static std::shared_ptr<ITransport> make_client_transport(
-    const TransportRemote& server,
-    const TransportConfig &tcfg,
+    const json& server,
+    const json& tcfg,
     TransportDelegate& delegate,
     LogHandler& logger);
 
@@ -191,8 +201,8 @@ public:
    * @return shared_ptr for the under lining transport.
    */
   static std::shared_ptr<ITransport> make_server_transport(
-    const TransportRemote& server,
-    const TransportConfig &tcfg,
+    const json& server,
+    const json& tcfg,
     TransportDelegate& delegate,
     LogHandler& logger);
 

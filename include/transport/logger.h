@@ -1,5 +1,8 @@
 #pragma once
+
 #include <optional>
+#include <stdint.h>
+#include <string>
 
 namespace qtransport {
 
