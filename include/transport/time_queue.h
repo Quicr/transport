@@ -294,6 +294,9 @@ namespace qtransport {
             if (_queue.size() && ++_queue_index < _queue.size())
                 return;
 
+            for (auto& bucket: _buckets) {
+                bucket.clear();
+            }
             _queue.clear();
             _queue_index = 0;
          }
@@ -342,13 +345,16 @@ namespace qtransport {
                     _queue_index++;
                     continue;
                 }
-                
                 return bucket.at(value_index);
             }
 
             if (_queue.size()) {
                 _queue.clear();
                 _queue_index = 0;
+
+                for (auto& bucket: _buckets) {
+                    bucket.clear();
+                }
             }
 
             return std::nullopt;
@@ -410,6 +416,12 @@ namespace qtransport {
             if (_timer_ctx.delta == 0)
                 return _timer_ctx.ticks;
 
+            const auto next_bucket_index = (_bucket_index + _timer_ctx.delta) % _total_buckets;
+
+            if (next_bucket_index == _bucket_index) {
+                return _timer_ctx.ticks;
+            }
+
             if (_timer_ctx.delta >= static_cast<tick_type>(_total_buckets)) {
                 _buckets.clear();
                 _buckets.resize(_total_buckets);
@@ -417,20 +429,20 @@ namespace qtransport {
                 _queue.clear();
                 _bucket_index = _queue_index = 0;
 
+                for (auto& bucket: _buckets) {
+                    bucket.clear();
+                }
+                
                 return _timer_ctx.ticks;
             }
 
-            if (_spike_period_interval) {
-                // Only clear the current index when supporting spikes
-                _buckets[_bucket_index].clear();
-
-            } else {
+            if (_spike_period_interval == 0) {
                 for (int i = 0; i < _timer_ctx.delta; i++) {
                     _buckets[(_bucket_index + i) % _total_buckets].clear();
                 }
             }
 
-            _bucket_index = (_bucket_index + _timer_ctx.delta) % _total_buckets;
+            _bucket_index = next_bucket_index;
 
             return _timer_ctx.ticks;
         }
