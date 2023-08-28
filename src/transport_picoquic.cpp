@@ -420,7 +420,9 @@ PicoQuicTransport::createStreamContext(picoquic_cnx_t* cnx, uint64_t stream_id)
     stream_cnx->rx_data = std::make_unique<safeQueue<bytes_t>>(tconfig.time_queue_size_rx);
 
     stream_cnx->tx_data = std::make_unique<priority_queue<bytes_t>>(
-      tconfig.time_queue_max_duration, tconfig.time_queue_bucket_interval, _timer, tconfig.time_queue_init_queue_size);
+      tconfig.time_queue_max_duration, tconfig.time_queue_bucket_interval, _timer,
+      tconfig.time_queue_init_queue_size,
+      tconfig.pq_queue_spike_period_ms, tconfig.pq_queue_spike_duration_ms);
 
     sockaddr* addr;
 

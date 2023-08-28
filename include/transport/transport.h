@@ -75,6 +75,8 @@ struct TransportConfig
   const uint32_t time_queue_max_duration {1000};        /// Max duration for the time queue in milliseconds
   const uint32_t time_queue_bucket_interval {1};        /// The bucket interval in milliseconds
   const uint32_t time_queue_size_rx { 1000 };           /// Receive queue size
+  const uint32_t pq_queue_spike_duration_ms { 3500 };   /// Latency spike duration in ms allowed per period interval
+  const uint32_t pq_queue_spike_period_ms { 30000 };    /// Latency spike period interval in ms
   bool debug {false};                                   /// Enable debug logging/processing
 };
 

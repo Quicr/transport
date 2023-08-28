@@ -291,37 +291,24 @@ namespace qtransport {
          *      will move the queue forward. If at the end of the queue, it'll be cleared and reset.
          */
          void pop() {
-            if (_queue_index < _queue.size()) {
-                _queue_index++;
+            if (_queue.size() && ++_queue_index < _queue.size())
+                return;
 
-            } else if (_queue_index) {
-                _queue.clear();
-                _queue_index = 0;
-            }
-        }
+            _queue.clear();
+            _queue_index = 0;
+         }
 
         /**
-         * @brief Pops off the most valid front of the queue.
+         * @brief Pops (removes) the front of the queue.
          *
          * @returns The popped value, else nullopt.
          */
         std::optional<T> pop_front()
         {
-            const tick_type ticks = advance();
-
-            while (_queue_index < _queue.size()) {
-                const auto& [bucket_index, value_index, expiry_tick] = _queue.at(_queue_index++);
-                const auto& bucket = _buckets.at(bucket_index);
-
-                if (value_index >= bucket.size() || (ticks > expiry_tick && !in_spike(ticks))) {
-                    continue;
-                }
-
-                return bucket.at(value_index);
+            if (auto obj = front()) {
+                pop();
+                return obj;
             }
-
-            _queue.clear();
-            _queue_index = 0;
 
             return std::nullopt;
         }
@@ -359,8 +346,10 @@ namespace qtransport {
                 return bucket.at(value_index);
             }
 
-            _queue.clear();
-            _queue_index = 0;
+            if (_queue.size()) {
+                _queue.clear();
+                _queue_index = 0;
+            }
 
             return std::nullopt;
         }
@@ -417,11 +406,6 @@ namespace qtransport {
         tick_type advance()
         {
             _timer->get_ticks(Duration_t(_interval), _timer_ctx);
-
-            if (_queue_index && _queue.size() >= _total_buckets && _queue_index >= _queue.size()) {
-                _queue.clear();
-                _queue_index = 0;
-            }
 
             if (_timer_ctx.delta == 0)
                 return _timer_ctx.ticks;

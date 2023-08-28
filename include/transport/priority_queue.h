@@ -57,12 +57,16 @@ namespace qtransport {
          * @param duration              Max duration of time for the queue
          * @param interval              Interval per bucket, Default is 1
          * @param timer                 Shared pointer to timer service
-         * @param initial_queue_size     Number of default fifo queue size (reserve)
+         * @param initial_queue_size    Number of default fifo queue size (reserve)
+         * @param spike_period_ms       Latency Spike period in ms to allow one duration spike of latency
+         * @param spike_duration_ms     Latency Spike duration in ms allowed
          */
         priority_queue(size_t duration,
                        size_t interval,
                        std::shared_ptr<queue_timer_service> timer,
-                       size_t initial_queue_size)
+                       size_t initial_queue_size,
+                       uint32_t spike_period_ms,
+                       uint32_t spike_duration_ms)
           : _timer(timer)
         {
 
@@ -73,6 +77,8 @@ namespace qtransport {
             _initial_queue_size = initial_queue_size;
             _duration_ms = duration;
             _interval_ms = interval;
+            _spike_duration_ms = spike_duration_ms;
+            _spike_period_ms = spike_period_ms;
         }
 
         /**
@@ -92,7 +98,8 @@ namespace qtransport {
 
             if (!_queue[priority]) {
                 _queue[priority] = std::make_unique<timeQueue>(_duration_ms, _interval_ms, _timer,
-                                                               _initial_queue_size, 30000, 3500);
+                                                               _initial_queue_size, _spike_period_ms,
+                                                               _spike_duration_ms);
             }
 
             auto& queue = _queue[priority];
@@ -185,6 +192,8 @@ namespace qtransport {
         size_t _initial_queue_size;
         size_t _duration_ms;
         size_t _interval_ms;
+        uint32_t _spike_duration_ms;
+        uint32_t _spike_period_ms;
 
         std::array<std::unique_ptr<timeQueue>, PMAX> _queue;
 
