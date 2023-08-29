@@ -73,7 +73,8 @@ public:
                                sockaddr_storage* addr) override;
 
   StreamId createStream(const TransportContextId& context_id,
-                        bool use_reliable_transport) override;
+                        bool use_reliable_transport,
+                        uint8_t priority) override;
 
 
   TransportError enqueue(const TransportContextId& context_id,

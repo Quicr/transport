@@ -224,6 +224,7 @@ namespace qtransport {
                 throw std::runtime_error("Timer cannot be null");
             }
 
+            _initial_queue_size = _total_buckets;
             _buckets.resize(_total_buckets);
             _queue.reserve(_total_buckets);
         }
@@ -236,10 +237,6 @@ namespace qtransport {
          * @param interval                  Interval value in duration_t unit of each bucket, > 0 and != duration
          * @param timer                     Shared pointer to timer service
          * @param initial_queue_size        Initial size of the queue to reserve.
-         * @param spike_period_interval     Spike period interval is in Duration_t that defines the time allowed
-         *                                  for one spike, ZERO disables spikes
-         * @param spike_duration            Spike allowed duration is in Duration_t that defines the max time
-         *                                  to allow spike in ticks
          *
          * @throws std::invalid_argument    If the duration or interval do not meet requirements.
          * @throws std::runtime_error       If the timer is null.
@@ -247,14 +244,10 @@ namespace qtransport {
         time_queue(size_t duration,
                    size_t interval,
                    std::shared_ptr<queue_timer_service> timer,
-                   size_t initial_queue_size,
-                   size_t spike_period_interval,
-                   size_t spike_duration)
+                   size_t initial_queue_size)
                 : time_queue(duration, interval, timer)
         {
             _initial_queue_size = initial_queue_size;
-            _spike_duration = spike_duration / interval;
-            _spike_period_interval = spike_period_interval / interval;
             _queue.reserve(initial_queue_size);
         }
 
@@ -292,13 +285,10 @@ namespace qtransport {
          *      will move the queue forward. If at the end of the queue, it'll be cleared and reset.
          */
          void pop() {
-            if (_queue.size() && ++_queue_index < _queue.size())
+            if (_queue.empty() || ++_queue_index < _queue.size())
                 return;
 
-            _buckets.clear();
-            _buckets.resize(_total_buckets);
-            _queue.clear();
-            _queue_index = 0;
+            clear();
          }
 
         /**
@@ -328,7 +318,7 @@ namespace qtransport {
                 const auto& [bucket_index, value_index, expiry_tick] = _queue.at(_queue_index);
                 const auto& bucket = _buckets.at(bucket_index);
 
-                if (value_index >= bucket.size() || (ticks > expiry_tick && !in_spike(ticks))) {
+                if (value_index >= bucket.size() || ticks > expiry_tick) {
                     /**
                      * TODO: Below log is only added for debugging right now. This should be removed when stable or
                      *    when we have a logger.
@@ -348,12 +338,8 @@ namespace qtransport {
                 return bucket.at(value_index);
             }
 
-            if (_queue.size()) {
-                _queue.clear();
-                _queue_index = 0;
-
-                _buckets.clear();
-                _buckets.resize(_total_buckets);
+            if (!_queue.empty()) {
+                clear();
             }
 
             return std::nullopt;
@@ -364,44 +350,17 @@ namespace qtransport {
 
     private:
         /**
-         * @brief Checks if currently in allowed TTL spike
-         *
-         * @note This should be called only when the front/pop would expire an
-         *      object due to TTL being expired.
-         *
-         * @details Latency spikes are when latency normally is constant but then suddenly spikes up
-         *      10 or more times greater, such as from 10ms to 120ms for a few seconds. Often
-         *      the latency spikes are short lived and are noise with no realized loss.
-         *      Enforcing TTL with latency spikes results in drops during the spike. This method
-         *      will allow one spike for a `_spike_duration` in ticks per `_spike_period_interval`
-         *      in ticks. A zero value for `_spike_period_interval` disables spike allowance.
-         *
-         * @param current_tick      Current tick value when calling this method
-         *
-         * @retun True if currently in spike duration and the TTL should be allowed/not expired
-         *      False if not in spike duration and the object should be expired.
+         * @brief Clear/reset the queue to no objects
          */
-         bool in_spike(tick_type current_tick) {
-             if (_spike_period_interval == 0) {
-                 // Disabled
-                 return false;
-             }
+         void clear() {
+            _queue.clear();
+            _queue_index = _bucket_index = 0;
 
-             if (_spike_duration_end && current_tick <= _spike_duration_end) {
-                 // Within the allowed spike duration
-                 return true;
-             }
+            for (auto& bucket : _buckets) {
+                bucket.clear();
+            }
+        }
 
-             if (current_tick > _spike_period_end) {
-                 // Start new spike period and allow since this is a new starting spike duration
-                 _spike_period_end = current_tick + _spike_period_interval;
-                 _spike_duration_end = current_tick + _spike_duration;
-
-                 return true;
-             }
-
-             return false;
-         }
         /**
          * @brief Based on current time, adjust and move the bucket index with time
          *        (sliding window)
@@ -412,43 +371,20 @@ namespace qtransport {
         {
             _timer->get_ticks(Duration_t(_interval), _timer_ctx);
 
-            if (_queue.size() > _initial_queue_size) {
-                auto &obj = _queue.at(_queue_index);
-                if (obj._expiry_tick && obj._expiry_tick < _timer_ctx.ticks) {
-                    _buckets.clear();
-                    _buckets.resize(_total_buckets);
-
-                    _queue.clear();
-                    _bucket_index = _queue_index = 0;
-                }
-            }
-
             if (_timer_ctx.delta == 0)
                 return _timer_ctx.ticks;
 
-            const auto next_bucket_index = (_bucket_index + _timer_ctx.delta) % _total_buckets;
-
-            if (next_bucket_index == _bucket_index) {
-                return _timer_ctx.ticks;
-            }
-
             if (_timer_ctx.delta >= static_cast<tick_type>(_total_buckets)) {
-                _buckets.clear();
-                _buckets.resize(_total_buckets);
-
-                _queue.clear();
-                _bucket_index = _queue_index = 0;
+                clear();
 
                 return _timer_ctx.ticks;
             }
 
-            if (_spike_period_interval == 0) {
-                for (int i = 0; i < _timer_ctx.delta; i++) {
-                    _buckets[(_bucket_index + i) % _total_buckets].clear();
-                }
+            for (int i = 0; i < _timer_ctx.delta; i++) {
+                _buckets[(_bucket_index + i) % _total_buckets].clear();
             }
 
-            _bucket_index = next_bucket_index;
+            _bucket_index = (_bucket_index + _timer_ctx.delta) % _total_buckets;
 
             return _timer_ctx.ticks;
         }
@@ -504,12 +440,6 @@ namespace qtransport {
 
         /// The index of the first valid item in the queue.
         index_type _queue_index{ 0 };
-
-        tick_type _spike_duration {0};             /// Duration in ticks a spike can last in ticks
-        tick_type _spike_period_interval {0};      /// Interval in ticks that a spike can happen
-        tick_type _spike_duration_end {0};         /// End tick number for duration of spike
-        tick_type _spike_period_end {0};           /// End tick number for period of allowed spike
-
 
         /// Instance of timer to get time ticks
         queue_timer_service::timer_context _timer_ctx{ 0, 0};

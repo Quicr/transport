@@ -75,8 +75,6 @@ struct TransportConfig
   const uint32_t time_queue_max_duration {1000};        /// Max duration for the time queue in milliseconds
   const uint32_t time_queue_bucket_interval {1};        /// The bucket interval in milliseconds
   const uint32_t time_queue_size_rx { 1000 };           /// Receive queue size
-  const uint32_t pq_queue_spike_duration_ms { 3500 };   /// Latency spike duration in ms allowed per period interval
-  const uint32_t pq_queue_spike_period_ms { 30000 };    /// Latency spike period interval in ms
   bool debug {false};                                   /// Enable debug logging/processing
 };
 
@@ -226,15 +224,16 @@ public:
    *
    * @todo change to generic stream
    *
-   * @param[in] context_id
-   * Identifying the connection
+   * @param[in] context_id              Identifying the connection
    * @param[in] use_reliable_transport 	Indicates a reliable stream is
-   *                                 		preferred for transporting data
+   *                                 	preferred for transporting data
+   * @param[in] priority                Priority for stream (default is 1)
    *
    * @return StreamId identifying the stream via the connection
    */
   virtual StreamId createStream(const TransportContextId& context_id,
-                                bool use_reliable_transport) = 0;
+                                bool use_reliable_transport,
+                                uint8_t priority=1) = 0;
 
   /**
    * @brief Close a transport context

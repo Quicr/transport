@@ -80,6 +80,12 @@ pq_event_cb(picoquic_cnx_t* cnx,
     }
 
     switch (fin_or_event) {
+        case picoquic_callback_pacing_changed:
+            transport->logger.log(LogLevel::info,
+                                  (std::ostringstream()
+                                  << "Pacing rate changed to bytes: "
+                                  << stream_id).str());
+            break;
 
         case picoquic_callback_prepare_datagram: {
             // length is the max allowed data length
@@ -419,10 +425,7 @@ PicoQuicTransport::createStreamContext(picoquic_cnx_t* cnx, uint64_t stream_id)
 
     stream_cnx->rx_data = std::make_unique<safeQueue<bytes_t>>(tconfig.time_queue_size_rx);
 
-    stream_cnx->tx_data = std::make_unique<priority_queue<bytes_t>>(
-      tconfig.time_queue_max_duration, tconfig.time_queue_bucket_interval, _timer,
-      tconfig.time_queue_init_queue_size,
-      tconfig.pq_queue_spike_period_ms, tconfig.pq_queue_spike_duration_ms);
+    stream_cnx->tx_data = _tx_priority_queue;
 
     sockaddr* addr;
 
@@ -542,7 +545,9 @@ PicoQuicTransport::setStatus(TransportStatus status)
 }
 
 StreamId
-PicoQuicTransport::createStream(const TransportContextId& context_id, bool use_reliable_transport)
+PicoQuicTransport::createStream(const TransportContextId& context_id,
+                                bool use_reliable_transport,
+                                uint8_t priority)
 {
     const auto& iter = active_streams.find(context_id);
     if (iter == active_streams.end()) {
@@ -562,6 +567,10 @@ PicoQuicTransport::createStream(const TransportContextId& context_id, bool use_r
 
     PicoQuicTransport::StreamContext* stream_cnx = createStreamContext(cnx_stream_iter->second.cnx, next_stream_id);
 
+    picoquic_runner_queue.push([=, this]() {
+        picoquic_set_stream_priority(cnx_stream_iter->second.cnx, next_stream_id, priority);
+    });
+
     cbNotifyQueue.push([&] { delegate.on_new_stream(context_id, next_stream_id); });
 
     return stream_cnx->stream_id;
@@ -576,6 +585,7 @@ PicoQuicTransport::start()
         debug_set_stream(stdout); // Enable picoquic debug
     }
 
+    (void) picoquic_config_set_option(&config, picoquic_option_CC_ALGO, "bbr");
     (void)picoquic_config_set_option(&config, picoquic_option_ALPN, QUICR_ALPN);
     (void)picoquic_config_set_option(&config, picoquic_option_MAX_CONNECTIONS, "100");
     quic_ctx = picoquic_create_and_configure(&config, pq_event_cb, this, current_time, NULL);
@@ -605,6 +615,10 @@ PicoQuicTransport::start()
 
     TransportContextId cid = 0;
     std::ostringstream log_msg;
+
+    _tx_priority_queue = std::make_shared<priority_queue<bytes_t>>(
+            tconfig.time_queue_max_duration, tconfig.time_queue_bucket_interval, _timer,
+            tconfig.time_queue_init_queue_size);
 
     if (_is_server_mode) {
 
