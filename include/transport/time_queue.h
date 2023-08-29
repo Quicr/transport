@@ -252,6 +252,7 @@ namespace qtransport {
                    size_t spike_duration)
                 : time_queue(duration, interval, timer)
         {
+            _initial_queue_size = initial_queue_size;
             _spike_duration = spike_duration / interval;
             _spike_period_interval = spike_period_interval / interval;
             _queue.reserve(initial_queue_size);
@@ -294,9 +295,8 @@ namespace qtransport {
             if (_queue.size() && ++_queue_index < _queue.size())
                 return;
 
-            for (auto& bucket: _buckets) {
-                bucket.clear();
-            }
+            _buckets.clear();
+            _buckets.resize(_total_buckets);
             _queue.clear();
             _queue_index = 0;
          }
@@ -352,9 +352,8 @@ namespace qtransport {
                 _queue.clear();
                 _queue_index = 0;
 
-                for (auto& bucket: _buckets) {
-                    bucket.clear();
-                }
+                _buckets.clear();
+                _buckets.resize(_total_buckets);
             }
 
             return std::nullopt;
@@ -413,6 +412,17 @@ namespace qtransport {
         {
             _timer->get_ticks(Duration_t(_interval), _timer_ctx);
 
+            if (_queue.size() > _initial_queue_size) {
+                auto &obj = _queue.at(_queue_index);
+                if (obj._expiry_tick && obj._expiry_tick < _timer_ctx.ticks) {
+                    _buckets.clear();
+                    _buckets.resize(_total_buckets);
+
+                    _queue.clear();
+                    _bucket_index = _queue_index = 0;
+                }
+            }
+
             if (_timer_ctx.delta == 0)
                 return _timer_ctx.ticks;
 
@@ -429,10 +439,6 @@ namespace qtransport {
                 _queue.clear();
                 _bucket_index = _queue_index = 0;
 
-                for (auto& bucket: _buckets) {
-                    bucket.clear();
-                }
-                
                 return _timer_ctx.ticks;
             }
 
@@ -484,6 +490,12 @@ namespace qtransport {
         /// The memory storage for all elements to be managed.
         bucket_type _buckets;
 
+        /**
+         * Initial queue size to reserve on construct. If the queue size is greater than
+         *  this value, it is checkd to see if it should be cleared due to lack of pops
+         */
+         size_t _initial_queue_size;
+
         /// The index in time of the current bucket.
         index_type _bucket_index{ 0 };
 
@@ -492,7 +504,6 @@ namespace qtransport {
 
         /// The index of the first valid item in the queue.
         index_type _queue_index{ 0 };
-
 
         tick_type _spike_duration {0};             /// Duration in ticks a spike can last in ticks
         tick_type _spike_period_interval {0};      /// Interval in ticks that a spike can happen
