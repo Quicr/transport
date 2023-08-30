@@ -319,19 +319,6 @@ namespace qtransport {
                 const auto& bucket = _buckets.at(bucket_index);
 
                 if (value_index >= bucket.size() || ticks > expiry_tick) {
-                    /**
-                     * TODO: Below log is only added for debugging right now. This should be removed when stable or
-                     *    when we have a logger.
-                     */
-                    std::cerr << "===> front Object has expired"
-                              << " queue_index: " <<_queue_index << " queue_size: " << _queue.size()
-                              << " value_index: " << value_index
-                              << " bucket_index: " << bucket_index
-                              << " bucket_size: " << bucket.size()
-                              << " tick_delta: " << _timer_ctx.delta
-                              << " " << ticks << " > " << expiry_tick
-                              << std::endl;
-
                     _queue_index++;
                     continue;
                 }
