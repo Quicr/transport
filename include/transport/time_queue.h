@@ -43,8 +43,8 @@ namespace qtransport {
      */
     class queue_timer_service
     {
-      public:
-        using tick_type = int;
+    public:
+        using tick_type = size_t;
         using duration_t = std::chrono::microseconds;
 
         /**
@@ -53,9 +53,8 @@ namespace qtransport {
          */
         struct timer_context
         {
-            tick_type delta;          /// Delta (distance) in ticks since last call
-            tick_type ticks;          /// Current tick value when updated
-            tick_type previous_ticks; /// Previous tick value when last updated
+            tick_type delta {0};              /// Delta (distance) in ticks since last call
+            tick_type ticks {0};              /// Current tick value when updated
         };
 
         virtual void get_ticks(const duration_t& interval, timer_context& ctx) = 0;
@@ -67,13 +66,13 @@ namespace qtransport {
      */
     class queue_timer_thread : public queue_timer_service
     {
-      private:
+    private:
         /*=======================================================================*/
         // Internal type definitions
         /*=======================================================================*/
-        using clock_type = std::chrono::high_resolution_clock;
+        using clock_type = std::chrono::steady_clock;
 
-      public:
+    public:
         /**
          * @brief
          * @param interval The interval at which ticks should update.
@@ -81,8 +80,8 @@ namespace qtransport {
         queue_timer_thread() { _tick_thread = std::thread(&queue_timer_thread::tick_loop, this); }
 
         queue_timer_thread(const queue_timer_thread& other)
-          : _ticks{ other._ticks.load() }
-          , _stop{ other._stop.load() }
+                : _ticks{ other._ticks.load() }
+                , _stop{ other._stop.load() }
         {
             _tick_thread = std::thread(&queue_timer_thread::tick_loop, this);
         }
@@ -104,16 +103,18 @@ namespace qtransport {
 
         void get_ticks(const duration_t& interval, timer_context& ctx) override
         {
+            auto now_time = std::chrono::steady_clock::now();
+
             auto increment = std::max(interval, _interval) / _interval;
 
-            ctx.ticks = _ticks / increment;
+            tick_type ticks = _ticks / increment;
 
-            ctx.delta = ctx.previous_ticks > 0 ? ctx.ticks - ctx.previous_ticks : 0;
+            ctx.delta = ctx.ticks ? ticks - ctx.ticks : 0;
 
-            ctx.previous_ticks = ctx.ticks;
+            ctx.ticks = ticks;
         }
 
-      private:
+    private:
         void tick_loop()
         {
             const auto check_delay = _interval / 2;
@@ -133,7 +134,7 @@ namespace qtransport {
             }
         }
 
-      private:
+    private:
         /// The current ticks since the timer began.
         std::atomic<uint64_t> _ticks{ 0 };
 
@@ -152,7 +153,10 @@ namespace qtransport {
      *        values given a specific ttl.
      *
      * @tparam T            The element type to be stored.
-     * @tparam Duration_t   The duration type to check for.
+     * @tparam Duration_t   The duration type to check for. All the variables that are interval, duration, ttl, ...
+     *                      are of this unit. Ticks are of this unit. For example,
+     *                      setting to millisecond will define the unit for ticks and all associated variables
+     *                      to be millisecond.
      */
     template<typename T, typename Duration_t>
     class time_queue
@@ -182,9 +186,9 @@ namespace qtransport {
         struct queue_value_type
         {
             queue_value_type(index_type bucket_index, index_type value_index, uint64_t expiry_tick)
-              : _bucket_index{ bucket_index }
-              , _value_index{ value_index }
-              , _expiry_tick(expiry_tick)
+                    : _bucket_index{ bucket_index }
+                    , _value_index{ value_index }
+                    , _expiry_tick(expiry_tick)
             {
             }
 
@@ -195,24 +199,23 @@ namespace qtransport {
 
         using queue_type = std::vector<queue_value_type>;
 
-      public:
+    public:
         /**
          * @brief Construct a time_queue with defaults or supplied parameters
          *
-         * @param duration  Duration of the queue. Value must be > 0, != and a multiple of interval.
-         * @param interval  Interval size of each bucket, > 0 and != duration
+         * @param duration  Duration of the queue in interval units. Value must be > 0, != and a multiple of interval.
+         * @param interval  Interval value in duration_t unit of each bucket, > 0 and != duration
          * @param timer     Shared pointer to timer service
          *
          * @throws          std::invalid_argument If the duration or interval do not meet requirements.
          * @throws          std::runtime_error If the timer is null.
          */
         time_queue(size_t duration, size_t interval, std::shared_ptr<queue_timer_service> timer)
-          : _duration{ duration }
-          , _interval{ interval }
-          , _total_buckets{ _duration / _interval }
-          , _timer(timer)
+                : _duration{ duration }
+                , _interval{ interval }
+                , _total_buckets{ _duration / _interval }
+                , _timer(timer)
         {
-
             if (duration == 0 || duration % interval != 0 || duration == interval) {
                 throw std::invalid_argument("Invalid time_queue constructor args");
             }
@@ -221,6 +224,7 @@ namespace qtransport {
                 throw std::runtime_error("Timer cannot be null");
             }
 
+            _initial_queue_size = _total_buckets;
             _buckets.resize(_total_buckets);
             _queue.reserve(_total_buckets);
         }
@@ -228,8 +232,9 @@ namespace qtransport {
         /**
          * @brief Construct a time_queue with defaults or supplied parameters
          *
-         * @param duration                  Duration of the queue, > 0, != and a multiple of interval.
-         * @param interval                  Interval size of each bucket. Value must be > 0 and != duration
+         * @param duration                  Duration of the queue in interval units. Value must be > 0, != and
+         *                                  a multiple of interval.
+         * @param interval                  Interval value in duration_t unit of each bucket, > 0 and != duration
          * @param timer                     Shared pointer to timer service
          * @param initial_queue_size        Initial size of the queue to reserve.
          *
@@ -240,8 +245,9 @@ namespace qtransport {
                    size_t interval,
                    std::shared_ptr<queue_timer_service> timer,
                    size_t initial_queue_size)
-          : time_queue(duration, interval, timer)
+                : time_queue(duration, interval, timer)
         {
+            _initial_queue_size = initial_queue_size;
             _queue.reserve(initial_queue_size);
         }
 
@@ -255,93 +261,47 @@ namespace qtransport {
         /**
          * @brief Pushes a new value onto the queue with a time-to-live.
          * @param value The value to push onto the queue.
-         * @param ttl   The time to live of the value, according to Duration_t.
+         * @param ttl   Time to live for an object using the unit of Duration_t
          */
         void push(const T& value, size_t ttl)
         {
-            std::lock_guard<std::mutex> lock(_mutex);
-
-            const tick_type ticks = advance();
-
-            // Insert object forward in time based on current bucket, which may wrap
-            const index_type future_bucket_index =
-              (_bucket_index + (std::min(ttl, _duration) / _interval) - 1) % _total_buckets;
-
-            internal_push(value, future_bucket_index, ticks + ttl);
-        }
-
-        /**
-         * @brief Pushes a new value onto the queue with a time to live of Interval.
-         * @param value The value to push onto the queue.
-         */
-        void push(const T& value)
-        {
-            std::lock_guard<std::mutex> lock(_mutex);
-
-            const tick_type ticks = advance();
-
-            const auto future_bucket_index = (_bucket_index + (_duration / _interval) - 1) % _total_buckets;
-
-            internal_push(value, future_bucket_index, ticks + 1);
+            internal_push(value, ttl);
         }
 
         /**
          * @brief Pushes a new value onto the queue with a time to live.
          * @param value The value to push onto the queue.
-         * @param ttl   The time to live of the value, according to Duration_t.
+         * @param ttl   Time to live for an object using the unit of Duration_t
          */
         void push(T&& value, size_t ttl)
         {
-            std::lock_guard<std::mutex> lock(_mutex);
-
-            const tick_type ticks = advance();
-            const tick_type expiry_tick = ticks + ttl;
-
-            // Insert object forward in time based on current bucket, which may wrap
-            const auto future_bucket_index =
-              (_bucket_index + (std::min(ttl, _duration) / _interval) - 1) % _total_buckets;
-
-            internal_push(std::move(value), future_bucket_index, expiry_tick);
+            internal_push(std::move(value), ttl);
         }
 
         /**
-         * @brief Pushes a new value onto the queue with a time to live of Interval.
-         * @param value The value to push onto the queue.
+         * @brief Pop (increment) front
+         *
+         * @details This method should be called after front when the object is processed. This
+         *      will move the queue forward. If at the end of the queue, it'll be cleared and reset.
          */
-        void push(T&& value)
-        {
-            std::lock_guard<std::mutex> lock(_mutex);
+         void pop() {
+            if (_queue.empty() || ++_queue_index < _queue.size())
+                return;
 
-            const tick_type ticks = advance();
-
-            const auto future_bucket_index = (_bucket_index + (_duration / _interval) - 1) % _total_buckets;
-
-            internal_push(std::move(value), _bucket_index + 1, ticks + 1);
-        }
+            clear();
+         }
 
         /**
-         * @brief Pops off the most valid front of the queue.
+         * @brief Pops (removes) the front of the queue.
+         *
          * @returns The popped value, else nullopt.
          */
-        std::optional<T> pop()
+        std::optional<T> pop_front()
         {
-            std::lock_guard<std::mutex> lock(_mutex);
-
-            const tick_type ticks = advance();
-
-            while (_queue_index < _queue.size()) {
-                auto& [bucket_index, value_index, expiry_tick] = _queue.at(_queue_index++);
-                auto& bucket = _buckets.at(bucket_index);
-
-                if (value_index >= bucket.size() || ticks > expiry_tick) {
-                    continue;
-                }
-
-                return bucket.at(value_index);
+            if (auto obj = front()) {
+                pop();
+                return obj;
             }
-
-            _queue.clear();
-            _queue_index = 0;
 
             return std::nullopt;
         }
@@ -352,24 +312,22 @@ namespace qtransport {
          */
         std::optional<T> front()
         {
-            std::lock_guard<std::mutex> lock(_mutex);
-
             const tick_type ticks = advance();
 
             while (_queue_index < _queue.size()) {
-                auto& [bucket_index, value_index, expiry_tick] = _queue.at(_queue_index);
-                auto& bucket = _buckets.at(bucket_index);
+                const auto& [bucket_index, value_index, expiry_tick] = _queue.at(_queue_index);
+                const auto& bucket = _buckets.at(bucket_index);
 
                 if (value_index >= bucket.size() || ticks > expiry_tick) {
                     _queue_index++;
                     continue;
                 }
-
                 return bucket.at(value_index);
             }
 
-            _queue.clear();
-            _queue_index = 0;
+            if (!_queue.empty()) {
+                clear();
+            }
 
             return std::nullopt;
         }
@@ -377,14 +335,26 @@ namespace qtransport {
         size_t size() const { return _queue.size() - _queue_index; }
         bool empty() const { return (_queue.empty() || _queue_index >= _queue.size()); }
 
-      private:
+    private:
+        /**
+         * @brief Clear/reset the queue to no objects
+         */
+         void clear() {
+            _queue.clear();
+            _queue_index = _bucket_index = 0;
+
+            for (auto& bucket : _buckets) {
+                bucket.clear();
+            }
+        }
+
         /**
          * @brief Based on current time, adjust and move the bucket index with time
          *        (sliding window)
          *
          * @returns Current tick value at time of advance
          */
-        inline tick_type advance()
+        tick_type advance()
         {
             _timer->get_ticks(Duration_t(_interval), _timer_ctx);
 
@@ -392,18 +362,9 @@ namespace qtransport {
                 return _timer_ctx.ticks;
 
             if (_timer_ctx.delta >= static_cast<tick_type>(_total_buckets)) {
-                _buckets.clear();
-                _buckets.resize(_total_buckets);
-
-                _queue.clear();
-                _bucket_index = _queue_index = 0;
+                clear();
 
                 return _timer_ctx.ticks;
-            }
-
-            if (_queue_index && _queue_index >= _queue.size()) {
-                _queue.clear();
-                _queue_index = 0;
             }
 
             for (int i = 0; i < _timer_ctx.delta; i++) {
@@ -420,19 +381,30 @@ namespace qtransport {
          * then emplaces the location info into the queue.
          */
         template<typename Value>
-        inline void internal_push(Value value, index_type index, tick_type expiry_tick)
+        inline void internal_push(Value value, size_t ttl)
         {
+            if (ttl > _duration) {
+                throw std::invalid_argument("TTL is greater than max duration");
+            }
+
+            ttl = ttl / _interval;
+
+            const tick_type ticks = advance();
+
+            const tick_type expiry_tick = ticks + ttl;
+
+            // Insert object forward in time based on current bucket, which may wrap
+            const index_type index = (_bucket_index + ttl - 1) % _total_buckets;
+
             _buckets[index].push_back(value);
             _queue.emplace_back(index, _buckets[index].size() - 1, expiry_tick);
         }
 
-      private:
-        std::mutex _mutex;
-
-        /// The duration of the entire queue.
+    private:
+        /// The duration in ticks of the entire queue.
         size_t _duration;
 
-        /// The interval at which buckets are cleared.
+        /// The interval at which buckets are cleared in ticks.
         size_t _interval;
 
         /// The total amount of buckets. Value is calculated by duration / interval.
@@ -440,6 +412,12 @@ namespace qtransport {
 
         /// The memory storage for all elements to be managed.
         bucket_type _buckets;
+
+        /**
+         * Initial queue size to reserve on construct. If the queue size is greater than
+         *  this value, it is checkd to see if it should be cleared due to lack of pops
+         */
+         size_t _initial_queue_size;
 
         /// The index in time of the current bucket.
         index_type _bucket_index{ 0 };
@@ -451,7 +429,7 @@ namespace qtransport {
         index_type _queue_index{ 0 };
 
         /// Instance of timer to get time ticks
-        queue_timer_service::timer_context _timer_ctx{ 0, 0, 0 };
+        queue_timer_service::timer_context _timer_ctx{ 0, 0};
         std::shared_ptr<queue_timer_service> _timer{ nullptr };
     };
 

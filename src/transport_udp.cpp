@@ -65,7 +65,8 @@ UDPTransport::status() const
 StreamId
 UDPTransport::createStream(
   const qtransport::TransportContextId& context_id,
-  [[maybe_unused]] bool use_reliable_transport)
+  [[maybe_unused]] bool use_reliable_transport,
+  [[maybe_unused]] uint8_t priority)
 {
 
   if (remote_contexts.count(context_id) == 0) {

@@ -57,7 +57,7 @@ namespace qtransport {
          * @param duration              Max duration of time for the queue
          * @param interval              Interval per bucket, Default is 1
          * @param timer                 Shared pointer to timer service
-         * @param initial_queue_size     Number of default fifo queue size (reserve)
+         * @param initial_queue_size    Number of default fifo queue size (reserve)
          */
         priority_queue(size_t duration,
                        size_t interval,
@@ -91,7 +91,8 @@ namespace qtransport {
             }
 
             if (!_queue[priority]) {
-                _queue[priority] = std::make_unique<timeQueue>(_duration_ms, _interval_ms, _timer, _initial_queue_size);
+                _queue[priority] = std::make_unique<timeQueue>(_duration_ms, _interval_ms, _timer,
+                                                               _initial_queue_size);
             }
 
             auto& queue = _queue[priority];
@@ -130,7 +131,7 @@ namespace qtransport {
 
             for (size_t i = 0; i < _queue.size(); i++) {
                 if (_queue[i]) {
-                    const auto& obj = _queue[i]->pop();
+                    const auto& obj = _queue[i]->pop_front();
                     if (obj.has_value()) {
                         return obj;
                     }
@@ -148,11 +149,9 @@ namespace qtransport {
             std::lock_guard<std::mutex> lock(_mutex);
 
             for (size_t i = 0; i < _queue.size(); i++) {
-                if (_queue[i]) {
-                    const auto& obj = _queue[i]->pop();
-                    if (obj.has_value()) {
-                        return;
-                    }
+                if (_queue[i] && !_queue[i]->empty()) {
+                    _queue[i]->pop();
+                    return;
                 }
             }
         }
