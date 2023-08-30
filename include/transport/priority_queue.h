@@ -67,7 +67,7 @@ namespace qtransport {
         {
 
             if (tick_service == nullptr) {
-                throw NullTimerException("Tick service cannot be null");
+                throw std::invalid_argument("Tick service cannot be null");
             }
 
             _initial_queue_size = initial_queue_size;
