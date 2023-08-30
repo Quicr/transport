@@ -26,7 +26,7 @@ UDPTransport::~UDPTransport()
   stop = true;
 
   // Clear threads from the queue
-  fd_write_queue.stopWaiting();
+  fd_write_queue.stop_waiting();
 
   // Close socket fd
   if (fd >= 0)
@@ -321,7 +321,7 @@ UDPTransport::fd_reader()
         cd.streamId = last_stream_id;
 
         // Create dequeue
-        dequeue_data_map[last_context_id][last_stream_id].setLimit(1000);
+        dequeue_data_map[last_context_id][last_stream_id].set_limit(1000);
 
         cd.contextId = last_context_id;
 
@@ -519,7 +519,7 @@ UDPTransport::connect_client()
   remote_addrs[sa_key] = { last_context_id, last_stream_id};
 
   // Create dequeue
-  dequeue_data_map[last_context_id][last_stream_id].setLimit(50000);
+  dequeue_data_map[last_context_id][last_stream_id].set_limit(50000);
 
   // Notify caller that the connection is now ready
   delegate.on_connection_status(last_context_id, TransportStatus::Ready);

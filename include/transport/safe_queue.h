@@ -12,7 +12,7 @@
 namespace qtransport {
 
 /**
- * @brief safeQueue is a thread safe basic queue
+ * @brief safe_queue is a thread safe basic queue
  *
  * @details This class is a thread safe wrapper for std::queue<T>.
  * 		Not all operators or methods are implemented.
@@ -20,22 +20,22 @@ namespace qtransport {
  * @todo Implement any operators or methods needed
  */
 template<typename T>
-class safeQueue
+class safe_queue
 {
 public:
   /**
-   * @brief safeQueue constructor
+   * @brief safe_queue constructor
    *
    * @param limit     Limit number of messages in queue before push blocks. Zero
    *                  is unlimited.
    */
-  safeQueue(uint32_t limit = 1000)
-    : stop_waiting{ false }
-    , limit{ limit }
+  safe_queue(uint32_t limit = 1000)
+    : _stop_waiting{ false }
+    , _limit{ limit }
   {
   }
 
-  ~safeQueue() { stopWaiting(); }
+  ~safe_queue() { stop_waiting(); }
 
   /**
    * @brief inserts element at the end of queue
@@ -58,7 +58,7 @@ public:
     if (queue.empty())
       cv.notify_one();
 
-    else if (queue.size() >= limit) { // Make room by removing first element
+    else if (queue.size() >= _limit) { // Make room by removing first element
       queue.pop();
       rval = false;
     }
@@ -122,9 +122,9 @@ public:
   std::optional<T> block_pop()
   {
     std::unique_lock<std::mutex> lock(mutex);
-    cv.wait(lock, [&]() { return (stop_waiting || (queue.size() > 0)); });
+    cv.wait(lock, [&]() { return (_stop_waiting || (queue.size() > 0)); });
 
-    if (stop_waiting) {
+    if (_stop_waiting) {
       return std::nullopt;
     }
 
@@ -154,17 +154,17 @@ public:
    *
    * @return Nothing
    */
-  void stopWaiting()
+  void stop_waiting()
   {
     std::lock_guard<std::mutex> lock(mutex);
-    stop_waiting = true;
+    _stop_waiting = true;
     cv.notify_all();
   }
 
-  void setLimit(uint32_t limit)
+  void set_limit(uint32_t limit)
   {
     std::lock_guard<std::mutex> lock(mutex);
-    this->limit = limit;
+    _limit = limit;
   }
 
 private:
@@ -203,8 +203,8 @@ private:
   }
 
 
-  bool stop_waiting;                // Instruct threads to stop waiting
-  uint32_t limit;                   // Limit of number of messages in queue
+  bool _stop_waiting;                // Instruct threads to stop waiting
+  uint32_t _limit;                   // Limit of number of messages in queue
   std::condition_variable cv;       // Signaling for thread syncronization
   std::mutex mutex;                 // read/write lock
   std::queue<T> queue;              // Queue

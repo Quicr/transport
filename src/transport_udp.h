@@ -120,11 +120,11 @@ private:
 
   TransportRemote serverInfo;
   Addr serverAddr;
-  safeQueue<connData> fd_write_queue;
+  safe_queue<connData> fd_write_queue;
 
   // NOTE: this is a map supporting multiple streams, but UDP does not have that
   // right now.
-  std::map<TransportContextId, std::map<StreamId, safeQueue<connData>>>
+  std::map<TransportContextId, std::map<StreamId, safe_queue<connData>>>
     dequeue_data_map;
 
   TransportDelegate& delegate;
