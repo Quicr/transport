@@ -423,7 +423,7 @@ PicoQuicTransport::createStreamContext(picoquic_cnx_t* cnx, uint64_t stream_id)
     stream_cnx->context_id = reinterpret_cast<uint64_t>(cnx);
     stream_cnx->cnx = cnx;
 
-    stream_cnx->rx_data = std::make_unique<safeQueue<bytes_t>>(tconfig.time_queue_size_rx);
+    stream_cnx->rx_data = std::make_unique<safe_queue<bytes_t>>(tconfig.time_queue_size_rx);
 
     stream_cnx->tx_data = _tx_priority_queue;
 
@@ -496,7 +496,7 @@ PicoQuicTransport::PicoQuicTransport(const TransportRemote& server,
         }
     }
 
-    _timer = std::make_shared<queue_timer_thread>();
+    _tick_service = std::make_shared<threaded_tick_service>();
 }
 
 PicoQuicTransport::~PicoQuicTransport()
@@ -518,15 +518,15 @@ PicoQuicTransport::shutdown()
         picoQuicThread.join();
     }
 
-    picoquic_runner_queue.stopWaiting();
-    cbNotifyQueue.stopWaiting();
+    picoquic_runner_queue.stop_waiting();
+    cbNotifyQueue.stop_waiting();
 
     if (cbNotifyThread.joinable()) {
         logger.log(LogLevel::info, "Closing transport callback notifier thread");
         cbNotifyThread.join();
     }
 
-    _timer.reset();
+    _tick_service.reset();
     logger.log(LogLevel::info, "done closing transport threads");
 
     picoquic_config_clear(&config);
@@ -608,16 +608,16 @@ PicoQuicTransport::start()
 
     picoquic_set_default_tp(quic_ctx, &local_tp_options);
 
-    picoquic_runner_queue.setLimit(2000);
+    picoquic_runner_queue.set_limit(2000);
 
-    cbNotifyQueue.setLimit(2000);
+    cbNotifyQueue.set_limit(2000);
     cbNotifyThread = std::thread(&PicoQuicTransport::cbNotifier, this);
 
     TransportContextId cid = 0;
     std::ostringstream log_msg;
 
     _tx_priority_queue = std::make_shared<priority_queue<bytes_t>>(
-            tconfig.time_queue_max_duration, tconfig.time_queue_bucket_interval, _timer,
+            tconfig.time_queue_max_duration, tconfig.time_queue_bucket_interval, _tick_service,
             tconfig.time_queue_init_queue_size);
 
     if (_is_server_mode) {

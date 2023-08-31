@@ -4,6 +4,7 @@
 #include <chrono>
 #include <forward_list>
 #include <iostream>
+#include <numeric>
 #include <optional>
 #include <thread>
 #include <type_traits>
@@ -40,34 +41,33 @@ namespace qtransport {
             using Exception::Exception;
         };
 
-        struct NullTimerException : public Exception
-        {
-            using Exception::Exception;
-        };
-
       public:
         /**
          * Construct a priority queue
+         * @param tick_service Shared pointer to tick_service service
          */
-        priority_queue(std::shared_ptr<queue_timer_service> timer) { priority_queue(1000, 1, _timer, 1000); }
+        priority_queue(const std::shared_ptr<tick_service>& tick_service)
+          : priority_queue(1000, 1, _tick_service, 1000)
+        {
+        }
 
         /**
          * Construct a priority queue
          *
          * @param duration              Max duration of time for the queue
          * @param interval              Interval per bucket, Default is 1
-         * @param timer                 Shared pointer to timer service
+         * @param tick_service          Shared pointer to tick_service service
          * @param initial_queue_size    Number of default fifo queue size (reserve)
          */
         priority_queue(size_t duration,
                        size_t interval,
-                       std::shared_ptr<queue_timer_service> timer,
+                       const std::shared_ptr<tick_service>& tick_service,
                        size_t initial_queue_size)
-          : _timer(timer)
+          : _tick_service(tick_service)
         {
 
-            if (timer == nullptr) {
-                throw NullTimerException("Timer cannot be null");
+            if (tick_service == nullptr) {
+                throw std::invalid_argument("Tick service cannot be null");
             }
 
             _initial_queue_size = initial_queue_size;
@@ -84,15 +84,14 @@ namespace qtransport {
          */
         void push(DataType& value, uint32_t ttl, uint8_t priority = 0)
         {
-            std::lock_guard<std::mutex> lock(_mutex);
+            std::lock_guard<std::mutex> _(_mutex);
 
             if (priority >= PMAX) {
                 throw InvalidPriorityException("Priority not within range");
             }
 
             if (!_queue[priority]) {
-                _queue[priority] = std::make_unique<timeQueue>(_duration_ms, _interval_ms, _timer,
-                                                               _initial_queue_size);
+                _queue[priority] = std::make_unique<timeQueue>(_duration_ms, _interval_ms, _tick_service, _initial_queue_size);
             }
 
             auto& queue = _queue[priority];
@@ -106,15 +105,14 @@ namespace qtransport {
          */
         std::optional<DataType> front()
         {
-            std::lock_guard<std::mutex> lock(_mutex);
+            std::lock_guard<std::mutex> _(_mutex);
 
-            for (size_t i = 0; i < _queue.size(); i++) {
-                if (_queue[i]) {
-                    const auto& obj = _queue[i]->front();
-                    if (obj.has_value()) {
-                        return obj;
-                    }
-                }
+            for (auto& tqueue : _queue) {
+                if (!tqueue)
+                    continue;
+
+                if (auto obj = tqueue->front())
+                    return obj;
             }
 
             return std::nullopt;
@@ -127,15 +125,14 @@ namespace qtransport {
          */
         std::optional<DataType> pop_front()
         {
-            std::lock_guard<std::mutex> lock(_mutex);
+            std::lock_guard<std::mutex> _(_mutex);
 
-            for (size_t i = 0; i < _queue.size(); i++) {
-                if (_queue[i]) {
-                    const auto& obj = _queue[i]->pop_front();
-                    if (obj.has_value()) {
-                        return obj;
-                    }
-                }
+            for (auto& tqueue : _queue) {
+                if (!tqueue)
+                    continue;
+
+                if (auto obj = tqueue->pop_front())
+                    return obj;
             }
 
             return std::nullopt;
@@ -146,33 +143,26 @@ namespace qtransport {
          */
         void pop()
         {
-            std::lock_guard<std::mutex> lock(_mutex);
+            std::lock_guard<std::mutex> _(_mutex);
 
-            for (size_t i = 0; i < _queue.size(); i++) {
-                if (_queue[i] && !_queue[i]->empty()) {
-                    _queue[i]->pop();
-                    return;
-                }
+            for (auto& tqueue : _queue) {
+                if (tqueue && !tqueue->empty())
+                    return tqueue->pop();
             }
         }
 
         // TODO: Consider changing empty/size to look at timeQueue sizes - maybe support blocking pops
         size_t size() const
         {
-            size_t sz = 0;
-            for (size_t i = 0; i < _queue.size(); i++) {
-                if (_queue[i]) {
-                    sz += _queue[i]->size();
-                }
-            }
-
-            return sz;
+            return std::accumulate(_queue.begin(), _queue.end(), 0, [](auto sum, auto& tqueue) {
+                return tqueue ? sum + tqueue->size() : sum;
+            });
         }
 
         bool empty() const
         {
-            for (size_t i = 0; i < _queue.size(); i++) {
-                if (_queue[i] && !_queue[i]->empty()) {
+            for (auto& tqueue : _queue) {
+                if (tqueue && !tqueue->empty()) {
                     return false;
                 }
             }
@@ -188,7 +178,6 @@ namespace qtransport {
 
         std::array<std::unique_ptr<timeQueue>, PMAX> _queue;
 
-        std::shared_ptr<queue_timer_service> _timer;
+        std::shared_ptr<tick_service> _tick_service;
     };
-
 }; // end of namespace qtransport
