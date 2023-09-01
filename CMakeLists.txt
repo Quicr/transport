@@ -9,7 +9,7 @@ project(quicr-transport
 if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
     option(QTRANSPORT_BUILD_TESTS "Build tests for quicr transport" ON)
 else()
-    option(QTRANSPORT_BUILD_TESTS "Build tests for quicr transport" ON)
+    option(QTRANSPORT_BUILD_TESTS "Build tests for quicr transport" OFF)
 endif()
 
 option(QUIC_TRANSPORT "Enable QUIC Transport (Default ON)" ON)
