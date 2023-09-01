@@ -9,3 +9,6 @@
 	path = dependencies/picoquic
 	url = https://github.com/quicr/picoquic
 	branch = master
+[submodule "dependencies/logger"]
+	path = dependencies/logger
+	url = git@github.com:Quicr/logger.git

@@ -32,7 +32,7 @@ UDPTransport::~UDPTransport()
   if (fd >= 0)
     ::close(fd);
 
-  logger.log(LogLevel::info, "Closing transport threads");
+  logger->Log("Closing transport threads");
   for (auto &thread : running_threads) {
     if (thread.joinable())
         thread.join();
@@ -42,9 +42,9 @@ UDPTransport::~UDPTransport()
 UDPTransport::UDPTransport(const TransportRemote& server,
                            TransportDelegate& delegate,
                            bool isServerMode,
-                           LogHandler& logger)
+                           const cantina::LoggerPointer& logger)
   : stop(false)
-  , logger(logger)
+  , logger(std::make_shared<cantina::Logger>("UDP", logger))
   , fd(-1)
   , isServerMode(isServerMode)
   , serverInfo(server)
@@ -70,9 +70,7 @@ UDPTransport::createStream(
 {
 
   if (remote_contexts.count(context_id) == 0) {
-    std::stringstream err;
-    err << "Invalid context id: " << context_id;
-    logger.log(LogLevel::error, err.str());
+    logger->error << "Invalid context id: " << context_id << std::flush;
     return 0; // Error
   }
 
@@ -199,7 +197,7 @@ void
 UDPTransport::fd_writer()
 {
 
-  logger.log(LogLevel::info, "Starting transport writer thread");
+  logger->Log("Starting transport writer thread");
 
   while (not stop) {
     auto cd = fd_write_queue.block_pop();
@@ -222,9 +220,8 @@ UDPTransport::fd_writer()
                            sizeof(sockaddr_in));
 
       if (numSent < 0) {
-        std::stringstream err;
-        err << "Error sending on UDP socket: " << strerror(errno);
-        logger.log(LogLevel::error, err.str());
+        logger->error << "Error sending on UDP socket: " << strerror(errno)
+                      << std::flush;
 
         break;
 
@@ -234,7 +231,7 @@ UDPTransport::fd_writer()
     }
   }
 
-  logger.log(LogLevel::info, "Done transport writer thread");
+  logger->Log("Done transport writer thread");
 }
 
 /*
@@ -253,7 +250,7 @@ UDPTransport::fd_writer()
 void
 UDPTransport::fd_reader()
 {
-  logger.log(LogLevel::info, "Starting transport reader thread");
+  logger->Log("Starting transport reader thread");
 
   const int dataSize = 65535; // TODO Add config var to set this value.  Sizes
                               // larger than actual MTU require IP frags
@@ -277,9 +274,8 @@ UDPTransport::fd_reader()
         continue;
 
       } else {
-        std::ostringstream err;
-        err << "Error reading from UDP socket: " << strerror(errno);
-        logger.log(LogLevel::error, err.str());
+        logger->error << "Error reading from UDP socket: " << strerror(errno)
+                      << std::flush;
         break;
       }
     }
@@ -351,7 +347,7 @@ UDPTransport::fd_reader()
     }
   }
 
-  logger.log(LogLevel::info, "Done transport reader thread");
+  logger->Log("Done transport reader thread");
 }
 
 TransportError
@@ -393,17 +389,14 @@ UDPTransport::dequeue(const TransportContextId& context_id,
 {
 
   if (remote_contexts.count(context_id) == 0) {
-    std::stringstream err;
-    err << "dequeue: invalid context id: " << context_id;
-    logger.log(LogLevel::warn, err.str());
+    logger->warning << "dequeue: invalid context id: " << context_id
+                    << std::flush;
     // Invalid context id
     return std::nullopt;
   }
 
   if (dequeue_data_map[context_id].count(streamId) == 0) {
-    std::stringstream err;
-    err << "dequeue: invalid stream id: " << streamId;
-    logger.log(LogLevel::warn, err.str());
+    logger->error << "dequeue: invalid stream id: " << streamId << std::flush;
 
     return std::nullopt;
   }
@@ -437,7 +430,7 @@ UDPTransport::connect_client()
   if (err != 0) {
     s_log << "client_connect: Unable to set send buffer size: "
           << strerror(errno);
-    logger.log(LogLevel::fatal, s_log.str());
+    logger->Log(cantina::LogLevel::Critical, s_log.str());
     throw std::runtime_error(s_log.str());
   }
 
@@ -446,7 +439,7 @@ UDPTransport::connect_client()
   if (err != 0) {
     s_log << "client_connect: Unable to set receive buffer size: "
           << strerror(errno);
-    logger.log(LogLevel::fatal, s_log.str());
+    logger->Log(cantina::LogLevel::Critical, s_log.str());
     throw std::runtime_error(s_log.str());
   }
 
@@ -455,7 +448,7 @@ UDPTransport::connect_client()
   if (err != 0) {
     s_log << "client_connect: Unable to set receive timeout: "
           << strerror(errno);
-    logger.log(LogLevel::fatal, s_log.str());
+    logger->Log(cantina::LogLevel::Critical, s_log.str());
     throw std::runtime_error(s_log.str());
   }
 
@@ -467,7 +460,7 @@ UDPTransport::connect_client()
   err = bind(fd, (struct sockaddr*)&srvAddr, sizeof(srvAddr));
   if (err) {
     s_log << "client_connect: Unable to bind to socket: " << strerror(errno);
-    logger.log(LogLevel::fatal, s_log.str());
+    logger->Log(cantina::LogLevel::Critical, s_log.str());
     throw std::runtime_error(s_log.str());
   }
 
@@ -482,7 +475,7 @@ UDPTransport::connect_client()
     strerror(1);
     s_log << "client_connect: Unable to resolve remote ip address: "
           << strerror(errno);
-    logger.log(LogLevel::fatal, s_log.str());
+    logger->Log(cantina::LogLevel::Critical, s_log.str());
     throw std::runtime_error(s_log.str());
   }
 
@@ -496,7 +489,7 @@ UDPTransport::connect_client()
   }
 
   if (found_addr == nullptr) {
-    logger.log(LogLevel::fatal, "client_connect: No IP address found");
+    logger->critical << "client_connect: No IP address found" << std::flush;
     throw std::runtime_error("client_connect: No IP address found");
   }
 
@@ -539,7 +532,7 @@ UDPTransport::connect_server()
   fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
   if (fd < 0) {
     s_log << "connect_server: Unable to create socket: " << strerror(errno);
-    logger.log(LogLevel::fatal, s_log.str());
+    logger->Log(cantina::LogLevel::Critical, s_log.str());
     throw std::runtime_error(s_log.str());
   }
 
@@ -549,7 +542,7 @@ UDPTransport::connect_server()
     setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (const char*)&one, sizeof(one));
   if (err != 0) {
     s_log << "connect_server: setsockopt error: " << strerror(errno);
-    logger.log(LogLevel::fatal, s_log.str());
+    logger->Log(cantina::LogLevel::Critical, s_log.str());
     throw std::runtime_error(s_log.str());
   }
 
@@ -562,7 +555,7 @@ UDPTransport::connect_server()
   if (err != 0) {
     s_log << "client_connect: Unable to set send buffer size: "
           << strerror(errno);
-    logger.log(LogLevel::fatal, s_log.str());
+    logger->Log(cantina::LogLevel::Critical, s_log.str());
     throw std::runtime_error(s_log.str());
   }
 
@@ -571,7 +564,7 @@ UDPTransport::connect_server()
   if (err != 0) {
     s_log << "client_connect: Unable to set receive buffer size: "
           << strerror(errno);
-    logger.log(LogLevel::fatal, s_log.str());
+    logger->Log(cantina::LogLevel::Critical, s_log.str());
     throw std::runtime_error(s_log.str());
   }
 
@@ -580,7 +573,7 @@ UDPTransport::connect_server()
   if (err != 0) {
     s_log << "client_connect: Unable to set receive timeout: "
           << strerror(errno);
-    logger.log(LogLevel::fatal, s_log.str());
+    logger->Log(cantina::LogLevel::Critical, s_log.str());
     throw std::runtime_error(s_log.str());
   }
 
@@ -594,13 +587,12 @@ UDPTransport::connect_server()
   err = bind(fd, (struct sockaddr*)&srv_addr, sizeof(srv_addr));
   if (err < 0) {
     s_log << "connect_server: unable to bind to socket: " << strerror(errno);
-    logger.log(LogLevel::fatal, s_log.str());
+    logger->Log(cantina::LogLevel::Critical, s_log.str());
     throw std::runtime_error(s_log.str());
   }
 
-  s_log.str(std::string());
-  s_log << "connect_server: port: " << serverInfo.port << " fd: " << fd;
-  logger.log(LogLevel::info, s_log.str());
+  logger->info << "connect_server: port: " << serverInfo.port << " fd: " << fd
+               << std::flush;
 
   running_threads.emplace_back(&UDPTransport::fd_reader, this);
   running_threads.emplace_back(&UDPTransport::fd_writer, this);

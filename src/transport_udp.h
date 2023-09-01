@@ -57,7 +57,7 @@ public:
   UDPTransport(const TransportRemote& server,
                TransportDelegate& delegate,
                bool isServerMode,
-               LogHandler& logger);
+               const cantina::LoggerPointer& logger);
 
   virtual ~UDPTransport();
 
@@ -114,7 +114,7 @@ private:
     StreamId sid;
   };
 
-  LogHandler& logger;
+  cantina::LoggerPointer logger;
   int fd; // UDP socket
   bool isServerMode;
 
