@@ -12,7 +12,7 @@ else()
     option(QTRANSPORT_BUILD_TESTS "Build tests for quicr transport" ON)
 endif()
 
-option(QUIC_TRANSPORT "Enable QUIC Transport (Default ON)" OFF)
+option(QUIC_TRANSPORT "Enable QUIC Transport (Default ON)" ON)
 option(PLATFORM_ESP_IDF "Enabble suppport for esp-idf (Default OFF" OFF)
 
 find_package(Threads REQUIRED)
