@@ -16,7 +16,31 @@
 
 #include "transport_udp.h"
 
+#if defined(PLATFORM_ESP)
+#include <lwip/netdb.h>
+#include "lwip/err.h"
+#include "lwip/sockets.h"
+#include "lwip/sys.h"
+#include <lwip/netdb.h>
+
+#include "esp_pthread.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#endif
+
 using namespace qtransport;
+
+#if defined (PLATFORM_ESP)
+static esp_pthread_cfg_t create_config(const char *name, int core_id, int stack, int prio)
+{
+    auto cfg = esp_pthread_get_default_config();
+    cfg.thread_name = name;
+    cfg.pin_to_core = core_id;
+    cfg.stack_size = stack;
+    cfg.prio = prio;
+    return cfg;
+}
+#endif
 
 UDPTransport::~UDPTransport()
 {
@@ -254,9 +278,14 @@ void
 UDPTransport::fd_reader()
 {
   logger.log(LogLevel::info, "Starting transport reader thread");
-
-  const int dataSize = 65535; // TODO Add config var to set this value.  Sizes
+#if defined(PLATFORM_ESP)
+  // TODO (Suhas): Revisit this once we have basic esp functionality working
+  const int dataSize = 2048;
+#else
+  const int dataSize = 65535; // TODO Add config var to set this value.
                               // larger than actual MTU require IP frags
+#endif
+                              // 
   struct sockaddr_storage remoteAddr;
   memset(&remoteAddr, 0, sizeof(remoteAddr));
   socklen_t remoteAddrLen = sizeof(remoteAddr);
@@ -524,8 +553,27 @@ UDPTransport::connect_client()
   // Notify caller that the connection is now ready
   delegate.on_connection_status(last_context_id, TransportStatus::Ready);
 
+  #if defined(PLATFORM_ESP)
+  auto cfg = create_config("FDReader", 1, 12 * 1024, 5);
+  auto esp_err = esp_pthread_set_cfg(&cfg);
+  if(esp_err != ESP_OK) {
+    s_log << "esp_pthread_set_cfg failed " << esp_err_to_name(esp_err);
+    logger.log(LogLevel::info, s_log.str());
+    throw std::runtime_error(s_log.str());
+  }
+  #endif
   running_threads.emplace_back(&UDPTransport::fd_reader, this);
 
+  #if defined(PLATFORM_ESP)
+  auto cfg = create_config("FDWriter", 1, 12 * 1024, 5);
+  auto esp_err = esp_pthread_set_cfg(&cfg);
+  if(esp_err != ESP_OK) {
+    s_log << "esp_pthread_set_cfg failed " << esp_err_to_name(esp_err);
+    logger.log(LogLevel::info, s_log.str());
+    throw std::runtime_error(s_log.str());
+  }
+  #endif
+  
   running_threads.emplace_back(&UDPTransport::fd_writer, this);
 
   return last_context_id;
