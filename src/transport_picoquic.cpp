@@ -801,6 +801,11 @@ PicoQuicTransport::close([[maybe_unused]] const TransportContextId& context_id)
 void
 PicoQuicTransport::send_next_datagram(StreamContext* stream_cnx, uint8_t* bytes_ctx, size_t max_len)
 {
+    static auto last_time = std::chrono::steady_clock::now();
+    auto now_time = std::chrono::steady_clock::now();
+    auto delta_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now_time - last_time).count();
+
+
     if (bytes_ctx == NULL) {
         metrics.send_null_bytes_ctx++;
         return;
@@ -811,17 +816,19 @@ PicoQuicTransport::send_next_datagram(StreamContext* stream_cnx, uint8_t* bytes_
         return;
     }
 
-    static auto prev_time = std::chrono::steady_clock::now();
-    auto now_time = std::chrono::steady_clock::now();
-    auto time_diff = std::chrono::duration_cast<std::chrono::milliseconds>(now_time - prev_time).count();
-    prev_time = now_time;
-
     const auto& out_data = stream_cnx->tx_data->front();
     if (out_data.has_value()) {
         if (max_len >= out_data->size()) {
             stream_cnx->tx_data->pop();
 
             metrics.dgram_sent++;
+
+            if (delta_ms > 40) {
+                logger.log(LogLevel::info, "CB delta "
+                            + std::to_string(delta_ms)
+                            + "ms queue_size: "
+                            + std::to_string(stream_cnx->tx_data->size()));
+            }
 
             uint8_t* buf = NULL;
 
@@ -840,6 +847,8 @@ PicoQuicTransport::send_next_datagram(StreamContext* stream_cnx, uint8_t* bytes_
     else {
         picoquic_provide_datagram_buffer_ex(bytes_ctx, 0, picoquic_datagram_not_active);
     }
+
+    last_time = now_time;
 }
 
 void
@@ -1082,7 +1091,7 @@ void PicoQuicTransport::on_recv_stream_bytes(StreamContext* stream_cnx, uint8_t*
     if (stream_cnx->stream_rx_object == nullptr) {
         if (length < 5) {
             logger.log(LogLevel::warn, (std::ostringstream()
-                                        << "on_recv_stream_bytes is less than 5, cannot process sid: "
+                                        << "on_recv_stream_bytes " << length << " < 5 cannot process sid: "
                                         << std::to_string(stream_cnx->stream_id)).str());
 
             // TODO: Should reset stream in this case
