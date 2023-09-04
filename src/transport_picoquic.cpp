@@ -14,6 +14,7 @@
 #include <unistd.h>
 
 #include <arpa/inet.h>
+#include <sys/select.h>
 #include <netdb.h>
 #if defined(__linux__)
 #include <net/ethernet.h>
@@ -72,7 +73,6 @@ pq_event_cb(picoquic_cnx_t* cnx,
     PicoQuicTransport* transport = static_cast<PicoQuicTransport*>(callback_ctx);
     PicoQuicTransport::StreamContext* stream_cnx = static_cast<PicoQuicTransport::StreamContext*>(v_stream_ctx);
 
-    std::ostringstream log_msg;
     bool is_fin = false;
 
     if (transport == NULL) {
@@ -81,10 +81,7 @@ pq_event_cb(picoquic_cnx_t* cnx,
 
     switch (fin_or_event) {
         case picoquic_callback_pacing_changed:
-            transport->logger.log(LogLevel::info,
-                                  (std::ostringstream()
-                                  << "Pacing rate changed to bytes: "
-                                  << stream_id).str());
+            transport->logger->info << "Pacing rate changed to bytes: " << stream_id;
             break;
 
         case picoquic_callback_prepare_datagram: {
@@ -150,9 +147,8 @@ pq_event_cb(picoquic_cnx_t* cnx,
         }
 
         case picoquic_callback_stream_reset: {
-            log_msg.str("");
-            log_msg << "Closing connection stream " << stream_id;
-            transport->logger.log(LogLevel::info, log_msg.str());
+            transport->logger->info << "Closing connection stream " << stream_id
+                                    << std::flush;
 
             if (stream_id == 0) { // close connection
                 picoquic_close(cnx, 0);
@@ -167,14 +163,14 @@ pq_event_cb(picoquic_cnx_t* cnx,
 
         case picoquic_callback_application_close:
         case picoquic_callback_close: {
-            log_msg.str("");
-            log_msg << "Closing connection stream_id: " << stream_id;
+            transport->logger->info << "Closing connection stream_id: "
+                                    << stream_id;
 
             if (stream_cnx != NULL) {
-                log_msg << stream_cnx->peer_addr_text;
+                transport->logger->info << " " << stream_cnx->peer_addr_text;
             }
 
-            transport->logger.log(LogLevel::info, log_msg.str());
+            transport->logger->info << std::flush;
 
             picoquic_set_callback(cnx, NULL, NULL);
             picoquic_close(cnx, 0);
@@ -205,10 +201,11 @@ pq_event_cb(picoquic_cnx_t* cnx,
             else {
                 // Client
                 transport->setStatus(TransportStatus::Ready);
-                log_msg << "Connection established to server " << stream_cnx->peer_addr_text
-                        << " stream_id: " << stream_id;
+                transport->logger->info << "Connection established to server "
+                                        << stream_cnx->peer_addr_text
+                                        << " stream_id: " << stream_id
+                                        << std::flush;
                 transport->on_connection_status(stream_cnx, TransportStatus::Ready);
-                transport->logger.log(LogLevel::info, log_msg.str());
             }
 
             break;
@@ -221,9 +218,7 @@ pq_event_cb(picoquic_cnx_t* cnx,
         }
 
         default:
-            log_msg.str("");
-            log_msg << "Got event " << fin_or_event;
-            transport->logger.log(LogLevel::debug, log_msg.str());
+            LOGGER_DEBUG(transport->logger, "Got event " << fin_or_event);
             break;
     }
 
@@ -252,7 +247,7 @@ pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode, void* ca
         switch (cb_mode) {
             case picoquic_packet_loop_ready: {
                 log_msg << "packet_loop_ready, waiting for packets";
-                transport->logger.log(LogLevel::info, log_msg.str());
+                transport->logger->info << log_msg.str() << std::flush;
 
                 if (transport->_is_server_mode)
                     transport->setStatus(TransportStatus::Ready);
@@ -277,7 +272,7 @@ pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode, void* ca
 
             case picoquic_packet_loop_port_update:
                 log_msg << "packet_loop_port_update";
-                transport->logger.log(LogLevel::debug, log_msg.str());
+                LOGGER_DEBUG(transport->logger, log_msg.str());
                 break;
 
             case picoquic_packet_loop_time_check: {
@@ -302,8 +297,7 @@ pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode, void* ca
                 if (transport->debug && targ->current_time - prev_time > 500000) {
 
                     if (transport->metrics != prev_metrics) {
-                        std::ostringstream log_msg;
-                        log_msg << "Metrics: " << std::endl
+                        LOGGER_DEBUG(transport->logger, "Metrics: " << std::endl
                                 << "   time checks        : " << transport->metrics.time_checks << std::endl
                                 << "   enqueued_objs      : " << transport->metrics.enqueued_objs << std::endl
                                 << "   send with null ctx : " << transport->metrics.send_null_bytes_ctx << std::endl
@@ -323,9 +317,7 @@ pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode, void* ca
                                 << "   stream_bytes_sent  : " << transport->metrics.stream_bytes_sent << std::endl
                                 << "   stream_rx_callbacks: " << transport->metrics.stream_rx_callbacks << std::endl
                                 << "   stream_objects_recv: " << transport->metrics.stream_objects_recv << std::endl
-                                << "   stream_bytes_recv  : " << transport->metrics.stream_bytes_recv << std::endl;
-
-                        transport->logger.log(LogLevel::debug, log_msg.str());
+                                << "   stream_bytes_recv  : " << transport->metrics.stream_bytes_recv << std::endl);
                         prev_metrics = transport->metrics;
                     }
 
@@ -334,13 +326,12 @@ pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode, void* ca
 
                 // Stop loop if shutting down
                 if (transport->status() == TransportStatus::Shutdown) {
-                    transport->logger.log(LogLevel::info, "picoquic is shutting down");
+                    transport->logger->Log("picoquic is shutting down");
 
                     picoquic_cnx_t* close_cnx = picoquic_get_first_cnx(quic);
                     while (close_cnx != NULL) {
-                        log_msg.str("");
-                        log_msg << "Closing connection id " << reinterpret_cast<uint64_t>(close_cnx);
-                        transport->logger.log(LogLevel::info, log_msg.str());
+                        transport->logger->info << "Closing connection id " << reinterpret_cast<uint64_t>(close_cnx)
+                                                << std::flush;
                         picoquic_close(close_cnx, 0);
                         close_cnx = picoquic_get_next_cnx(close_cnx);
                     }
@@ -353,7 +344,8 @@ pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode, void* ca
 
             default:
                 //ret = PICOQUIC_ERROR_UNEXPECTED_ERROR;
-                transport->logger.log(LogLevel::warn, "pq_loop_cb() does not implement " + std::to_string(cb_mode));
+                transport->logger->warning << "pq_loop_cb() does not implement " + std::to_string(cb_mode)
+                                           << std::flush;
                 break;
         }
     }
@@ -364,9 +356,7 @@ pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode, void* ca
 void
 PicoQuicTransport::deleteStreamContext(const TransportContextId& context_id, const StreamId& stream_id)
 {
-    std::ostringstream log_msg;
-    log_msg << "Delete stream context for id: " << stream_id;
-    logger.log(LogLevel::info, log_msg.str());
+    logger->info << "Delete stream context for id: " << stream_id << std::flush;
 
     std::lock_guard<std::mutex> lock(_state_mutex);
 
@@ -470,8 +460,9 @@ PicoQuicTransport::PicoQuicTransport(const TransportRemote& server,
                                      const TransportConfig& tcfg,
                                      TransportDelegate& delegate,
                                      bool _is_server_mode,
-                                     LogHandler& logger)
-  : logger(logger)
+                                     const cantina::LoggerPointer& logger)
+  : logger(std::make_shared<cantina::Logger>("QUIC", logger))
+  , opened_logging_fds(false)
   , _is_server_mode(_is_server_mode)
   , stop(false)
   , transportStatus(TransportStatus::Connecting)
@@ -514,7 +505,7 @@ PicoQuicTransport::shutdown()
     stop = true;
 
     if (picoQuicThread.joinable()) {
-        logger.log(LogLevel::info, "Closing transport pico thread");
+        logger->Log("Closing transport pico thread");
         picoQuicThread.join();
     }
 
@@ -522,14 +513,42 @@ PicoQuicTransport::shutdown()
     cbNotifyQueue.stop_waiting();
 
     if (cbNotifyThread.joinable()) {
-        logger.log(LogLevel::info, "Closing transport callback notifier thread");
+        logger->Log("Closing transport callback notifier thread");
         cbNotifyThread.join();
     }
 
     _tick_service.reset();
-    logger.log(LogLevel::info, "done closing transport threads");
+    logger->Log("done closing transport threads");
 
     picoquic_config_clear(&config);
+
+    // Cleanup picoquic logging thread and descriptors
+    if (opened_logging_fds)
+    {
+        std::uint8_t zero{};
+
+        // Ensure no logs are directed to logging streams
+        debug_set_stream(stdout);
+
+        // Wake up the thread waiting on logging pipe fd by writing zero octet
+        write(logging_fds[1], &zero, 1);
+
+        // Wait for the thread to end
+        if (logging_thread.joinable()) {
+            logger->Log("Shutting down logging thread");
+            logging_thread.join();
+        }
+
+        // Close the logfp (this will close logging_fds[1])
+        fclose(logfp);
+
+        // Close logging file descriptors
+        close(logging_fds[0]);
+        close(logging_fds[1]); // redundant
+
+        // Clear the flag indicating open fds
+        opened_logging_fds = false;
+    }
 }
 
 TransportStatus
@@ -582,7 +601,38 @@ PicoQuicTransport::start()
     uint64_t current_time = picoquic_current_time();
 
     if (debug) {
-        debug_set_stream(stdout); // Enable picoquic debug
+        if (!opened_logging_fds)
+        {
+            // Open pipe for reading and writing
+            if (pipe(logging_fds) == 0) {
+                opened_logging_fds = true;
+
+                // Create a FILE object to provide to picoquic
+                logfp = fdopen(logging_fds[1], "w");
+                if (logfp) {
+                    logging_thread =
+                        std::thread(&PicoQuicTransport::PicoQuicLogging, this);
+                    debug_set_stream(logfp); // Enable picoquic debug to logfp
+                } else {
+                    logger->error << "fdopen() failed for pipe" << std::flush;
+
+                    // Close logging file descriptors
+                    close(logging_fds[0]);
+                    close(logging_fds[1]);
+                    opened_logging_fds = false;
+                }
+            }
+            else
+            {
+                logger->error << "Failed to open pipe for picoquic logging"
+                              << std::flush;
+                close(logging_fds[0]);
+                close(logging_fds[1]);
+            }
+        }
+
+        // If no other place to direct logs, send them to stdout
+        if (!opened_logging_fds) debug_set_stream(stdout);
     }
 
     (void) picoquic_config_set_option(&config, picoquic_option_CC_ALGO, "bbr");
@@ -591,7 +641,8 @@ PicoQuicTransport::start()
     quic_ctx = picoquic_create_and_configure(&config, pq_event_cb, this, current_time, NULL);
 
     if (quic_ctx == NULL) {
-        logger.log(LogLevel::fatal, "Unable to create picoquic context, check certificate and key filenames");
+        logger->critical << "Unable to create picoquic context, check certificate and key filenames"
+                         << std::flush;
         throw PicoQuicException("Unable to create picoquic context");
     }
 
@@ -622,20 +673,72 @@ PicoQuicTransport::start()
 
     if (_is_server_mode) {
 
-        log_msg << "Starting server, listening on " << serverInfo.host_or_ip << ':' << serverInfo.port;
-        logger.log(LogLevel::info, log_msg.str());
+        logger->info << "Starting server, listening on " << serverInfo.host_or_ip << ':' << serverInfo.port
+                     << std::flush;
 
         picoQuicThread = std::thread(&PicoQuicTransport::server, this);
 
     } else {
-        log_msg << "Connecting to server " << serverInfo.host_or_ip << ':' << serverInfo.port;
-        logger.log(LogLevel::info, log_msg.str());
+        logger->info << "Connecting to server " << serverInfo.host_or_ip << ':' << serverInfo.port
+                     << std::flush;
 
         cid = createClient();
         picoQuicThread = std::thread(&PicoQuicTransport::client, this, cid);
     }
 
     return cid;
+}
+
+void PicoQuicTransport::PicoQuicLogging()
+{
+    std::array<char, 1024> buffer;
+    ssize_t octets_read;
+    fd_set pipe_fds;
+
+    cantina::LoggerPointer pico_logger =
+        std::make_shared<cantina::Logger>("PQIC", logger);
+
+    while (!stop) {
+        // Prepare file descriptor to read
+        FD_ZERO(&pipe_fds);
+        FD_SET(logging_fds[0], &pipe_fds);
+
+        // Wait until something is ready to read
+        if (select(logging_fds[0] + 1,
+                    &pipe_fds,
+                    nullptr,
+                    nullptr,
+                    nullptr) == -1) {
+            pico_logger->error << "Select for logging failed" << std::flush;
+            // Set picoquic debug to stdout
+            debug_set_stream(stdout);
+            break;
+        }
+
+        // Told to stop?
+        if (stop) break;
+
+        // Data to read?
+        if (FD_ISSET(logging_fds[0], &pipe_fds)) {
+            octets_read = read(logging_fds[0], buffer.data(), buffer.size());
+            if (octets_read > 0)
+            {
+                for (std::size_t i = 0; i < octets_read; i++) {
+                    switch (buffer[i]) {
+                        case '\n':
+                            pico_logger->info << std::flush;
+                            break;
+                        case '\0':
+                            // Do not output null characters
+                            break;
+                        default:
+                            pico_logger->info << buffer[i];
+                            break;
+                    }
+                }
+            }
+        }
+    }
 }
 
 void PicoQuicTransport::pq_runner() {
@@ -648,18 +751,18 @@ void PicoQuicTransport::pq_runner() {
 void
 PicoQuicTransport::cbNotifier()
 {
-    logger.log(LogLevel::info, "Starting transport callback notifier thread");
+    logger->Log("Starting transport callback notifier thread");
 
     while (not stop) {
         auto cb = std::move(cbNotifyQueue.block_pop());
         if (cb) {
             (*cb)();
         } else {
-            logger.log(LogLevel::info, "Notify callback is NULL");
+            logger->Log("Notify callback is NULL");
         }
     }
 
-    logger.log(LogLevel::info, "Done with transport callback notifier thread");
+    logger->Log("Done with transport callback notifier thread");
 }
 
 void
@@ -667,15 +770,12 @@ PicoQuicTransport::server()
 {
     int ret = picoquic_packet_loop(quic_ctx, serverInfo.port, 0, 0, 2000000, 0, pq_loop_cb, this);
 
-    std::ostringstream log_msg;
-
     if (quic_ctx != NULL) {
         picoquic_free(quic_ctx);
         quic_ctx = NULL;
     }
 
-    log_msg << "picoquic packet loop ended with " << ret;
-    logger.log(LogLevel::info, log_msg.str());
+    logger->info << "picoquic packet loop ended with " << ret << std::flush;
 
     setStatus(TransportStatus::Shutdown);
 }
@@ -692,10 +792,8 @@ PicoQuicTransport::createClient()
 
     ret = picoquic_get_server_address(serverInfo.host_or_ip.c_str(), serverInfo.port, &server_address, &is_name);
     if (ret != 0) {
-        log_msg.str("");
-        log_msg << "Failed to get server: " << serverInfo.host_or_ip << " port: " << serverInfo.port;
-        logger.log(LogLevel::error, log_msg.str());
-
+        logger->error << "Failed to get server: " << serverInfo.host_or_ip << " port: " << serverInfo.port
+                      << std::flush;
     } else if (is_name) {
         sni = serverInfo.host_or_ip.c_str();
     }
@@ -715,7 +813,7 @@ PicoQuicTransport::createClient()
                                               1);
 
     if (cnx == NULL) {
-        logger.log(LogLevel::error, "Could not create picoquic connection client context");
+        logger->Log(cantina::LogLevel::Error, "Could not create picoquic connection client context");
         return 0;
     }
 
@@ -731,15 +829,14 @@ void
 PicoQuicTransport::client(const TransportContextId tcid)
 {
     int ret;
-    std::ostringstream log_msg;
 
     picoquic_cnx_t* cnx = active_streams[tcid][0].cnx;
 
-    log_msg << "Thread client packet loop for client context_id: " << tcid;
-    logger.log(LogLevel::info, log_msg.str());
+    logger->info << "Thread client packet loop for client context_id: " << tcid
+                 << std::flush;
 
     if (cnx == NULL) {
-        logger.log(LogLevel::error, "Could not create picoquic connection client context");
+        logger->Log(cantina::LogLevel::Error, "Could not create picoquic connection client context");
     } else {
         picoquic_set_callback(cnx, pq_event_cb, this);
 
@@ -747,15 +844,13 @@ PicoQuicTransport::client(const TransportContextId tcid)
 
         ret = picoquic_start_client_cnx(cnx);
         if (ret < 0) {
-            logger.log(LogLevel::error, "Could not activate connection");
+            logger->Log(cantina::LogLevel::Error, "Could not activate connection");
             return;
         }
 
         ret = picoquic_packet_loop(quic_ctx, 0, AF_INET, 0, 2000000, 0, pq_loop_cb, this);
 
-        log_msg.str("");
-        log_msg << "picoquic ended with " << ret;
-        logger.log(LogLevel::info, log_msg.str());
+        logger->info << "picoquic ended with " << ret << std::flush;
     }
 
     if (quic_ctx != NULL) {
@@ -824,10 +919,9 @@ PicoQuicTransport::send_next_datagram(StreamContext* stream_cnx, uint8_t* bytes_
             metrics.dgram_sent++;
 
             if (delta_ms > 40) {
-                logger.log(LogLevel::info, "CB delta "
-                            + std::to_string(delta_ms)
-                            + "ms queue_size: "
-                            + std::to_string(stream_cnx->tx_data->size()));
+                logger->info << "CB delta "
+                            << delta_ms << " ms queue_size: "
+                            <<stream_cnx->tx_data->size();
             }
 
             uint8_t* buf = NULL;
@@ -871,9 +965,8 @@ PicoQuicTransport::send_stream_bytes(StreamContext* stream_cnx, uint8_t* bytes_c
 
         if (max_len < 5) {
             // Not enough bytes to send
-            logger.log(LogLevel::info, (std::ostringstream()
-                                        << "Not enough bytes to send stream size header sid: "
-                                        << stream_cnx->stream_id).str());
+            logger->info << "Not enough bytes to send stream size header sid: "
+                         << stream_cnx->stream_id << std::flush;
             return;
         }
 
@@ -1035,12 +1128,9 @@ PicoQuicTransport::on_connection_status(PicoQuicTransport::StreamContext* stream
 void
 PicoQuicTransport::on_new_connection(StreamContext* stream_cnx)
 {
-    std::ostringstream log_msg;
-
-    log_msg << "New Connection " << stream_cnx->peer_addr_text << ":" << stream_cnx->peer_port
-            << " conn_ctx: " << reinterpret_cast<uint64_t>(stream_cnx->cnx) << " stream_id: " << stream_cnx->stream_id;
-
-    logger.log(LogLevel::info, log_msg.str());
+    logger->info << "New Connection " << stream_cnx->peer_addr_text << ":" << stream_cnx->peer_port
+                 << " conn_ctx: " << reinterpret_cast<uint64_t>(stream_cnx->cnx) << " stream_id: " << stream_cnx->stream_id
+                 << std::flush;
 
     TransportRemote remote{ .host_or_ip = stream_cnx->peer_addr_text,
                             .port = stream_cnx->peer_port,
@@ -1055,7 +1145,7 @@ void
 PicoQuicTransport::on_recv_datagram(StreamContext* stream_cnx, uint8_t* bytes, size_t length)
 {
     if (stream_cnx == NULL || length == 0) {
-        logger.log(LogLevel::warn, "On receive datagram has null context");
+        logger->Log(cantina::LogLevel::Warning, "On receive datagram has null context");
         return;
     }
 
@@ -1063,9 +1153,8 @@ PicoQuicTransport::on_recv_datagram(StreamContext* stream_cnx, uint8_t* bytes, s
     stream_cnx->rx_data->push(std::move(data));
 
     if (cbNotifyQueue.size() > 200) {
-        logger.log(LogLevel::info, (std::ostringstream()
-                                    << "on_recv_datagram cbNotifyQueue size"
-                                    << cbNotifyQueue.size()).str());
+        logger->info << "on_recv_datagram cbNotifyQueue size"
+                     << cbNotifyQueue.size() << std::flush;
     }
 
     if (stream_cnx->rx_data->size() < 2 || stream_cnx->in_data_cb_skip_count > 30) {
@@ -1082,7 +1171,7 @@ PicoQuicTransport::on_recv_datagram(StreamContext* stream_cnx, uint8_t* bytes, s
 void PicoQuicTransport::on_recv_stream_bytes(StreamContext* stream_cnx, uint8_t* bytes, size_t length)
 {
     if (stream_cnx == NULL || length == 0) {
-        logger.log(LogLevel::warn, "on_recv_stream_bytes has null context");
+        logger->Log(cantina::LogLevel::Warning, "on_recv_stream_bytes has null context");
         return;
     }
 
@@ -1090,9 +1179,8 @@ void PicoQuicTransport::on_recv_stream_bytes(StreamContext* stream_cnx, uint8_t*
 
     if (stream_cnx->stream_rx_object == nullptr) {
         if (length < 5) {
-            logger.log(LogLevel::warn, (std::ostringstream()
-                                        << "on_recv_stream_bytes " << length << " < 5 cannot process sid: "
-                                        << std::to_string(stream_cnx->stream_id)).str());
+            logger->warning <<  "on_recv_stream_bytes is less than 5, cannot process sid: "
+                            << std::to_string(stream_cnx->stream_id) << std::flush;
 
             // TODO: Should reset stream in this case
             return;
@@ -1104,10 +1192,10 @@ void PicoQuicTransport::on_recv_stream_bytes(StreamContext* stream_cnx, uint8_t*
         length -= 4;
 
         if (stream_cnx->stream_rx_object_size > 40000000) { // Safety check
-            logger.log(LogLevel::warn, (std::ostringstream()
-                                        << "on_recv_stream_bytes sid: " << stream_cnx->stream_id
-                                        << " data length is too large: "
-                                        << std::to_string(stream_cnx->stream_rx_object_size)).str());
+            logger->warning << "on_recv_stream_bytes sid: " << stream_cnx->stream_id
+                            << " data length is too large: "
+                            << std::to_string(stream_cnx->stream_rx_object_size)
+                            << std::flush;
             stream_cnx->stream_rx_object_size = 0;
 
             // TODO: Should reset stream in this case
@@ -1168,10 +1256,9 @@ void PicoQuicTransport::on_recv_stream_bytes(StreamContext* stream_cnx, uint8_t*
 
         bool too_many_in_queue = false;
         if (cbNotifyQueue.size() > 200) {
-            logger.log(LogLevel::warn, (std::ostringstream()
-                                        << "on_recv_stream_bytes sid: " << stream_cnx->stream_id
-                                        << "cbNotifyQueue size" << cbNotifyQueue.size()).str());
-
+            logger->warning << "on_recv_stream_bytes sid: " << stream_cnx->stream_id
+                            << "cbNotifyQueue size" << cbNotifyQueue.size()
+                            << std::flush;
         }
 
         if (too_many_in_queue || stream_cnx->rx_data->size() < 2 || stream_cnx->in_data_cb_skip_count > 30) {
@@ -1186,8 +1273,7 @@ void PicoQuicTransport::on_recv_stream_bytes(StreamContext* stream_cnx, uint8_t*
     }
 
     if (length > 0) {
-        logger.log(LogLevel::info, (std::ostringstream()
-                                     << "on_stream_bytes has remaining bytes: " << length).str());
+        logger->info << "on_stream_bytes has remaining bytes: " << length << std::flush;
         on_recv_stream_bytes(stream_cnx, bytes, length);
     }
 }

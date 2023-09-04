@@ -1,5 +1,10 @@
-add_executable(server echoServer.cc cmdLogger.cpp)
-target_link_libraries(server PRIVATE quicr-transport picotls-core picotls-openssl)
+add_executable(server echoServer.cc)
+target_link_libraries(server
+    PRIVATE
+        cantina::logger
+        quicr-transport
+        picotls-core
+        picotls-openssl)
 
 target_compile_options(server
         PRIVATE
@@ -12,8 +17,13 @@ set_target_properties(server
         CXX_EXTENSIONS ON)
 
 
-add_executable(client client.cc cmdLogger.cpp)
-target_link_libraries(client PRIVATE quicr-transport picotls-core picotls-openssl)
+add_executable(client client.cc)
+target_link_libraries(client
+    PRIVATE
+        cantina::logger
+        quicr-transport
+        picotls-core
+        picotls-openssl)
 
 target_compile_options(client
         PRIVATE

@@ -3,8 +3,8 @@
 #include <sstream>
 #include <thread>
 
-#include "cmdLogger.h"
 #include <transport/transport.h>
+#include <cantina/logger.h>
 
 using namespace qtransport;
 
@@ -12,10 +12,14 @@ struct Delegate : public ITransport::TransportDelegate {
 private:
   std::shared_ptr<ITransport> server;
   uint64_t msgcount;
-  cmdLogger &logger;
+  cantina::LoggerPointer logger;
 
 public:
-  Delegate(cmdLogger &logger) : logger(logger) { msgcount = 0; }
+  Delegate(const cantina::LoggerPointer& logger)
+    : logger(std::make_shared<cantina::Logger>("ECHO", logger))
+  {
+      msgcount = 0;
+  }
 
   void stop() {
       server.reset();
@@ -27,24 +31,18 @@ public:
 
   void on_connection_status(const TransportContextId &context_id,
                             const TransportStatus status) {
-    std::stringstream s_log;
-    s_log << "Connection state change context: " << context_id << ", "
-          << int(status);
-    logger.log(LogLevel::info, s_log.str());
+    logger->info << "Connection state change context: " << context_id << ", "
+                 << int(status) << std::flush;
   }
 
   void on_new_connection(const TransportContextId &context_id,
                          const TransportRemote &remote) {
-    std::stringstream s_log;
-    s_log << "New connection cid: " << context_id << " from "
-          << remote.host_or_ip << ":" << remote.port;
-    logger.log(LogLevel::info, s_log.str());
+    logger->info << "New connection cid: " << context_id << " from "
+                 << remote.host_or_ip << ":" << remote.port << std::flush;
   }
 
   void on_recv_notify(const TransportContextId &context_id,
                       const StreamId &streamId) {
-    std::stringstream s_log;
-
     static uint32_t prev_msg_num = 0;
 
     while (true) {
@@ -56,12 +54,10 @@ public:
         uint32_t *msg_num = (uint32_t *)data->data();
 
         if (prev_msg_num && (*msg_num - prev_msg_num) > 1) {
-            s_log.str(std::string());
-            s_log << "cid: " << context_id << " sid: " << streamId << "  length: " << data->size() << "  RecvMsg ("
-                  << msgcount << ")"
-                  << "  msg_num: " << *msg_num
-                  << "  prev_num: " << prev_msg_num << "(" << *msg_num - prev_msg_num << ")";
-            logger.log(LogLevel::info, s_log.str());
+            logger->info << "cid: " << context_id << " sid: " << streamId << "  length: " << data->size()
+                         << "  RecvMsg (" << msgcount << ")"
+                         << "  msg_num: " << *msg_num << "  prev_num: " << prev_msg_num << "("
+                         << *msg_num - prev_msg_num << ")" << std::flush;
         }
 
         prev_msg_num = *msg_num;
@@ -79,7 +75,7 @@ public:
 
 int main() {
   char *envVar;
-  cmdLogger logger;
+  cantina::LoggerPointer logger = std::make_shared<cantina::Logger>("ECHO");
   Delegate d(logger);
   TransportRemote serverIp =
       TransportRemote{"127.0.0.1", 1234, TransportProtocol::QUIC};
