@@ -72,7 +72,7 @@ class PicoQuicTransport : public ITransport
         size_t stream_tx_object_offset{0};                   /// Pointer offset to next byte to send
 
         uint8_t* stream_rx_object {nullptr};                 /// Current object that is being received via byte stream
-        uint32_t stream_rx_object_size;                      /// Receive object data size to append up to before sending to app
+        uint32_t stream_rx_object_size {0};                      /// Receive object data size to append up to before sending to app
         size_t stream_rx_object_offset{0};                   /// Pointer offset to next byte to append
 
     };

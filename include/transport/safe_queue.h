@@ -8,6 +8,7 @@
 #include <queue>
 #include <unistd.h>
 #include <condition_variable>
+#include <iostream>
 
 namespace qtransport {
 
@@ -53,14 +54,14 @@ public:
   {
     bool rval = true;
 
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard<std::mutex> _(mutex);
 
     if (queue.empty())
       cv.notify_one();
 
     else if (queue.size() >= _limit) { // Make room by removing first element
-      queue.pop();
-      rval = false;
+     queue.pop();
+     rval = false;
     }
 
     queue.push(elem);
@@ -75,8 +76,7 @@ public:
    */
   std::optional<T> pop()
   {
-    std::lock_guard<std::mutex> lock(mutex);
-
+    std::lock_guard<std::mutex> _(mutex);
     return pop_internal();
   }
 
@@ -87,7 +87,7 @@ public:
     */
   std::optional<T> front()
   {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard<std::mutex> _(mutex);
 
     if (queue.empty()) {
       return std::nullopt;
@@ -102,7 +102,7 @@ public:
   */
   void pop_front()
   {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard<std::mutex> _(mutex);
 
     pop_front_internal();
   }
@@ -138,7 +138,7 @@ public:
    */
   size_t size()
   {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard<std::mutex> _(mutex);
     return queue.size();
   }
 
@@ -156,14 +156,14 @@ public:
    */
   void stop_waiting()
   {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard<std::mutex> _(mutex);
     _stop_waiting = true;
     cv.notify_all();
   }
 
   void set_limit(uint32_t limit)
   {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard<std::mutex> _(mutex);
     _limit = limit;
   }
 

@@ -132,11 +132,13 @@ pq_event_cb(picoquic_cnx_t* cnx,
         case picoquic_callback_stream_fin:
             is_fin = true;
             // fall through to picoquic_callback_stream_data
+
         case picoquic_callback_stream_data: {
             transport->metrics.stream_rx_callbacks++;
 
             if (stream_cnx == NULL) {
                 stream_cnx = transport->createStreamContext(cnx, stream_id);
+                picoquic_set_app_stream_ctx(cnx, stream_id, stream_cnx);
             }
             // length is the amount of data received
             transport->on_recv_stream_bytes(stream_cnx, bytes, length);
@@ -443,10 +445,6 @@ PicoQuicTransport::createStreamContext(picoquic_cnx_t* cnx, uint64_t stream_id)
             break;
     }
 
-    picoquic_runner_queue.push([=]() {
-        picoquic_set_app_stream_ctx(cnx, stream_id, stream_cnx);
-    });
-
     if (stream_id) {
         picoquic_runner_queue.push([=, this]() {
                 picoquic_mark_active_stream(cnx, stream_id, 1, stream_cnx);
@@ -587,6 +585,7 @@ PicoQuicTransport::createStream(const TransportContextId& context_id,
     PicoQuicTransport::StreamContext* stream_cnx = createStreamContext(cnx_stream_iter->second.cnx, next_stream_id);
 
     picoquic_runner_queue.push([=, this]() {
+        picoquic_set_app_stream_ctx(cnx_stream_iter->second.cnx, next_stream_id, stream_cnx);
         picoquic_set_stream_priority(cnx_stream_iter->second.cnx, next_stream_id, priority);
     });
 
@@ -1161,6 +1160,8 @@ PicoQuicTransport::on_recv_datagram(StreamContext* stream_cnx, uint8_t* bytes, s
 
 void PicoQuicTransport::on_recv_stream_bytes(StreamContext* stream_cnx, uint8_t* bytes, size_t length)
 {
+    uint8_t *bytes_p = bytes;
+
     if (stream_cnx == NULL || length == 0) {
         logger->Log(cantina::LogLevel::Warning, "on_recv_stream_bytes has null context");
         return;
@@ -1168,7 +1169,7 @@ void PicoQuicTransport::on_recv_stream_bytes(StreamContext* stream_cnx, uint8_t*
 
     bool object_complete = false;
 
-    if (stream_cnx->stream_rx_object == nullptr) {
+    if (stream_cnx->stream_rx_object == nullptr || stream_cnx->stream_rx_object_size == 0) {
         if (length < 5) {
             logger->warning <<  "on_recv_stream_bytes is less than 5, cannot process sid: "
                             << std::to_string(stream_cnx->stream_id) << std::flush;
@@ -1178,8 +1179,8 @@ void PicoQuicTransport::on_recv_stream_bytes(StreamContext* stream_cnx, uint8_t*
         }
 
         // Start of new object being received is the 4 byte length value
-        std::memcpy(&stream_cnx->stream_rx_object_size, bytes, 4);
-        bytes += 4;
+        std::memcpy(&stream_cnx->stream_rx_object_size, bytes_p, 4);
+        bytes_p += 4;
         length -= 4;
 
         if (stream_cnx->stream_rx_object_size > 40000000) { // Safety check
@@ -1187,7 +1188,6 @@ void PicoQuicTransport::on_recv_stream_bytes(StreamContext* stream_cnx, uint8_t*
                             << " data length is too large: "
                             << std::to_string(stream_cnx->stream_rx_object_size)
                             << std::flush;
-            stream_cnx->stream_rx_object_size = 0;
 
             // TODO: Should reset stream in this case
             return;
@@ -1196,19 +1196,24 @@ void PicoQuicTransport::on_recv_stream_bytes(StreamContext* stream_cnx, uint8_t*
         if (stream_cnx->stream_rx_object_size <= length) {
             object_complete = true;
 
-            std::vector<uint8_t> data(bytes, bytes + stream_cnx->stream_rx_object_size);
+            std::vector<uint8_t> data(bytes_p, bytes_p + stream_cnx->stream_rx_object_size);
             stream_cnx->rx_data->push(std::move(data));
 
-            bytes += stream_cnx->stream_rx_object_size;
+            bytes_p += stream_cnx->stream_rx_object_size;
             length -= stream_cnx->stream_rx_object_size;
+
             metrics.stream_bytes_recv += stream_cnx->stream_rx_object_size;
+
+            stream_cnx->stream_rx_object_size = 0;
+            stream_cnx->stream_rx_object_offset = 0;
         }
         else {
             // Need to wait for more data, create new object buffer
             stream_cnx->stream_rx_object = new uint8_t[stream_cnx->stream_rx_object_size];
 
             stream_cnx->stream_rx_object_offset = length;
-            std::memcpy(stream_cnx->stream_rx_object, bytes, length);
+            std::memcpy(stream_cnx->stream_rx_object, bytes_p, length);
+            metrics.stream_bytes_recv += length;
             length = 0;
         }
     }
@@ -1225,8 +1230,8 @@ void PicoQuicTransport::on_recv_stream_bytes(StreamContext* stream_cnx, uint8_t*
 
         metrics.stream_bytes_recv += remaining_len;
 
-        std::memcpy(stream_cnx->stream_rx_object + stream_cnx->stream_rx_object_offset, bytes, remaining_len);
-        bytes += remaining_len;
+        std::memcpy(stream_cnx->stream_rx_object + stream_cnx->stream_rx_object_offset, bytes_p, remaining_len);
+        bytes_p += remaining_len;
 
         if (object_complete) {
             std::vector<uint8_t> data(stream_cnx->stream_rx_object, stream_cnx->stream_rx_object + stream_cnx->stream_rx_object_size);
@@ -1252,7 +1257,7 @@ void PicoQuicTransport::on_recv_stream_bytes(StreamContext* stream_cnx, uint8_t*
                             << std::flush;
         }
 
-        if (too_many_in_queue || stream_cnx->rx_data->size() < 2 || stream_cnx->in_data_cb_skip_count > 30) {
+        if (too_many_in_queue || stream_cnx->rx_data->size() < 4 || stream_cnx->in_data_cb_skip_count > 30) {
             stream_cnx->in_data_cb_skip_count = 0;
             TransportContextId context_id = stream_cnx->context_id;
             StreamId stream_id = stream_cnx->stream_id;
@@ -1264,7 +1269,7 @@ void PicoQuicTransport::on_recv_stream_bytes(StreamContext* stream_cnx, uint8_t*
     }
 
     if (length > 0) {
-        logger->info << "on_stream_bytes has remaining bytes: " << length << std::flush;
-        on_recv_stream_bytes(stream_cnx, bytes, length);
+        logger->debug << "on_stream_bytes has remaining bytes: " << length << std::flush;
+        on_recv_stream_bytes(stream_cnx, bytes_p, length);
     }
 }
