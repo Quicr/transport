@@ -95,6 +95,15 @@ class PicoQuicTransport : public ITransport
         using Exception::Exception;
     };
 
+    static void PicoQuicLogging(const char *message, void *argp)
+    {
+      auto instance = reinterpret_cast<PicoQuicTransport *>(argp);
+      if (!instance->stop && instance->picoquic_logger)
+      {
+        instance->picoquic_logger->Log(message);
+      }
+    }
+
   public:
     PicoQuicTransport(const TransportRemote& server,
                       const TransportConfig& tcfg,
@@ -166,18 +175,13 @@ class PicoQuicTransport : public ITransport
    * Internal Public Variables
      */
     cantina::LoggerPointer logger;
-    int logging_fds[2];
-    bool opened_logging_fds;
-    FILE *logfp;
-    std::function<void()> logging_callback;
-    std::thread logging_thread;
+    cantina::LoggerPointer picoquic_logger;
     bool _is_server_mode;
     bool _is_unidirectional{ false };
     bool debug {false};
 
 
   private:
-    void PicoQuicLogging();
     TransportContextId createClient();
     void shutdown();
 

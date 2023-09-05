@@ -459,7 +459,6 @@ PicoQuicTransport::PicoQuicTransport(const TransportRemote& server,
                                      bool _is_server_mode,
                                      const cantina::LoggerPointer& logger)
   : logger(std::make_shared<cantina::Logger>("QUIC", logger))
-  , opened_logging_fds(false)
   , _is_server_mode(_is_server_mode)
   , stop(false)
   , transportStatus(TransportStatus::Connecting)
@@ -519,32 +518,10 @@ PicoQuicTransport::shutdown()
 
     picoquic_config_clear(&config);
 
-    // Cleanup picoquic logging thread and descriptors
-    if (opened_logging_fds)
-    {
-        std::uint8_t zero{};
-
-        // Ensure no logs are directed to logging streams
-        debug_set_stream(stdout);
-
-        // Wake up the thread waiting on logging pipe fd by writing zero octet
-        write(logging_fds[1], &zero, 1);
-
-        // Wait for the thread to end
-        if (logging_thread.joinable()) {
-            logger->Log("Shutting down logging thread");
-            logging_thread.join();
-        }
-
-        // Close the logfp (this will close logging_fds[1])
-        fclose(logfp);
-
-        // Close logging file descriptors
-        close(logging_fds[0]);
-        close(logging_fds[1]); // redundant
-
-        // Clear the flag indicating open fds
-        opened_logging_fds = false;
+    // If logging picoquic events, stop those
+    if (picoquic_logger) {
+        debug_set_callback(NULL, NULL);
+        picoquic_logger.reset();
     }
 }
 
@@ -599,38 +576,8 @@ PicoQuicTransport::start()
     uint64_t current_time = picoquic_current_time();
 
     if (debug) {
-        if (!opened_logging_fds)
-        {
-            // Open pipe for reading and writing
-            if (pipe(logging_fds) == 0) {
-                opened_logging_fds = true;
-
-                // Create a FILE object to provide to picoquic
-                logfp = fdopen(logging_fds[1], "w");
-                if (logfp) {
-                    logging_thread =
-                        std::thread(&PicoQuicTransport::PicoQuicLogging, this);
-                    debug_set_stream(logfp); // Enable picoquic debug to logfp
-                } else {
-                    logger->error << "fdopen() failed for pipe" << std::flush;
-
-                    // Close logging file descriptors
-                    close(logging_fds[0]);
-                    close(logging_fds[1]);
-                    opened_logging_fds = false;
-                }
-            }
-            else
-            {
-                logger->error << "Failed to open pipe for picoquic logging"
-                              << std::flush;
-                close(logging_fds[0]);
-                close(logging_fds[1]);
-            }
-        }
-
-        // If no other place to direct logs, send them to stdout
-        if (!opened_logging_fds) debug_set_stream(stdout);
+        picoquic_logger = std::make_shared<cantina::Logger>("PQIC", logger);
+        debug_set_callback(&PicoQuicTransport::PicoQuicLogging, this);
     }
 
     (void)picoquic_config_set_option(&config, picoquic_option_CC_ALGO, "bbr");
@@ -685,58 +632,6 @@ PicoQuicTransport::start()
     }
 
     return cid;
-}
-
-void PicoQuicTransport::PicoQuicLogging()
-{
-    std::array<char, 1024> buffer;
-    ssize_t octets_read;
-    fd_set pipe_fds;
-
-    cantina::LoggerPointer pico_logger =
-        std::make_shared<cantina::Logger>("PQIC", logger);
-
-    while (!stop) {
-        // Prepare file descriptor to read
-        FD_ZERO(&pipe_fds);
-        FD_SET(logging_fds[0], &pipe_fds);
-
-        // Wait until something is ready to read
-        if (select(logging_fds[0] + 1,
-                    &pipe_fds,
-                    nullptr,
-                    nullptr,
-                    nullptr) == -1) {
-            pico_logger->error << "Select for logging failed" << std::flush;
-            // Set picoquic debug to stdout
-            debug_set_stream(stdout);
-            break;
-        }
-
-        // Told to stop?
-        if (stop) break;
-
-        // Data to read?
-        if (FD_ISSET(logging_fds[0], &pipe_fds)) {
-            octets_read = read(logging_fds[0], buffer.data(), buffer.size());
-            if (octets_read > 0)
-            {
-                for (std::size_t i = 0; i < octets_read; i++) {
-                    switch (buffer[i]) {
-                        case '\n':
-                            pico_logger->info << std::flush;
-                            break;
-                        case '\0':
-                            // Do not output null characters
-                            break;
-                        default:
-                            pico_logger->info << buffer[i];
-                            break;
-                    }
-                }
-            }
-        }
-    }
 }
 
 void PicoQuicTransport::pq_runner() {
