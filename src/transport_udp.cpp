@@ -550,7 +550,6 @@ UDPTransport::connect_client()
   auto esp_err = esp_pthread_set_cfg(&cfg);
   if(esp_err != ESP_OK) {
     s_log << "esp_pthread_set_cfg failed " << esp_err_to_name(esp_err);
-    logger.log(LogLevel::Info, s_log.str());
     throw std::runtime_error(s_log.str());
   }
   #endif
@@ -561,7 +560,6 @@ UDPTransport::connect_client()
   esp_err = esp_pthread_set_cfg(&cfg);
   if(esp_err != ESP_OK) {
     s_log << "esp_pthread_set_cfg failed " << esp_err_to_name(esp_err);
-    logger.log(LogLevel::Info, s_log.str());
     throw std::runtime_error(s_log.str());
   }
   #endif

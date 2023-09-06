@@ -18,6 +18,7 @@ if (NOT PLATFORM_ESP_IDF)
   find_package(Threads REQUIRED)
   find_package(PkgConfig REQUIRED)
 endif()
+
 ###
 ### Dependencies
 ###
