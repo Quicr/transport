@@ -12,11 +12,12 @@ else()
     option(QTRANSPORT_BUILD_TESTS "Build tests for quicr transport" OFF)
 endif()
 
-option(PLATFORM_ESP_IDF "Enabble suppport for esp-idf (Default OFF" OFF)
+option(PLATFORM_ESP_IDF "Enabble suppport for esp-idf (Default OFF)" OFF)
 
-find_package(Threads REQUIRED)
-find_package(PkgConfig REQUIRED)
-
+if (NOT PLATFORM_ESP_IDF)
+  find_package(Threads REQUIRED)
+  find_package(PkgConfig REQUIRED)
+endif()
 ###
 ### Dependencies
 ###
