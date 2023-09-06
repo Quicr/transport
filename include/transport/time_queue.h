@@ -283,7 +283,7 @@ namespace qtransport {
          * @brief Returns the most valid front of the queue without popping.
          * @returns The front value of the queue, else nullopt
          */
-        [[nodiscard]] std::optional<std::reference_wrapper<T>> front()
+        [[nodiscard]] std::optional<T> front()
         {
             const tick_type ticks = advance();
 

@@ -72,7 +72,7 @@ class PicoQuicTransport : public ITransport
         size_t stream_tx_object_offset{0};                   /// Pointer offset to next byte to send
 
         uint8_t* stream_rx_object {nullptr};                 /// Current object that is being received via byte stream
-        uint32_t stream_rx_object_size;                      /// Receive object data size to append up to before sending to app
+        uint32_t stream_rx_object_size {0};                      /// Receive object data size to append up to before sending to app
         size_t stream_rx_object_offset{0};                   /// Pointer offset to next byte to append
 
     };
@@ -101,7 +101,7 @@ class PicoQuicTransport : public ITransport
                       const TransportConfig& tcfg,
                       TransportDelegate& delegate,
                       bool _is_server_mode,
-                      LogHandler& logger);
+                      const cantina::LoggerPointer& logger);
 
     virtual ~PicoQuicTransport();
 
@@ -166,13 +166,19 @@ class PicoQuicTransport : public ITransport
     /*
    * Internal Public Variables
      */
-    LogHandler& logger;
+    cantina::LoggerPointer logger;
+    int logging_fds[2];
+    bool opened_logging_fds;
+    FILE *logfp;
+    std::function<void()> logging_callback;
+    std::thread logging_thread;
     bool _is_server_mode;
     bool _is_unidirectional{ false };
     bool debug {false};
 
 
   private:
+    void PicoQuicLogging();
     TransportContextId createClient();
     void shutdown();
 

@@ -12,7 +12,6 @@ else()
     option(QTRANSPORT_BUILD_TESTS "Build tests for quicr transport" OFF)
 endif()
 
-option(QUIC_TRANSPORT "Enable QUIC Transport (Default ON)" ON)
 option(PLATFORM_ESP_IDF "Enabble suppport for esp-idf (Default OFF" OFF)
 
 find_package(Threads REQUIRED)
@@ -21,9 +20,7 @@ find_package(PkgConfig REQUIRED)
 ###
 ### Dependencies
 ###
-if (QUIC_TRANSPORT)
-  add_subdirectory(dependencies)
-endif()
+add_subdirectory(dependencies)
 
 ###
 ### Main code
@@ -34,18 +31,21 @@ set (sources
     src/transport_udp.cpp
 )
 
-if (QUIC_TRANSPORT)
+if (NOT PLATFORM_ESP_IDF)
     list(APPEND sources src/transport_picoquic.cpp)
 endif()
 
-
 add_library(quicr-transport ${sources})
 
-if (QUIC_TRANSPORT)
+target_link_libraries(quicr-transport
+    PUBLIC
+    cantina::logger
+)
+
+if (NOT PLATFORM_ESP_IDF)
   target_link_libraries(quicr-transport
           PUBLIC
           picoquic-core)
-   add_compile_definitions(${LIB_NAME} ENABLE_QUIC)       
 endif()          
 
 if (PLATFORM_ESP_IDF)

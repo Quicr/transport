@@ -7,7 +7,7 @@
 #include <vector>
 #include <sys/socket.h>
 
-#include "logger.h"
+#include <cantina/logger.h>
 
 namespace qtransport {
 
@@ -169,7 +169,7 @@ public:
    * @param[in] server			Transport remote server information
    * @param[in] tcfg                    Transport configuration
    * @param[in] delegate		Implemented callback methods
-   * @param[in] logger			Transport log handler
+   * @param[in] logger			Shared pointer to logger
    *
    * @return shared_ptr for the under lining transport.
    */
@@ -177,7 +177,7 @@ public:
     const TransportRemote& server,
     const TransportConfig &tcfg,
     TransportDelegate& delegate,
-    LogHandler& logger);
+    const cantina::LoggerPointer& logger);
 
   /**
    * @brief Create a new server transport based on the remote (server) ip and
@@ -186,7 +186,7 @@ public:
    * @param[in] server			Transport remote server information
    * @param[in] tcfg                    Transport configuration
    * @param[in] delegate		Implemented callback methods
-   * @param[in] logger			Transport log handler
+   * @param[in] logger			Shared pointer to logger
    *
    * @return shared_ptr for the under lining transport.
    */
@@ -194,7 +194,7 @@ public:
     const TransportRemote& server,
     const TransportConfig &tcfg,
     TransportDelegate& delegate,
-    LogHandler& logger);
+    const cantina::LoggerPointer& logger);
 
 public:
   virtual ~ITransport() = default;
