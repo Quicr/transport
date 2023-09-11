@@ -64,8 +64,8 @@ class PicoQuicTransport : public ITransport
         char peer_addr_text[45];
         uint16_t peer_port;
         uint64_t in_data_cb_skip_count {0};                  /// Number of times callback was skipped due to size
-        std::unique_ptr<safe_queue<bytes_t>> rx_data;         /// Pending objects received from the network
-        std::shared_ptr<priority_queue<bytes_t>> tx_data;    /// Pending objects to be written to the network
+        std::unique_ptr<safe_queue<bytes_t>> rx_data;        /// Pending objects received from the network
+        std::unique_ptr<priority_queue<bytes_t>> tx_data;    /// Pending objects to be written to the network
 
         uint8_t* stream_tx_object {nullptr};                 /// Current object that is being sent as a byte stream
         size_t stream_tx_object_size {0};                    /// Size of the tx object
@@ -196,7 +196,6 @@ class PicoQuicTransport : public ITransport
     safe_queue<std::function<void()>> cbNotifyQueue;
 
     safe_queue<std::function<void()>> picoquic_runner_queue;         /// Threads queue functions that picoquic will call via the pq_loop_cb call
-    std::shared_ptr<priority_queue<bytes_t>> _tx_priority_queue;    /// Transmit priority queue used by all streams
 
     std::atomic<bool> stop;
     std::mutex _state_mutex;                                        /// Used for stream/context/state updates
