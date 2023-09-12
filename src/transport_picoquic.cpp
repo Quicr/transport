@@ -636,9 +636,12 @@ PicoQuicTransport::start()
         if (!opened_logging_fds) debug_set_stream(stdout);
     }
 
-    (void) picoquic_config_set_option(&config, picoquic_option_CC_ALGO, "bbr");
+    (void)picoquic_config_set_option(&config, picoquic_option_CC_ALGO, "bbr");
     (void)picoquic_config_set_option(&config, picoquic_option_ALPN, QUICR_ALPN);
+    (void)picoquic_config_set_option(&config, picoquic_option_CWIN_MIN,
+                                     std::to_string(tconfig.quic_cwin_minimum).c_str());
     (void)picoquic_config_set_option(&config, picoquic_option_MAX_CONNECTIONS, "100");
+
     quic_ctx = picoquic_create_and_configure(&config, pq_event_cb, this, current_time, NULL);
 
     if (quic_ctx == NULL) {

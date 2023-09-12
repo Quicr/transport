@@ -76,6 +76,7 @@ struct TransportConfig
   const uint32_t time_queue_bucket_interval {1};        /// The bucket interval in milliseconds
   const uint32_t time_queue_size_rx { 1000 };           /// Receive queue size
   bool debug {false};                                   /// Enable debug logging/processing
+  const uint64_t quic_cwin_minimum { 131072 };          /// QUIC congestion control minimum size (default is 128k)
 };
 
 /**
