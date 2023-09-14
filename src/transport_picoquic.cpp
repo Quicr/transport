@@ -786,7 +786,6 @@ PicoQuicTransport::createClient()
     struct sockaddr_storage server_address;
     char const* sni = "cisco.webex.com";
     int ret;
-    std::ostringstream log_msg;
 
     int is_name = 0;
 
