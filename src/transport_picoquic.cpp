@@ -921,7 +921,7 @@ PicoQuicTransport::send_next_datagram(StreamContext* stream_cnx, uint8_t* bytes_
             if (delta_ms > 40) {
                 logger->info << "CB delta "
                             << delta_ms << " ms queue_size: "
-                            <<stream_cnx->tx_data->size();
+                            <<stream_cnx->tx_data->size() << std::flush;
             }
 
             uint8_t* buf = NULL;
@@ -1145,7 +1145,7 @@ void
 PicoQuicTransport::on_recv_datagram(StreamContext* stream_cnx, uint8_t* bytes, size_t length)
 {
     if (stream_cnx == NULL || length == 0) {
-        logger->Log(cantina::LogLevel::Warning, "On receive datagram has null context");
+        logger->Log(cantina::LogLevel::Debug, "On receive datagram has null context");
         return;
     }
 
@@ -1173,7 +1173,7 @@ void PicoQuicTransport::on_recv_stream_bytes(StreamContext* stream_cnx, uint8_t*
     uint8_t *bytes_p = bytes;
 
     if (stream_cnx == NULL || length == 0) {
-        logger->Log(cantina::LogLevel::Warning, "on_recv_stream_bytes has null context");
+        logger->Log(cantina::LogLevel::Debug, "on_recv_stream_bytes has null context");
         return;
     }
 
