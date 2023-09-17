@@ -386,7 +386,7 @@ PicoQuicTransport::deleteStreamContext(const TransportContextId& context_id, con
         picoquic_mark_active_stream(cnx, stream_id, 0, NULL);
         picoquic_add_to_stream(cnx, stream_id, NULL, 0, 1);
         // TODO: Is this needed if we already set the stream FIN?
-        // picoquic_discard_stream(stream_iter->second.cnx, stream_id, 0);
+        picoquic_discard_stream(stream_iter->second.cnx, stream_id, 0);
     });
 
     (void)stream_contexts.erase(stream_id);
@@ -570,7 +570,7 @@ PicoQuicTransport::createStream(const TransportContextId& context_id,
 {
     const auto& iter = active_streams.find(context_id);
     if (iter == active_streams.end()) {
-        throw std::invalid_argument("Invalid context id, cannot create stream");
+        throw std::invalid_argument("Invalid context id, cannot create stream. context_id = " + std::to_string(context_id));
     }
 
     const auto datagram_stream_id = ::make_datagram_stream_id(_is_server_mode, _is_unidirectional);
@@ -849,6 +849,7 @@ PicoQuicTransport::client(const TransportContextId tcid)
 
         ret = picoquic_packet_loop(quic_ctx, 0, AF_INET, 0, 2000000, 0, pq_loop_cb, this);
 
+        picoquic_close_immediate(cnx);
         logger->info << "picoquic ended with " << ret << std::flush;
     }
 
@@ -918,7 +919,7 @@ PicoQuicTransport::send_next_datagram(StreamContext* stream_cnx, uint8_t* bytes_
             metrics.dgram_sent++;
 
             if (delta_ms > 40) {
-                logger->info << "CB delta "
+                logger->debug << "CB delta "
                             << delta_ms << " ms queue_size: "
                             <<stream_cnx->tx_data->size() << std::flush;
             }
