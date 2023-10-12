@@ -386,7 +386,7 @@ PicoQuicTransport::deleteStreamContext(const TransportContextId& context_id, con
         picoquic_mark_active_stream(cnx, stream_id, 0, NULL);
         picoquic_add_to_stream(cnx, stream_id, NULL, 0, 1);
         // TODO: Is this needed if we already set the stream FIN?
-        // picoquic_discard_stream(stream_iter->second.cnx, stream_id, 0);
+        picoquic_discard_stream(stream_iter->second.cnx, stream_id, 0);
     });
 
     (void)stream_contexts.erase(stream_id);
@@ -417,7 +417,9 @@ PicoQuicTransport::createStreamContext(picoquic_cnx_t* cnx, uint64_t stream_id)
 
     stream_cnx->rx_data = std::make_unique<safe_queue<bytes_t>>(tconfig.time_queue_size_rx);
 
-    stream_cnx->tx_data = _tx_priority_queue;
+    stream_cnx->tx_data = std::make_unique<priority_queue<bytes_t>>(
+      tconfig.time_queue_max_duration, tconfig.time_queue_bucket_interval, _tick_service,
+      tconfig.time_queue_init_queue_size);
 
     sockaddr* addr;
 
@@ -568,7 +570,7 @@ PicoQuicTransport::createStream(const TransportContextId& context_id,
 {
     const auto& iter = active_streams.find(context_id);
     if (iter == active_streams.end()) {
-        throw std::invalid_argument("Invalid context id, cannot create stream");
+        throw std::invalid_argument("Invalid context id, cannot create stream. context_id = " + std::to_string(context_id));
     }
 
     const auto datagram_stream_id = ::make_datagram_stream_id(_is_server_mode, _is_unidirectional);
@@ -634,9 +636,12 @@ PicoQuicTransport::start()
         if (!opened_logging_fds) debug_set_stream(stdout);
     }
 
-    (void) picoquic_config_set_option(&config, picoquic_option_CC_ALGO, "bbr");
+    (void)picoquic_config_set_option(&config, picoquic_option_CC_ALGO, "bbr");
     (void)picoquic_config_set_option(&config, picoquic_option_ALPN, QUICR_ALPN);
+    (void)picoquic_config_set_option(&config, picoquic_option_CWIN_MIN,
+                                     std::to_string(tconfig.quic_cwin_minimum).c_str());
     (void)picoquic_config_set_option(&config, picoquic_option_MAX_CONNECTIONS, "100");
+
     quic_ctx = picoquic_create_and_configure(&config, pq_event_cb, this, current_time, NULL);
 
     if (quic_ctx == NULL) {
@@ -665,10 +670,6 @@ PicoQuicTransport::start()
 
     TransportContextId cid = 0;
     std::ostringstream log_msg;
-
-    _tx_priority_queue = std::make_shared<priority_queue<bytes_t>>(
-            tconfig.time_queue_max_duration, tconfig.time_queue_bucket_interval, _tick_service,
-            tconfig.time_queue_init_queue_size);
 
     if (_is_server_mode) {
 
@@ -848,6 +849,7 @@ PicoQuicTransport::client(const TransportContextId tcid)
 
         ret = picoquic_packet_loop(quic_ctx, 0, AF_INET, 0, 2000000, 0, pq_loop_cb, this);
 
+        picoquic_close_immediate(cnx);
         logger->info << "picoquic ended with " << ret << std::flush;
     }
 
@@ -894,6 +896,11 @@ PicoQuicTransport::close([[maybe_unused]] const TransportContextId& context_id)
 void
 PicoQuicTransport::send_next_datagram(StreamContext* stream_cnx, uint8_t* bytes_ctx, size_t max_len)
 {
+    static auto last_time = std::chrono::steady_clock::now();
+    auto now_time = std::chrono::steady_clock::now();
+    auto delta_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now_time - last_time).count();
+
+
     if (bytes_ctx == NULL) {
         metrics.send_null_bytes_ctx++;
         return;
@@ -904,17 +911,18 @@ PicoQuicTransport::send_next_datagram(StreamContext* stream_cnx, uint8_t* bytes_
         return;
     }
 
-    static auto prev_time = std::chrono::steady_clock::now();
-    auto now_time = std::chrono::steady_clock::now();
-    auto time_diff = std::chrono::duration_cast<std::chrono::milliseconds>(now_time - prev_time).count();
-    prev_time = now_time;
-
     const auto& out_data = stream_cnx->tx_data->front();
     if (out_data.has_value()) {
         if (max_len >= out_data->size()) {
             stream_cnx->tx_data->pop();
 
             metrics.dgram_sent++;
+
+            if (delta_ms > 40) {
+                logger->debug << "CB delta "
+                            << delta_ms << " ms queue_size: "
+                            <<stream_cnx->tx_data->size() << std::flush;
+            }
 
             uint8_t* buf = NULL;
 
@@ -933,6 +941,8 @@ PicoQuicTransport::send_next_datagram(StreamContext* stream_cnx, uint8_t* bytes_
     else {
         picoquic_provide_datagram_buffer_ex(bytes_ctx, 0, picoquic_datagram_not_active);
     }
+
+    last_time = now_time;
 }
 
 void
@@ -1135,7 +1145,7 @@ void
 PicoQuicTransport::on_recv_datagram(StreamContext* stream_cnx, uint8_t* bytes, size_t length)
 {
     if (stream_cnx == NULL || length == 0) {
-        logger->Log(cantina::LogLevel::Warning, "On receive datagram has null context");
+        logger->Log(cantina::LogLevel::Debug, "On receive datagram has null context");
         return;
     }
 
@@ -1163,7 +1173,7 @@ void PicoQuicTransport::on_recv_stream_bytes(StreamContext* stream_cnx, uint8_t*
     uint8_t *bytes_p = bytes;
 
     if (stream_cnx == NULL || length == 0) {
-        logger->Log(cantina::LogLevel::Warning, "on_recv_stream_bytes has null context");
+        logger->Log(cantina::LogLevel::Debug, "on_recv_stream_bytes has null context");
         return;
     }
 
