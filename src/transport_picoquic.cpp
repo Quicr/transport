@@ -9,7 +9,6 @@
 #include <ctime>
 #include <iostream>
 #include <netdb.h>
-#include <sstream>
 #include <thread>
 #include <unistd.h>
 
@@ -106,15 +105,10 @@ pq_event_cb(picoquic_cnx_t* cnx,
             break;
 
         case picoquic_callback_datagram_spurious:
-            // TODO: Add metrics for spurious datagrams
-            // delayed ack
-            // std::cout << "spurious DGRAM length: " << length << std::endl;
             transport->metrics.dgram_spurious++;
             break;
 
         case picoquic_callback_datagram_lost:
-            // TODO: Add metrics for lost datagrams
-            // std::cout << "Lost DGRAM length " << length << std::endl;
             transport->metrics.dgram_lost++;
             break;
 
@@ -175,7 +169,6 @@ pq_event_cb(picoquic_cnx_t* cnx,
             transport->logger->info << std::flush;
 
             picoquic_set_callback(cnx, NULL, NULL);
-            picoquic_close(cnx, 0);
             transport->deleteStreamContext(reinterpret_cast<uint64_t>(cnx), stream_id);
 
             if (not transport->_is_server_mode) {
@@ -296,30 +289,34 @@ pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode, void* ca
 
                 transport->metrics.time_checks++;
 
-                if (transport->debug && targ->current_time - prev_time > 500000) {
-
+                if (transport->debug && targ->current_time - prev_time > 1000000) {
                     if (transport->metrics != prev_metrics) {
-                        LOGGER_DEBUG(transport->logger, "Metrics: " << std::endl
-                                << "   time checks        : " << transport->metrics.time_checks << std::endl
-                                << "   enqueued_objs      : " << transport->metrics.enqueued_objs << std::endl
-                                << "   send with null ctx : " << transport->metrics.send_null_bytes_ctx << std::endl
-                                << "   ----[ Datagrams ] --------------" << std::endl
-                                << "   dgram_recv         : " << transport->metrics.dgram_received << std::endl
-                                << "   dgram_sent         : " << transport->metrics.dgram_sent << std::endl
-                                << "   dgram_prepare_send : " << transport->metrics.dgram_prepare_send << " ("
-                                << transport->metrics.dgram_prepare_send - prev_metrics.dgram_prepare_send << ")"
-                                << std::endl
-                                << "   dgram_lost         : " << transport->metrics.dgram_lost << std::endl
-                                << "   dgram_ack          : " << transport->metrics.dgram_ack << std::endl
-                                << "   dgram_spurious     : " << transport->metrics.dgram_spurious << " ("
-                                << transport->metrics.dgram_spurious + transport->metrics.dgram_ack << ")" << std::endl
-                                << "   ----[ Streams ] --------------" << std::endl
-                                << "   stream_prepare_send: " << transport->metrics.stream_prepare_send << std::endl
-                                << "   stream_objects_sent: " << transport->metrics.stream_objects_sent << std::endl
-                                << "   stream_bytes_sent  : " << transport->metrics.stream_bytes_sent << std::endl
-                                << "   stream_rx_callbacks: " << transport->metrics.stream_rx_callbacks << std::endl
-                                << "   stream_objects_recv: " << transport->metrics.stream_objects_recv << std::endl
-                                << "   stream_bytes_recv  : " << transport->metrics.stream_bytes_recv << std::endl);
+/*
+                        LOGGER_DEBUG(
+                          transport->logger,
+                          "Metrics: "
+                            << std::endl
+                            << "   time checks        : " << transport->metrics.time_checks << std::endl
+                            << "   enqueued_objs      : " << transport->metrics.enqueued_objs << std::endl
+                            << "   send with null ctx : " << transport->metrics.send_null_bytes_ctx << std::endl
+                            << "   ----[ Datagrams ] --------------" << std::endl
+                            << "   dgram_recv         : " << transport->metrics.dgram_received << std::endl
+                            << "   dgram_sent         : " << transport->metrics.dgram_sent << std::endl
+                            << "   dgram_prepare_send : " << transport->metrics.dgram_prepare_send << " ("
+                            << transport->metrics.dgram_prepare_send - prev_metrics.dgram_prepare_send << ")"
+                            << std::endl
+                            << "   dgram_lost         : " << transport->metrics.dgram_lost << std::endl
+                            << "   dgram_ack          : " << transport->metrics.dgram_ack << std::endl
+                            << "   dgram_spurious     : " << transport->metrics.dgram_spurious << " ("
+                            << transport->metrics.dgram_spurious + transport->metrics.dgram_ack << ")" << std::endl
+                            << "   ----[ Streams ] --------------" << std::endl
+                            << "   stream_prepare_send: " << transport->metrics.stream_prepare_send << std::endl
+                            << "   stream_objects_sent: " << transport->metrics.stream_objects_sent << std::endl
+                            << "   stream_bytes_sent  : " << transport->metrics.stream_bytes_sent << std::endl
+                            << "   stream_rx_callbacks: " << transport->metrics.stream_rx_callbacks << std::endl
+                            << "   stream_objects_recv: " << transport->metrics.stream_objects_recv << std::endl
+                            << "   stream_bytes_recv  : " << transport->metrics.stream_bytes_recv << std::endl);
+*/
                         prev_metrics = transport->metrics;
                     }
 
@@ -338,7 +335,7 @@ pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode, void* ca
                         close_cnx = picoquic_get_next_cnx(close_cnx);
                     }
 
-                    return PICOQUIC_NO_ERROR_TERMINATE_PACKET_LOOP;
+                    return 0; //PICOQUIC_NO_ERROR_TERMINATE_PACKET_LOOP; picoquic_close() will stop the loop
                 }
 
                 break;
@@ -370,7 +367,7 @@ PicoQuicTransport::deleteStreamContext(const TransportContextId& context_id, con
         StreamContext* s_cnx = &active_streams[context_id][stream_id];
 
         on_connection_status(s_cnx, TransportStatus::Disconnected);
-        picoquic_close_immediate(s_cnx->cnx);
+        picoquic_close(s_cnx->cnx, 0);
 
         active_streams.erase(active_stream_it);
         return;
@@ -658,8 +655,9 @@ PicoQuicTransport::start()
     picoquic_init_transport_parameters(&local_tp_options, 1);
     local_tp_options.max_datagram_frame_size = 1280;
     //  local_tp_options.max_packet_size = 1450;
-    //  local_tp_options.max_ack_delay = 3000000;
-    //  local_tp_options.min_ack_delay = 500000;
+    local_tp_options.idle_timeout = 10000;
+    local_tp_options.max_ack_delay = 100000;
+    local_tp_options.min_ack_delay = 1000;
 
     picoquic_set_default_tp(quic_ctx, &local_tp_options);
 
@@ -768,7 +766,7 @@ PicoQuicTransport::cbNotifier()
 void
 PicoQuicTransport::server()
 {
-    int ret = picoquic_packet_loop(quic_ctx, serverInfo.port, 0, 0, 2000000, 0, pq_loop_cb, this);
+    int ret = picoquic_packet_loop(quic_ctx, serverInfo.port, PF_UNSPEC, 0, 2000000, 0, pq_loop_cb, this);
 
     if (quic_ctx != NULL) {
         picoquic_free(quic_ctx);
@@ -847,9 +845,8 @@ PicoQuicTransport::client(const TransportContextId tcid)
             return;
         }
 
-        ret = picoquic_packet_loop(quic_ctx, 0, AF_INET, 0, 2000000, 0, pq_loop_cb, this);
+        ret = picoquic_packet_loop(quic_ctx, 0, PF_UNSPEC, 0, 2000000, 0, pq_loop_cb, this);
 
-        picoquic_close_immediate(cnx);
         logger->info << "picoquic ended with " << ret << std::flush;
     }
 
@@ -965,7 +962,7 @@ PicoQuicTransport::send_stream_bytes(StreamContext* stream_cnx, uint8_t* bytes_c
 
         if (max_len < 5) {
             // Not enough bytes to send
-            logger->info << "Not enough bytes to send stream size header sid: "
+            logger->debug << "Not enough bytes to send stream size header, waiting for next callback. sid: "
                          << stream_cnx->stream_id << std::flush;
             return;
         }
@@ -1178,6 +1175,12 @@ void PicoQuicTransport::on_recv_stream_bytes(StreamContext* stream_cnx, uint8_t*
     }
 
     bool object_complete = false;
+
+    if (stream_cnx->stream_rx_object != nullptr && stream_cnx->stream_rx_object_size == 0) {
+        logger->warning <<  "on_recv_stream_bytes has object size zero and non-null rx_object sid: "
+                        << std::to_string(stream_cnx->stream_id) << std::flush;
+
+    }
 
     if (stream_cnx->stream_rx_object == nullptr || stream_cnx->stream_rx_object_size == 0) {
         if (length < 5) {
