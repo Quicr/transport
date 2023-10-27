@@ -1063,7 +1063,6 @@ PicoQuicTransport::on_recv_datagram(StreamContext* stream_cnx, uint8_t* bytes, s
 void PicoQuicTransport::on_recv_stream_bytes(StreamContext* stream_cnx, uint8_t* bytes, size_t length)
 {
     uint8_t *bytes_p = bytes;
-
     if (stream_cnx == NULL || length == 0) {
         logger->Log(cantina::LogLevel::Debug, "on_recv_stream_bytes has null context");
         return;
@@ -1143,8 +1142,8 @@ void PicoQuicTransport::on_recv_stream_bytes(StreamContext* stream_cnx, uint8_t*
 
         if (object_complete) {
             std::vector<uint8_t> data(stream_cnx->stream_rx_object, stream_cnx->stream_rx_object + stream_cnx->stream_rx_object_size);
+            logger->info << "on_recv_stream_bytes: existing object complete, pushing " << data.size() << std::flush;
             stream_cnx->rx_data->push(std::move(data));
-
             delete []stream_cnx->stream_rx_object;
             stream_cnx->stream_rx_object = nullptr;
             stream_cnx->stream_rx_object_size = 0;
@@ -1169,7 +1168,6 @@ void PicoQuicTransport::on_recv_stream_bytes(StreamContext* stream_cnx, uint8_t*
             stream_cnx->in_data_cb_skip_count = 0;
             TransportContextId context_id = stream_cnx->context_id;
             StreamId stream_id = stream_cnx->stream_id;
-
             cbNotifyQueue.push([=, this]() { delegate.on_recv_notify(context_id, stream_id); });
         } else {
             stream_cnx->in_data_cb_skip_count++;

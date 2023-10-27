@@ -44,7 +44,6 @@ public:
   void on_recv_notify(const TransportContextId &context_id,
                       const StreamId &streamId) {
     static uint32_t prev_msg_num = 0;
-
     while (true) {
       auto data = server->dequeue(context_id, streamId);
 
@@ -79,9 +78,9 @@ int main() {
   Delegate d(logger);
   TransportRemote serverIp =
       TransportRemote{"127.0.0.1", 1234, TransportProtocol::QUIC};
-  TransportConfig tconfig{.tls_cert_filename = "./server-cert.pem",
-                          .tls_key_filename = "./server-key.pem",
-                          .time_queue_max_duration = 300,
+  TransportConfig tconfig{.tls_cert_filename = "cert.pem",
+                          .tls_key_filename = "key.pem",
+                          .time_queue_max_duration = 500,
                           .time_queue_bucket_interval = 1,
                           .debug = true};
 

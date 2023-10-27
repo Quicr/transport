@@ -35,3 +35,5 @@ set_target_properties(client
         CXX_STANDARD_REQUIRED YES
         CXX_EXTENSIONS ON)
 
+
+add_subdirectory(forty)
