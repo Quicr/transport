@@ -12,6 +12,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <chrono>
 
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -57,8 +58,9 @@ class PicoQuicTransport : public ITransport
     using timeQueue = time_queue<bytes_t, std::chrono::milliseconds>;
 
     struct StreamContext {
-        uint64_t stream_id;
-        TransportContextId context_id;
+        uint64_t stream_id {0};
+        TransportContextId context_id {0};
+        uint8_t priority {0};
         picoquic_cnx_t *cnx;
         sockaddr_storage peer_addr;
         char peer_addr_text[45];
@@ -74,8 +76,22 @@ class PicoQuicTransport : public ITransport
         uint8_t* stream_rx_object {nullptr};                 /// Current object that is being received via byte stream
         uint32_t stream_rx_object_size {0};                  /// Receive object data size to append up to before sending to app
         size_t stream_rx_object_offset{0};                   /// Pointer offset to next byte to append
+
+        // The last time TX callback was run
+        std::chrono::time_point<std::chrono::steady_clock> last_tx_callback_time { std::chrono::steady_clock::now() };
+
+        struct stream_metrics {
+            uint64_t tx_delayed_callback {0};                   /// Count of times transmit callbacks were delayed
+            uint64_t prev_tx_delayed_callback {0};              /// Previous transmit delayed callback value, set each interval
+        } metrics;
     };
 
+    /**
+     * Connection context information
+     */
+    struct ConnectionContext {
+        bool is_congested { false };
+    };
 
     /*
    * Exceptions
@@ -162,6 +178,8 @@ class PicoQuicTransport : public ITransport
     void on_recv_stream_bytes(StreamContext *stream_cnx,
                              uint8_t* bytes, size_t length);
 
+    void check_conns_for_congestion();
+
     /**
      * @brief Function run the queue functions within the picoquic thread via the pq_loop_cb
      *
@@ -188,6 +206,7 @@ class PicoQuicTransport : public ITransport
     void server();
     void client(const TransportContextId tcid);
     void cbNotifier();
+    void check_callback_delta(StreamContext* stream_cnx, bool tx=true);
 
 
     /*
@@ -217,6 +236,7 @@ class PicoQuicTransport : public ITransport
      */
     std::atomic<StreamId> next_stream_id;
     std::map<TransportContextId, std::map<StreamId, StreamContext>> active_streams;
+    std::map<TransportContextId, ConnectionContext> conn_context;
 
     std::shared_ptr<tick_service> _tick_service;
 };
