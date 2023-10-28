@@ -212,6 +212,14 @@ pq_event_cb(picoquic_cnx_t* cnx,
             break;
         }
 
+        case picoquic_callback_stop_sending: {
+            transport->logger->info << "Stream Stop Sending requested for Stream "
+                                    << stream_id << std::flush;
+            // reset the stream from the sender side
+            picoquic_add_to_stream(cnx, stream_id, nullptr, 0, 1);
+            break;
+        }
+
         default:
             LOGGER_DEBUG(transport->logger, "Got event " << fin_or_event);
             break;
