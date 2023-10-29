@@ -69,6 +69,16 @@ public:
   void closeStream(const TransportContextId& context_id,
                    StreamId streamId) override;
 
+  StreamId create_unidirectional_stream(const TransportContextId& context_id,
+                                        uint8_t priority) override {
+      throw std::runtime_error("not supported");
+  }
+
+  void close_unidirectional_stream(const TransportContextId& context_id,
+                                   uint64_t stream_id, bool is_sender) override {
+      throw std::runtime_error("not supported");
+  }
+
   virtual bool getPeerAddrInfo(const TransportContextId& context_id,
                                sockaddr_storage* addr) override;
 
@@ -84,7 +94,8 @@ public:
                          const uint32_t ttl_ms = 300) override;
 
 
-  std::optional<std::vector<uint8_t>> dequeue(
+
+    std::optional<std::vector<uint8_t>> dequeue(
     const TransportContextId& context_id,
     const StreamId &streamId) override;
 

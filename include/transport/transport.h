@@ -236,6 +236,13 @@ public:
                                 bool use_reliable_transport,
                                 uint8_t priority=1) = 0;
 
+  virtual StreamId create_unidirectional_stream(const TransportContextId& context_id,
+                                                uint8_t priority) = 0;
+
+  // is_sender == false, send stop_sending, else set fin on the stream
+  virtual void close_unidirectional_stream(const TransportContextId& context_id,
+                                           uint64_t stream_id, bool is_sender) = 0;
+
   /**
    * @brief Close a transport context
    */

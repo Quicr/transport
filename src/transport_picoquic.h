@@ -124,9 +124,18 @@ class PicoQuicTransport : public ITransport
     virtual bool getPeerAddrInfo(const TransportContextId& context_id,
                                  sockaddr_storage* addr) override;
 
+    StreamId create_unidirectional_stream(const TransportContextId& context_id,
+                                          uint8_t priority) override;
+
+    // is_sender == false, send stop_sending, else set fin on the stream
+    void close_unidirectional_stream(const TransportContextId& context_id,
+                                             uint64_t stream_id, bool is_sender) override;
+
     StreamId createStream(const TransportContextId& context_id,
                           bool use_reliable_transport,
                           uint8_t priority) override;
+
+
 
     TransportError enqueue(const TransportContextId& context_id,
                            const StreamId&  stream_id,
@@ -195,6 +204,7 @@ class PicoQuicTransport : public ITransport
      */
     picoquic_quic_config_t config;
     picoquic_quic_t* quic_ctx;
+    picoquic_cnx_t *pq_cnx { nullptr };
     picoquic_tp_t local_tp_options;
     safe_queue<std::function<void()>> cbNotifyQueue;
 

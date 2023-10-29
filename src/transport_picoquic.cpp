@@ -129,16 +129,24 @@ pq_event_cb(picoquic_cnx_t* cnx,
 
         case picoquic_callback_stream_data: {
             transport->metrics.stream_rx_callbacks++;
+            transport->logger->info << "picoquic_callback_stream_data " << stream_id
+                                    << std::flush;
 
             if (stream_cnx == NULL) {
+                transport->logger->info << "picoquic_callback_stream_data, got new stream " << stream_id
+                                        << std::flush;
                 stream_cnx = transport->createStreamContext(cnx, stream_id);
                 picoquic_set_app_stream_ctx(cnx, stream_id, stream_cnx);
             }
             // length is the amount of data received
             transport->on_recv_stream_bytes(stream_cnx, bytes, length);
 
-            if (is_fin)
+            if (is_fin) {
+                transport->logger->info << "picoquic_callback_stream_data, is_fin is true " << stream_id
+                                        << std::flush;
+
                 transport->deleteStreamContext(reinterpret_cast<uint64_t>(cnx), stream_id);
+            }
             break;
         }
 
@@ -545,6 +553,36 @@ PicoQuicTransport::setStatus(TransportStatus status)
     transportStatus = status;
 }
 
+
+StreamId
+PicoQuicTransport::create_unidirectional_stream(const TransportContextId& context_id,
+                                              uint8_t priority)
+{
+    if (pq_cnx == nullptr) {
+        throw std::runtime_error("Connection Context is Null");
+    }
+
+    const auto& iter = active_streams.find(context_id);
+    if (iter == active_streams.end()) {
+        throw std::invalid_argument("Invalid context id, cannot create stream. context_id = " + std::to_string(context_id));
+    }
+
+    auto stream_id = picoquic_get_next_local_stream_id(pq_cnx, true);
+
+    logger->info << "Generated StreamId:" << stream_id << std::flush;
+
+    PicoQuicTransport::StreamContext* stream_cnx = createStreamContext(pq_cnx, stream_id);
+
+    picoquic_runner_queue.push([=, this]() {
+        picoquic_set_app_stream_ctx(pq_cnx, stream_id, stream_cnx);
+        picoquic_set_stream_priority(pq_cnx, stream_id, priority);
+    });
+
+    return stream_id;
+
+}
+
+
 StreamId
 PicoQuicTransport::createStream(const TransportContextId& context_id,
                                 bool use_reliable_transport,
@@ -717,12 +755,14 @@ PicoQuicTransport::createClient()
         return 0;
     }
 
+    pq_cnx = cnx;
+
     // Using default TP
-    picoquic_set_transport_parameters(cnx, &local_tp_options);
+    picoquic_set_transport_parameters(pq_cnx, &local_tp_options);
 
-    (void)createStreamContext(cnx, 0);
+    (void)createStreamContext(pq_cnx, 0);
 
-    return reinterpret_cast<uint64_t>(cnx);
+    return reinterpret_cast<uint64_t>(pq_cnx);
 }
 
 void
@@ -766,6 +806,43 @@ PicoQuicTransport::closeStream(const TransportContextId& context_id, const Strea
 {
     deleteStreamContext(context_id, stream_id);
 }
+
+void
+PicoQuicTransport::close_unidirectional_stream(const TransportContextId& context_id,
+                                               uint64_t stream_id, bool is_sender) {
+
+    logger->info << "Delete unidirectional stream context for id: "
+                 << stream_id << ", is_sender:" << is_sender << std::flush;
+
+    std::lock_guard<std::mutex> lock(_state_mutex);
+
+    const auto& active_stream_it = active_streams.find(context_id);
+    if (active_stream_it == active_streams.end()) {
+        return;
+    }
+
+    auto& [ctx_id, stream_contexts] = *active_stream_it;
+    const auto& stream_iter = stream_contexts.find(stream_id);
+    if (stream_iter == stream_contexts.end()) {
+        return;
+    }
+
+    const auto& [_, ctx] = *stream_iter;
+    picoquic_runner_queue.push([=, cnx = ctx.cnx]() {
+        if (is_sender) {
+            picoquic_runner_queue.push([=]() {
+            picoquic_add_to_stream(cnx, stream_id, nullptr, 0, 1);
+            });
+        } else {
+            picoquic_runner_queue.push([=]() {
+                picoquic_stop_sending(cnx, stream_id, 0x0);
+            });
+        }
+    });
+
+    (void)stream_contexts.erase(stream_id);
+}
+
 
 bool PicoQuicTransport::getPeerAddrInfo(const TransportContextId& context_id,
                                         sockaddr_storage* addr)
@@ -1070,6 +1147,7 @@ PicoQuicTransport::on_recv_datagram(StreamContext* stream_cnx, uint8_t* bytes, s
 
 void PicoQuicTransport::on_recv_stream_bytes(StreamContext* stream_cnx, uint8_t* bytes, size_t length)
 {
+    logger->info << "on_recv_stream_bytes:  len:" << length << std::flush;
     uint8_t *bytes_p = bytes;
     if (stream_cnx == NULL || length == 0) {
         logger->Log(cantina::LogLevel::Debug, "on_recv_stream_bytes has null context");
@@ -1164,6 +1242,7 @@ void PicoQuicTransport::on_recv_stream_bytes(StreamContext* stream_cnx, uint8_t*
 
     if (object_complete) {
         metrics.stream_objects_recv++;
+        logger->info << "on_recv_stream_bytes: complete object received " << stream_cnx->stream_id << std::flush;
 
         bool too_many_in_queue = false;
         if (cbNotifyQueue.size() > 200) {
@@ -1176,6 +1255,7 @@ void PicoQuicTransport::on_recv_stream_bytes(StreamContext* stream_cnx, uint8_t*
             stream_cnx->in_data_cb_skip_count = 0;
             TransportContextId context_id = stream_cnx->context_id;
             StreamId stream_id = stream_cnx->stream_id;
+            logger->info << "on_recv_stream_bytes: notifying delegate:" << stream_id << std::flush;
             cbNotifyQueue.push([=, this]() { delegate.on_recv_notify(context_id, stream_id); });
         } else {
             stream_cnx->in_data_cb_skip_count++;

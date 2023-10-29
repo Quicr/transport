@@ -105,7 +105,9 @@ main(int argc, char* argv[])
 {
     const uint8_t forty_bytes[] = {0,1,2,3,4,5,6,7,8,9,0,1,2,3,4,5,6,7,8,9,0,1,2,3,4,5,6,7,8,9,0,1,2,3,4,5,6,7,8,9};
     char* envVar;
-
+    auto use_bidi_streams = false;
+    auto num_streams = 10;
+    auto num_messages_per_stream = 1;
     setup_signal_handlers();
 
     TransportRemote server = TransportRemote{ "127.0.0.1", 1234, TransportProtocol::QUIC };
@@ -137,8 +139,27 @@ main(int argc, char* argv[])
         std::this_thread::sleep_for(std::chrono::milliseconds(250));
     }
 
-    StreamId stream_id = client->createStream(tcid, true);
+    for(auto i = 0; i <  num_streams; i ++) {
+        std::optional<StreamId> stream_id;
+        if(use_bidi_streams) {
+            stream_id = client->createStream(tcid, true);
+        } else {
+            stream_id = client->create_unidirectional_stream(tcid, 1);
+        }
 
+        if(!stream_id) {
+            throw std::runtime_error("Stream ID creation failed");
+        }
+
+        for (auto j = 0; j < num_messages_per_stream; j ++) {
+            auto data = bytes(forty_bytes, forty_bytes + sizeof(forty_bytes));
+            std::cout << "[" << stream_id.value() << "] sending: " << to_hex(data) << std::endl;
+            client->enqueue(tcid, stream_id.value(), std::move(data));
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
+    }
+
+#if 0
     uint32_t* msg_num = (uint32_t*)&data_buf;
 
     while (!done) {
@@ -149,6 +170,7 @@ main(int argc, char* argv[])
     }
 
     client->closeStream(tcid, stream_id);
+#endif
 
     logger->Log("Done with transport, closing");
     client.reset();
