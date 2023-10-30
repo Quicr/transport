@@ -60,6 +60,7 @@ namespace {
 /*
  * PicoQuic Callbacks
  */
+
 int
 pq_event_cb(picoquic_cnx_t* cnx,
             uint64_t stream_id,
@@ -289,8 +290,14 @@ pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode, void* ca
 
                 transport->metrics.time_checks++;
 
-                if (transport->debug && targ->current_time - prev_time > 1000000) {
-                    if (transport->metrics != prev_metrics) {
+                if (targ->current_time - prev_time > 1000000) {
+
+                    // TODO: Debug only mode for now. Will remove or change based on findings
+                    if (transport->debug) {
+                        transport->check_conns_for_congestion();
+                    }
+
+                    if (transport->debug && transport->metrics != prev_metrics) {
 /*
                         LOGGER_DEBUG(
                           transport->logger,
@@ -406,6 +413,10 @@ PicoQuicTransport::createStreamContext(picoquic_cnx_t* cnx, uint64_t stream_id)
         return NULL;
 
     std::lock_guard<std::mutex> lock(_state_mutex);
+
+    if (stream_id == 0) {
+        conn_context.emplace(reinterpret_cast<uint64_t>(cnx), ConnectionContext{});
+    }
 
     StreamContext* stream_cnx = &active_streams[reinterpret_cast<uint64_t>(cnx)][stream_id];
     stream_cnx->stream_id = stream_id;
@@ -542,6 +553,10 @@ PicoQuicTransport::createStream(const TransportContextId& context_id,
                                 bool use_reliable_transport,
                                 uint8_t priority)
 {
+    if (priority > 127) {
+        throw std::runtime_error("Create stream priority cannot be greater than 127, range is 0 - 127");
+    }
+
     const auto& iter = active_streams.find(context_id);
     if (iter == active_streams.end()) {
         throw std::invalid_argument("Invalid context id, cannot create stream. context_id = " + std::to_string(context_id));
@@ -559,10 +574,14 @@ PicoQuicTransport::createStream(const TransportContextId& context_id,
     next_stream_id = ::make_stream_id(next_stream_id + 4, _is_server_mode, _is_unidirectional);
 
     PicoQuicTransport::StreamContext* stream_cnx = createStreamContext(cnx_stream_iter->second.cnx, next_stream_id);
+    stream_cnx->priority = priority;
 
+    /*
+     * Low order bit set indicates FIFO handling of same priorities, unset is round-robin
+     */
     picoquic_runner_queue.push([=, this]() {
         picoquic_set_app_stream_ctx(cnx_stream_iter->second.cnx, next_stream_id, stream_cnx);
-        picoquic_set_stream_priority(cnx_stream_iter->second.cnx, next_stream_id, priority);
+        picoquic_set_stream_priority(cnx_stream_iter->second.cnx, next_stream_id, (priority << 1));
     });
 
     cbNotifyQueue.push([&] { delegate.on_new_stream(context_id, next_stream_id); });
@@ -786,13 +805,32 @@ PicoQuicTransport::close([[maybe_unused]] const TransportContextId& context_id)
 }
 
 void
+PicoQuicTransport::check_callback_delta(StreamContext* stream_cnx, bool tx) {
+    auto now_time = std::chrono::steady_clock::now();
+
+    if (!tx) return;
+
+    const auto delta_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            now_time - stream_cnx->last_tx_callback_time).count();
+
+    stream_cnx->last_tx_callback_time = std::move(now_time);
+
+    if (delta_ms > 50 && stream_cnx->tx_data->size() > 10) {
+        stream_cnx->metrics.tx_delayed_callback++;
+
+        logger->debug << "context_id: " << reinterpret_cast<uint64_t>(stream_cnx->cnx)
+                      << " stream_id: " << stream_cnx->stream_id
+                      << " pri: " << static_cast<int>(stream_cnx->priority)
+                      << " CB TX delta " << delta_ms << " ms"
+                      << " count: " << stream_cnx->metrics.tx_delayed_callback
+                      << " tx_queue_size: "
+                      << stream_cnx->tx_data->size() << std::flush;
+    }
+}
+
+void
 PicoQuicTransport::send_next_datagram(StreamContext* stream_cnx, uint8_t* bytes_ctx, size_t max_len)
 {
-    static auto last_time = std::chrono::steady_clock::now();
-    auto now_time = std::chrono::steady_clock::now();
-    auto delta_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now_time - last_time).count();
-
-
     if (bytes_ctx == NULL) {
         metrics.send_null_bytes_ctx++;
         return;
@@ -803,18 +841,14 @@ PicoQuicTransport::send_next_datagram(StreamContext* stream_cnx, uint8_t* bytes_
         return;
     }
 
+    check_callback_delta(stream_cnx);
+
     const auto& out_data = stream_cnx->tx_data->front();
     if (out_data.has_value()) {
         if (max_len >= out_data->size()) {
             stream_cnx->tx_data->pop();
 
             metrics.dgram_sent++;
-
-            if (delta_ms > 40) {
-                logger->debug << "CB delta "
-                            << delta_ms << " ms queue_size: "
-                            <<stream_cnx->tx_data->size() << std::flush;
-            }
 
             uint8_t* buf = NULL;
 
@@ -833,8 +867,6 @@ PicoQuicTransport::send_next_datagram(StreamContext* stream_cnx, uint8_t* bytes_
     else {
         picoquic_provide_datagram_buffer_ex(bytes_ctx, 0, picoquic_datagram_not_active);
     }
-
-    last_time = now_time;
 }
 
 void
@@ -848,6 +880,8 @@ PicoQuicTransport::send_stream_bytes(StreamContext* stream_cnx, uint8_t* bytes_c
     if (stream_cnx->stream_id == 0) {
         return; // Only for steams
     }
+
+    check_callback_delta(stream_cnx);
 
     uint32_t data_len = 0;                                  /// Length of data to follow the 4 byte length
     size_t offset = 0;
@@ -1180,4 +1214,42 @@ void PicoQuicTransport::on_recv_stream_bytes(StreamContext* stream_cnx, uint8_t*
         logger->debug << "on_stream_bytes has remaining bytes: " << length << std::flush;
         on_recv_stream_bytes(stream_cnx, bytes_p, length);
     }
+}
+
+void PicoQuicTransport::check_conns_for_congestion()
+{
+    std::lock_guard<std::mutex> _(_state_mutex);
+
+    /*
+     * A sign of congestion is when transmit queues are not being serviced (e.g., have a backlog).
+     * With no congestion, queues will be close to zero in size.
+     *
+     * Check each queue size to determine if there is possible congestion
+     */
+
+    for (auto& [context_id, streams] : active_streams) {
+        int congested_count { 0 };
+
+        for (auto& [stream_id, stream_cnx] : streams) {
+            if (stream_cnx.metrics.tx_delayed_callback - stream_cnx.metrics.prev_tx_delayed_callback > 1) {
+                congested_count++;
+            }
+
+            if (stream_cnx.metrics.tx_delayed_callback) {
+                stream_cnx.metrics.prev_tx_delayed_callback = stream_cnx.metrics.tx_delayed_callback;
+            }
+        }
+
+        auto& conn_ctx = conn_context[context_id];
+        if (congested_count && not conn_ctx.is_congested) {
+            conn_ctx.is_congested = true;
+            logger->debug << "context_id: " << context_id << " has " << congested_count << " streams congested." << std::flush;
+
+        } else if (conn_ctx.is_congested) {
+            // No longer congested
+            conn_ctx.is_congested = false;
+            logger->debug << "context_id: " << context_id << " c_count: " << congested_count << " is no longer congested." << std::flush;
+        }
+    }
+
 }
