@@ -577,7 +577,7 @@ PicoQuicTransport::createStream(const TransportContextId& context_id,
     stream_cnx->priority = priority;
 
     /*
-     * Low order bit set indicates FIFO handling of samem priorities, unset is round-robin
+     * Low order bit set indicates FIFO handling of same priorities, unset is round-robin
      */
     picoquic_runner_queue.push([=, this]() {
         picoquic_set_app_stream_ctx(cnx_stream_iter->second.cnx, next_stream_id, stream_cnx);
@@ -808,23 +808,23 @@ void
 PicoQuicTransport::check_callback_delta(StreamContext* stream_cnx, bool tx) {
     auto now_time = std::chrono::steady_clock::now();
 
-    if (tx) {
-        const auto delta_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                now_time - stream_cnx->last_tx_callback_time).count();
+    if (!tx) return;
 
-        stream_cnx->last_tx_callback_time = std::move(now_time);
+    const auto delta_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            now_time - stream_cnx->last_tx_callback_time).count();
 
-        if (delta_ms > 50 && stream_cnx->tx_data->size() > 10) {
-            stream_cnx->metrics.tx_delayed_callback++;
+    stream_cnx->last_tx_callback_time = std::move(now_time);
 
-            logger->debug << "context_id: " << reinterpret_cast<uint64_t>(stream_cnx->cnx)
-                          << " stream_id: " << stream_cnx->stream_id
-                          << " pri: " << static_cast<int>(stream_cnx->priority)
-                          << " CB TX delta " << delta_ms << " ms"
-                          << " count: " << stream_cnx->metrics.tx_delayed_callback
-                          << " tx_queue_size: "
-                          << stream_cnx->tx_data->size() << std::flush;
-        }
+    if (delta_ms > 50 && stream_cnx->tx_data->size() > 10) {
+        stream_cnx->metrics.tx_delayed_callback++;
+
+        logger->debug << "context_id: " << reinterpret_cast<uint64_t>(stream_cnx->cnx)
+                      << " stream_id: " << stream_cnx->stream_id
+                      << " pri: " << static_cast<int>(stream_cnx->priority)
+                      << " CB TX delta " << delta_ms << " ms"
+                      << " count: " << stream_cnx->metrics.tx_delayed_callback
+                      << " tx_queue_size: "
+                      << stream_cnx->tx_data->size() << std::flush;
     }
 }
 
