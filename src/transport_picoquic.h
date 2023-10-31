@@ -165,7 +165,7 @@ class PicoQuicTransport : public ITransport
     StreamContext * createStreamContext(picoquic_cnx_t* cnx,
                                        uint64_t stream_id);
     void deleteStreamContext(const TransportContextId& context_id,
-                             const StreamId& stream_id);
+                             const StreamId& stream_id, bool fin_stream=false);
 
     void send_next_datagram(StreamContext *stream_cnx, uint8_t* bytes_ctx, size_t max_len);
     void send_stream_bytes(StreamContext *stream_cnx, uint8_t* bytes_ctx, size_t max_len);
