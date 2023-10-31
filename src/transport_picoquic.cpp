@@ -135,16 +135,21 @@ pq_event_cb(picoquic_cnx_t* cnx,
                 stream_cnx = transport->createStreamContext(cnx, stream_id);
                 picoquic_set_app_stream_ctx(cnx, stream_id, stream_cnx);
             }
-            // length is the amount of data received
-            transport->on_recv_stream_bytes(stream_cnx, bytes, length);
 
-            if (is_fin)
+            // length is the amount of data received
+            if (length) {
+                transport->on_recv_stream_bytes(stream_cnx, bytes, length);
+            }
+
+            if (is_fin) {
+                transport->logger->info << "Received FIN for stream " << stream_id << std::flush;
                 transport->deleteStreamContext(reinterpret_cast<uint64_t>(cnx), stream_id);
+            }
             break;
         }
 
         case picoquic_callback_stream_reset: {
-            transport->logger->info << "Closing connection stream " << stream_id
+            transport->logger->info << "Reset stream " << stream_id
                                     << std::flush;
 
             if (stream_id == 0) { // close connection
@@ -360,21 +365,23 @@ pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode, void* ca
 }
 
 void
-PicoQuicTransport::deleteStreamContext(const TransportContextId& context_id, const StreamId& stream_id)
+PicoQuicTransport::deleteStreamContext(const TransportContextId& context_id, const StreamId& stream_id, bool fin_stream)
 {
-    logger->info << "Delete stream context for id: " << stream_id << std::flush;
-
     std::lock_guard<std::mutex> lock(_state_mutex);
 
     const auto& active_stream_it = active_streams.find(context_id);
     if (active_stream_it == active_streams.end())
         return;
 
+    logger->info << "Delete stream context for stream " << stream_id << std::flush;
+
     if (stream_id == 0) {
         StreamContext* s_cnx = &active_streams[context_id][stream_id];
 
         on_connection_status(s_cnx, TransportStatus::Disconnected);
-        picoquic_close(s_cnx->cnx, 0);
+        picoquic_runner_queue.push([=, cnx = s_cnx->cnx]() {
+            picoquic_close(cnx, 0);
+        });
 
         active_streams.erase(active_stream_it);
         return;
@@ -388,10 +395,14 @@ PicoQuicTransport::deleteStreamContext(const TransportContextId& context_id, con
     const auto& [_, ctx] = *stream_iter;
     picoquic_runner_queue.push([=, cnx = ctx.cnx]() {
         picoquic_mark_active_stream(cnx, stream_id, 0, NULL);
-        picoquic_add_to_stream(cnx, stream_id, NULL, 0, 1);
-        // TODO: Is this needed if we already set the stream FIN?
-        picoquic_discard_stream(stream_iter->second.cnx, stream_id, 0);
     });
+
+    if (fin_stream) {
+        logger->info << "Sending FIN to stream " << stream_id << std::flush;
+        picoquic_runner_queue.push([=, cnx = ctx.cnx]() {
+            picoquic_add_to_stream(cnx, stream_id, NULL, 0, 1);
+        });
+    }
 
     (void)stream_contexts.erase(stream_id);
 }
@@ -775,7 +786,7 @@ PicoQuicTransport::client(const TransportContextId tcid)
 void
 PicoQuicTransport::closeStream(const TransportContextId& context_id, const StreamId stream_id)
 {
-    deleteStreamContext(context_id, stream_id);
+    deleteStreamContext(context_id, stream_id, true);
 }
 
 bool PicoQuicTransport::getPeerAddrInfo(const TransportContextId& context_id,
