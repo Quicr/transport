@@ -1,10 +1,8 @@
 add_executable(server echoServer.cc)
-target_link_libraries(server
-    PRIVATE
-        cantina::logger
-        quicr-transport
-        picotls-core
-        picotls-openssl)
+target_link_libraries(server PRIVATE cantina::logger quicr-transport)
+if (NOT PLATFORM_ESP_IDF)
+  target_link_libraries(server PRIVATE picotls-core picotls-openssl)
+endif()
 
 target_compile_options(server
         PRIVATE
@@ -18,12 +16,10 @@ set_target_properties(server
 
 
 add_executable(client client.cc)
-target_link_libraries(client
-    PRIVATE
-        cantina::logger
-        quicr-transport
-        picotls-core
-        picotls-openssl)
+target_link_libraries(client PRIVATE cantina::logger quicr-transport)
+if (NOT PLATFORM_ESP_IDF)
+  target_link_libraries(client PRIVATE picotls-core picotls-openssl)
+endif()
 
 target_compile_options(client
         PRIVATE

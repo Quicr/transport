@@ -16,7 +16,31 @@
 
 #include "transport_udp.h"
 
+#if defined(PLATFORM_ESP)
+#include <lwip/netdb.h>
+#include "lwip/err.h"
+#include "lwip/sockets.h"
+#include "lwip/sys.h"
+#include <lwip/netdb.h>
+
+#include "esp_pthread.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#endif
+
 using namespace qtransport;
+
+//#if defined (PLATFORM_ESP)
+static esp_pthread_cfg_t create_config(const char *name, int core_id, int stack, int prio)
+{
+    auto cfg = esp_pthread_get_default_config();
+    cfg.thread_name = name;
+    cfg.pin_to_core = core_id;
+    cfg.stack_size = stack;
+    cfg.prio = prio;
+    return cfg;
+}
+//#endif
 
 UDPTransport::~UDPTransport()
 {
@@ -50,6 +74,7 @@ UDPTransport::UDPTransport(const TransportRemote& server,
   , serverInfo(server)
   , delegate(delegate)
 {
+  logger->Log("Created UDP Transport");
 }
 
 TransportStatus
@@ -250,10 +275,10 @@ UDPTransport::fd_writer()
 void
 UDPTransport::fd_reader()
 {
-  logger->Log("Starting transport reader thread");
 
-  const int dataSize = 65535; // TODO Add config var to set this value.  Sizes
-                              // larger than actual MTU require IP frags
+  logger->Log(cantina::LogLevel::Info, "Starting transport reader thread");
+  // TODO (Suhas): Revisit this once we have basic esp functionality working
+  const int dataSize = 2048;
   struct sockaddr_storage remoteAddr;
   memset(&remoteAddr, 0, sizeof(remoteAddr));
   socklen_t remoteAddrLen = sizeof(remoteAddr);
@@ -348,6 +373,7 @@ UDPTransport::fd_reader()
   }
 
   logger->Log("Done transport reader thread");
+
 }
 
 TransportError
@@ -413,6 +439,91 @@ UDPTransport::dequeue(const TransportContextId& context_id,
 TransportContextId
 UDPTransport::connect_client()
 {
+
+fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+  if (fd == -1) {
+    abort();
+  }
+
+  // Set timeout
+  struct timeval timeout;
+  timeout.tv_sec = 10;
+  timeout.tv_usec = 0;
+  setsockopt (fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof timeout);
+  
+  struct sockaddr_in srvAddr;
+  srvAddr.sin_family = AF_INET;
+  srvAddr.sin_addr.s_addr = htonl(INADDR_ANY);
+  srvAddr.sin_port = 0;
+  auto err = bind(fd, (struct sockaddr*)&srvAddr, sizeof(srvAddr));
+  if (err) {
+    std::cout << "client_connect: Unable to bind to socket: " << strerror(errno) << std::endl;
+    abort();
+  }
+
+  std::string sPort = std::to_string(htons(serverInfo.port));
+  struct addrinfo hints = {}, *address_list = NULL;
+  hints.ai_family = AF_INET;
+  hints.ai_socktype = SOCK_DGRAM;
+  hints.ai_protocol = IPPROTO_UDP;
+  err = getaddrinfo(
+    serverInfo.host_or_ip.c_str(), sPort.c_str(), &hints, &address_list);
+  if (err) {
+    std::cerr << "client_connect: Unable to resolve remote ip address: "
+          << strerror(errno) << std::endl;
+    abort();
+  }
+
+  struct addrinfo *item = nullptr, *found_addr = nullptr;
+  for (item = address_list; item != nullptr; item = item->ai_next) {
+    if (item->ai_family == AF_INET && item->ai_socktype == SOCK_DGRAM &&
+        item->ai_protocol == IPPROTO_UDP) {
+      found_addr = item;
+      break;
+    }
+  }
+
+  if (found_addr == nullptr) {
+    //logger.log(LogLevel::fatal, "client_connect: No IP address found");
+    abort();
+  }
+
+  struct sockaddr_in* ipv4 = (struct sockaddr_in*)&serverAddr.addr;
+  memcpy(ipv4, found_addr->ai_addr, found_addr->ai_addrlen);
+  ipv4->sin_port = htons(serverInfo.port);
+  serverAddr.addr_len = sizeof(sockaddr_in);
+
+  freeaddrinfo(address_list);
+
+  addrKey sa_key;
+  addr_to_key(serverAddr.addr, sa_key);
+
+  serverAddr.key = sa_key;
+
+  ++last_context_id;
+  ++last_stream_id;
+
+  remote_contexts[last_context_id] = serverAddr;
+  remote_addrs[sa_key] = { last_context_id, last_stream_id};
+
+  // Create dequeue
+  dequeue_data_map[last_context_id][last_stream_id].set_limit(1000);
+  
+
+  // Notify caller that the connection is now ready
+  delegate.on_connection_status(last_context_id, TransportStatus::Ready);
+
+  auto cfg = create_config("FDReader", 1, 12 * 1024, 5);
+  esp_pthread_set_cfg(&cfg);
+  running_threads.emplace_back(&UDPTransport::fd_reader, this);
+
+  cfg = create_config("FDWriter", 1, 12 * 1024, 5);
+  esp_pthread_set_cfg(&cfg);
+  running_threads.emplace_back(&UDPTransport::fd_writer, this);
+  return last_context_id;
+
+#if 0
+
   std::stringstream s_log;
 
   fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -424,6 +535,8 @@ UDPTransport::connect_client()
   size_t snd_rcv_max = 2000000;
   timeval rcv_timeout { .tv_sec = 0, .tv_usec = 10000 };
 
+
+#if not defined(PLATFORM_ESP)
 
   int err =
     setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &snd_rcv_max, sizeof(snd_rcv_max));
@@ -442,8 +555,7 @@ UDPTransport::connect_client()
     logger->Log(cantina::LogLevel::Critical, s_log.str());
     throw std::runtime_error(s_log.str());
   }
-
-  err =
+  int err =
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &rcv_timeout, sizeof(rcv_timeout));
   if (err != 0) {
     s_log << "client_connect: Unable to set receive timeout: "
@@ -451,13 +563,14 @@ UDPTransport::connect_client()
     logger->Log(cantina::LogLevel::Critical, s_log.str());
     throw std::runtime_error(s_log.str());
   }
+#endif
 
-
+  
   struct sockaddr_in srvAddr;
   srvAddr.sin_family = AF_INET;
   srvAddr.sin_addr.s_addr = htonl(INADDR_ANY);
   srvAddr.sin_port = 0;
-  err = bind(fd, (struct sockaddr*)&srvAddr, sizeof(srvAddr));
+  int err = bind(fd, (struct sockaddr*)&srvAddr, sizeof(srvAddr));
   if (err) {
     s_log << "client_connect: Unable to bind to socket: " << strerror(errno);
     logger->Log(cantina::LogLevel::Critical, s_log.str());
@@ -517,11 +630,29 @@ UDPTransport::connect_client()
   // Notify caller that the connection is now ready
   delegate.on_connection_status(last_context_id, TransportStatus::Ready);
 
+  logger->Log(cantina::LogLevel::Info, "Creatng Reader and Writer Threads");
+    
+  auto cfg = create_config("FDReader", 1, 15 * 1024, 5);
+  auto esp_err = esp_pthread_set_cfg(&cfg);
+  if(esp_err != ESP_OK) {
+    s_log << "esp_pthread_set_cfg failed " << esp_err_to_name(esp_err);
+    logger->Log(cantina::LogLevel::Info, s_log.str());
+    throw std::runtime_error(s_log.str());
+  }
   running_threads.emplace_back(&UDPTransport::fd_reader, this);
 
+  cfg = create_config("FDWriter", 1, 15 * 1024, 5);
+  esp_err = esp_pthread_set_cfg(&cfg);
+  if(esp_err != ESP_OK) {
+    s_log << "esp_pthread_set_cfg failed " << esp_err_to_name(esp_err);
+    logger->Log(cantina::LogLevel::Info, s_log.str());
+    throw std::runtime_error(s_log.str());
+  }
+  
   running_threads.emplace_back(&UDPTransport::fd_writer, this);
 
   return last_context_id;
+#endif  
 }
 
 TransportContextId
