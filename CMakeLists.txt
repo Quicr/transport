@@ -12,7 +12,7 @@ else()
     option(QTRANSPORT_BUILD_TESTS "Build tests for quicr transport" OFF)
 endif()
 
-option(PLATFORM_ESP_IDF "Enabble suppport for esp-idf (Default OFF)" OFF)
+option(PLATFORM_ESP_IDF "Enabble suppport for esp-idf (Default OFF)" ON)
 
 if (NOT PLATFORM_ESP_IDF)
   find_package(Threads REQUIRED)
@@ -43,6 +43,7 @@ target_link_libraries(quicr-transport
     PUBLIC
     cantina::logger
 )
+  
 
 if (NOT PLATFORM_ESP_IDF)
   target_link_libraries(quicr-transport
@@ -63,7 +64,7 @@ set_target_properties(quicr-transport
 
 target_compile_options(quicr-transport
         PRIVATE
-            $<$<OR:$<C_COMPILER_ID:Clang>,$<C_COMPILER_ID:AppleClang>,$<C_COMPILER_ID:GNU>>: -Wpedantic -Wextra -Wall>
+            $<$<OR:$<C_COMPILER_ID:Clang>,$<C_COMPILER_ID:AppleClang>,$<C_COMPILER_ID:GNU>>: -Wpedantic -Wextra>
             $<$<C_COMPILER_ID:MSVC>: >)
 
 if(MSVC)

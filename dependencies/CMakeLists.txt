@@ -6,7 +6,7 @@ set(INSTALL_DESTINATION_DEFAULT
         BUNDLE DESTINATION bin
         RUNTIME DESTINATION bin)
 
-        add_subdirectory(logger)
+add_subdirectory(logger)
 
 if (NOT PLATFORM_ESP_IDF)
         add_subdirectory( boringssl )

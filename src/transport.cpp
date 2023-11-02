@@ -16,15 +16,8 @@ ITransport::make_client_transport(const TransportRemote& server,
 
   switch (server.proto) {
     case TransportProtocol::UDP:
+      logger->info << "Create UDP Transport" << std::flush;
       return std::make_shared<UDPTransport>(server, delegate, false, logger);
-#if not defined(PLATFORM_ESP)
-    case TransportProtocol::QUIC:
-      return std::make_shared<PicoQuicTransport>(server,
-                                                 tcfg,
-                                                 delegate,
-                                                 false,
-                                                 logger);
-#endif
     default:
       logger->error << "Protocol not implemented" << std::flush;
       throw std::runtime_error(
