@@ -12,3 +12,4 @@
 [submodule "dependencies/logger"]
 	path = dependencies/logger
 	url = git@github.com:Quicr/logger.git
+	branch = hactar 
