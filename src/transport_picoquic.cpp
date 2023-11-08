@@ -169,7 +169,9 @@ pq_event_cb(picoquic_cnx_t* cnx,
                                     << stream_id;
 
             if (stream_cnx != NULL) {
-                transport->logger->info << " " << stream_cnx->peer_addr_text;
+                auto conn_ctx = transport->getConnContext(reinterpret_cast<uint64_t>(cnx));
+
+                transport->logger->info << " " << conn_ctx.peer_addr_text;
             }
 
             transport->logger->info << std::flush;
@@ -196,16 +198,12 @@ pq_event_cb(picoquic_cnx_t* cnx,
             (void)picoquic_mark_datagram_ready(cnx, 1);
 
             if (transport->_is_server_mode) {
-                transport->on_new_connection(stream_cnx);
+                transport->on_new_connection(cnx);
             }
 
             else {
                 // Client
                 transport->setStatus(TransportStatus::Ready);
-                transport->logger->info << "Connection established to server "
-                                        << stream_cnx->peer_addr_text
-                                        << " stream_id: " << stream_id
-                                        << std::flush;
                 transport->on_connection_status(stream_cnx, TransportStatus::Ready);
             }
 
@@ -277,9 +275,6 @@ pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode, void* ca
                 break;
 
             case picoquic_packet_loop_time_check: {
-                static uint64_t prev_time = 0;
-                static qtransport::PicoQuicTransport::Metrics prev_metrics;
-
                 packet_loop_time_check_arg_t* targ = static_cast<packet_loop_time_check_arg_t*>(callback_arg);
 
                 // TODO: Add config to set this value. This will change the loop select
@@ -288,21 +283,21 @@ pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode, void* ca
                     targ->delta_t = 1000;
                 }
 
-                if (!prev_time) {
-                    prev_time = targ->current_time;
-                    prev_metrics = transport->metrics;
+                if (!transport->prev_time) {
+                    transport->prev_time = targ->current_time;
+                    transport->prev_metrics = transport->metrics;
                 }
 
                 transport->metrics.time_checks++;
 
-                if (targ->current_time - prev_time > 1000000) {
+                if (targ->current_time - transport->prev_time > 1000000) {
 
                     // TODO: Debug only mode for now. Will remove or change based on findings
                     if (transport->debug) {
                         transport->check_conns_for_congestion();
                     }
 
-                    if (transport->debug && transport->metrics != prev_metrics) {
+                    if (transport->debug && transport->metrics != transport->prev_metrics) {
 /*
                         LOGGER_DEBUG(
                           transport->logger,
@@ -329,10 +324,10 @@ pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode, void* ca
                             << "   stream_objects_recv: " << transport->metrics.stream_objects_recv << std::endl
                             << "   stream_bytes_recv  : " << transport->metrics.stream_bytes_recv << std::endl);
 */
-                        prev_metrics = transport->metrics;
+                        transport->prev_metrics = transport->metrics;
                     }
 
-                    prev_time = targ->current_time;
+                    transport->prev_time = targ->current_time;
                 }
 
                 // Stop loop if shutting down
@@ -383,7 +378,9 @@ PicoQuicTransport::deleteStreamContext(const TransportContextId& context_id, con
             picoquic_close(cnx, 0);
         });
 
-        active_streams.erase(active_stream_it);
+        // Remove all streams if closing the root/datagram stream (closed connection)
+        active_streams.clear();
+
         return;
     }
 
@@ -417,17 +414,73 @@ PicoQuicTransport::getZeroStreamContext(picoquic_cnx_t* cnx)
     return &active_streams[reinterpret_cast<uint64_t>(cnx)][0];
 }
 
+PicoQuicTransport::ConnectionContext PicoQuicTransport::getConnContext(const TransportContextId& context_id)
+{
+    std::lock_guard<std::mutex> lock(_state_mutex);
+
+    ConnectionContext conn_ctx { };
+
+    // Locate the specified transport connection context
+    auto it = conn_context.find(context_id);
+
+    // If not found, return false
+    if (it == conn_context.end()) return std::move(conn_ctx);
+
+    conn_ctx = it->second;
+
+    return std::move(conn_ctx);
+}
+
+
+PicoQuicTransport::ConnectionContext& PicoQuicTransport::createConnContext(picoquic_cnx_t *cnx)
+{
+    auto [conn_it, _] = conn_context.emplace(
+      reinterpret_cast<uint64_t>(cnx),
+      ConnectionContext{
+        .cnx = cnx, .peer_addr_text = { 0 }, .peer_port = 0, .is_congested = false, .total_retransmits = 0 });
+
+    sockaddr* addr;
+
+    auto &conn_ctx = conn_it->second;
+
+    picoquic_get_peer_addr(cnx, &addr);
+    std::memset(conn_ctx.peer_addr_text, 0, sizeof(conn_ctx.peer_addr_text));
+    std::memcpy(&conn_ctx.peer_addr, addr, sizeof(conn_ctx.peer_addr));
+
+    switch (addr->sa_family) {
+        case AF_INET:
+            (void)inet_ntop(AF_INET,
+                            &reinterpret_cast<struct sockaddr_in*>(addr)->sin_addr,
+                            /*(const void*)(&((struct sockaddr_in*)addr)->sin_addr),*/
+                            conn_ctx.peer_addr_text,
+                            sizeof(conn_ctx.peer_addr_text));
+            conn_ctx.peer_port = ntohs(((struct sockaddr_in*)addr)->sin_port);
+            break;
+
+        case AF_INET6:
+            (void)inet_ntop(AF_INET6,
+                            &reinterpret_cast<struct sockaddr_in6*>(addr)->sin6_addr,
+                            /*(const void*)(&((struct sockaddr_in6*)addr)->sin6_addr), */
+                            conn_ctx.peer_addr_text,
+                            sizeof(conn_ctx.peer_addr_text));
+            conn_ctx.peer_port = ntohs(((struct sockaddr_in6*)addr)->sin6_port);
+            break;
+    }
+
+    return conn_ctx;
+}
+
 PicoQuicTransport::StreamContext*
 PicoQuicTransport::createStreamContext(picoquic_cnx_t* cnx, uint64_t stream_id)
 {
     if (cnx == NULL)
         return NULL;
 
-    std::lock_guard<std::mutex> lock(_state_mutex);
-
     if (stream_id == 0) {
-        conn_context.emplace(reinterpret_cast<uint64_t>(cnx), ConnectionContext{});
+        createConnContext(cnx);
     }
+
+    std::lock_guard<std::mutex> lock(_state_mutex);
 
     StreamContext* stream_cnx = &active_streams[reinterpret_cast<uint64_t>(cnx)][stream_id];
     stream_cnx->stream_id = stream_id;
@@ -440,31 +493,6 @@ PicoQuicTransport::createStreamContext(picoquic_cnx_t* cnx, uint64_t stream_id)
       tconfig.time_queue_max_duration, tconfig.time_queue_bucket_interval, _tick_service,
       tconfig.time_queue_init_queue_size);
 
-    sockaddr* addr;
-
-    picoquic_get_peer_addr(cnx, &addr);
-    std::memset(stream_cnx->peer_addr_text, 0, sizeof(stream_cnx->peer_addr_text));
-    std::memcpy(&stream_cnx->peer_addr, addr, sizeof(stream_cnx->peer_addr));
-
-    switch (addr->sa_family) {
-        case AF_INET:
-            (void)inet_ntop(AF_INET,
-                            &reinterpret_cast<struct sockaddr_in*>(addr)->sin_addr,
-                            /*(const void*)(&((struct sockaddr_in*)addr)->sin_addr),*/
-                            stream_cnx->peer_addr_text,
-                            sizeof(stream_cnx->peer_addr_text));
-            stream_cnx->peer_port = ntohs(((struct sockaddr_in*)addr)->sin_port);
-            break;
-
-        case AF_INET6:
-            (void)inet_ntop(AF_INET6,
-                            &reinterpret_cast<struct sockaddr_in6*>(addr)->sin6_addr,
-                            /*(const void*)(&((struct sockaddr_in6*)addr)->sin6_addr), */
-                            stream_cnx->peer_addr_text,
-                            sizeof(stream_cnx->peer_addr_text));
-            stream_cnx->peer_port = ntohs(((struct sockaddr_in6*)addr)->sin6_port);
-            break;
-    }
 
     if (stream_id) {
         picoquic_runner_queue.push([=, this]() {
@@ -792,20 +820,16 @@ PicoQuicTransport::closeStream(const TransportContextId& context_id, const Strea
 bool PicoQuicTransport::getPeerAddrInfo(const TransportContextId& context_id,
                                         sockaddr_storage* addr)
 {
-    // Locate the specified transport context
-    auto it = active_streams.find(context_id);
+    std::lock_guard<std::mutex> lock(_state_mutex);
+
+    // Locate the specified transport connection context
+    auto it = conn_context.find(context_id);
 
     // If not found, return false
-    if (it == active_streams.end()) return false;
-
-    // Try to locate stream 0
-    auto it_stream = it->second.find(0);
-
-    // If not found, it suggests the connection is actually closed
-    if (it_stream == it->second.end()) return false;
+    if (it == conn_context.end()) return false;
 
     // Copy the address
-    std::memcpy(addr, &it_stream->second.peer_addr, sizeof(sockaddr_storage));
+    std::memcpy(addr, &it->second.peer_addr, sizeof(sockaddr_storage));
 
     return true;
 }
@@ -1059,21 +1083,31 @@ PicoQuicTransport::on_connection_status(PicoQuicTransport::StreamContext* stream
 {
     TransportContextId context_id{ stream_cnx->context_id };
 
+    if (status == TransportStatus::Ready) {
+        auto conn_ctx = getConnContext(stream_cnx->context_id);
+        logger->info << "Connection established to server "
+                     << conn_ctx.peer_addr_text
+                     << std::flush;
+
+    }
+
     cbNotifyQueue.push([=, this]() { delegate.on_connection_status(context_id, status); });
 }
 
 void
-PicoQuicTransport::on_new_connection(StreamContext* stream_cnx)
+PicoQuicTransport::on_new_connection(picoquic_cnx_t *cnx)
 {
-    logger->info << "New Connection " << stream_cnx->peer_addr_text << ":" << stream_cnx->peer_port
-                 << " conn_ctx: " << reinterpret_cast<uint64_t>(stream_cnx->cnx) << " stream_id: " << stream_cnx->stream_id
+
+    const auto context_id = reinterpret_cast<uint64_t>(cnx);
+
+    auto conn_ctx = getConnContext(context_id);
+    logger->info << "New Connection " << conn_ctx.peer_addr_text << " port: " << conn_ctx.peer_port
+                 << " context_id: " << context_id
                  << std::flush;
 
-    TransportRemote remote{ .host_or_ip = stream_cnx->peer_addr_text,
-                            .port = stream_cnx->peer_port,
+    TransportRemote remote{ .host_or_ip = conn_ctx.peer_addr_text,
+                            .port = conn_ctx.peer_port,
                             .proto = TransportProtocol::QUIC };
-
-    TransportContextId context_id{ stream_cnx->context_id };
 
     cbNotifyQueue.push([=, this]() { delegate.on_new_connection(context_id, remote); });
 }
@@ -1260,6 +1294,18 @@ void PicoQuicTransport::check_conns_for_congestion()
             // No longer congested
             conn_ctx.is_congested = false;
             logger->debug << "context_id: " << context_id << " c_count: " << congested_count << " is no longer congested." << std::flush;
+        }
+    }
+
+    // TODO: Remove and add metrics per stream if possible
+    for (auto& [conn_id, conn_ctx]: conn_context) {
+        if (conn_ctx.total_retransmits < conn_ctx.cnx->nb_retransmission_total) {
+            logger->debug << "remote: " << conn_ctx.peer_addr_text << " port: " << conn_ctx.peer_port
+                         << " context_id: " << conn_id << " retransmits increased, delta: "
+                         << (conn_ctx.cnx->nb_retransmission_total - conn_ctx.total_retransmits)
+                         << " total: " << conn_ctx.cnx->nb_retransmission_total << std::flush;
+
+            conn_ctx.total_retransmits = conn_ctx.cnx->nb_retransmission_total;
         }
     }
 
