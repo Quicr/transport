@@ -62,9 +62,6 @@ class PicoQuicTransport : public ITransport
         TransportContextId context_id {0};
         uint8_t priority {0};
         picoquic_cnx_t *cnx;
-        sockaddr_storage peer_addr;
-        char peer_addr_text[45];
-        uint16_t peer_port;
         uint64_t in_data_cb_skip_count {0};                  /// Number of times callback was skipped due to size
         std::unique_ptr<safe_queue<bytes_t>> rx_data;        /// Pending objects received from the network
         std::unique_ptr<priority_queue<bytes_t>> tx_data;    /// Pending objects to be written to the network
@@ -84,13 +81,43 @@ class PicoQuicTransport : public ITransport
             uint64_t tx_delayed_callback {0};                   /// Count of times transmit callbacks were delayed
             uint64_t prev_tx_delayed_callback {0};              /// Previous transmit delayed callback value, set each interval
         } metrics;
+
+        ~StreamContext() {
+            /*
+             * Free legacy pointers if not null
+             */
+            if (stream_tx_object != nullptr) {
+                delete[] stream_tx_object;
+                stream_tx_object = nullptr;
+            }
+
+            if (stream_rx_object != nullptr) {
+                delete[] stream_rx_object;
+                stream_rx_object = nullptr;
+            }
+        }
     };
+
+    /*
+     * pq event loop member vars
+     */
+    uint64_t prev_time = 0;
+    qtransport::PicoQuicTransport::Metrics prev_metrics;
 
     /**
      * Connection context information
      */
     struct ConnectionContext {
+        picoquic_cnx_t *cnx = nullptr;
+        char peer_addr_text[45];
+        uint16_t peer_port;
+        sockaddr_storage peer_addr;
+
+        // States
         bool is_congested { false };
+
+        // Metrics
+        uint64_t total_retransmits { 0 };
     };
 
     /*
@@ -137,6 +164,8 @@ class PicoQuicTransport : public ITransport
     void closeStream(const TransportContextId& context_id,
                      StreamId stream_id) override;
 
+    ConnectionContext getConnContext(const TransportContextId& context_id);
+
     virtual bool getPeerAddrInfo(const TransportContextId& context_id,
                                  sockaddr_storage* addr) override;
 
@@ -160,6 +189,8 @@ class PicoQuicTransport : public ITransport
      */
     void setStatus(TransportStatus status);
 
+    ConnectionContext& createConnContext(picoquic_cnx_t *cnx);
+
     StreamContext * getZeroStreamContext(picoquic_cnx_t* cnx);
 
     StreamContext * createStreamContext(picoquic_cnx_t* cnx,
@@ -172,7 +203,7 @@ class PicoQuicTransport : public ITransport
 
     void on_connection_status(StreamContext *stream_cnx,
                               const TransportStatus status);
-    void on_new_connection(StreamContext *stream_cnx);
+    void on_new_connection(picoquic_cnx_t* cnx);
     void on_recv_datagram(StreamContext *stream_cnx,
                           uint8_t* bytes, size_t length);
     void on_recv_stream_bytes(StreamContext *stream_cnx,
@@ -230,9 +261,9 @@ class PicoQuicTransport : public ITransport
     TransportConfig tconfig;
 
     /*
-   * RFC9000 Section 2.1 defines the stream id max value and types.
-   *   Type is encoded in the stream id as the first 2 least significant
-   *   bits. Stream ID is therefore incremented by 4.
+     * RFC9000 Section 2.1 defines the stream id max value and types.
+     *   Type is encoded in the stream id as the first 2 least significant
+     *   bits. Stream ID is therefore incremented by 4.
      */
     std::atomic<StreamId> next_stream_id;
     std::map<TransportContextId, std::map<StreamId, StreamContext>> active_streams;
