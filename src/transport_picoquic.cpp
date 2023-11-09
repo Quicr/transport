@@ -1190,6 +1190,7 @@ void PicoQuicTransport::on_recv_stream_bytes(StreamContext* stream_cnx, uint8_t*
 
             stream_cnx->stream_rx_object_size = 0;
             stream_cnx->stream_rx_object_offset = 0;
+            length = 0; // no more data left to process
         }
         else {
             // Need to wait for more data, create new object buffer
@@ -1198,7 +1199,7 @@ void PicoQuicTransport::on_recv_stream_bytes(StreamContext* stream_cnx, uint8_t*
             stream_cnx->stream_rx_object_offset = length;
             std::memcpy(stream_cnx->stream_rx_object, bytes_p, length);
             metrics.stream_bytes_recv += length;
-            length = 0;
+            length = 0; // no more data left to process
         }
     }
     else { // Existing object, append
@@ -1206,7 +1207,8 @@ void PicoQuicTransport::on_recv_stream_bytes(StreamContext* stream_cnx, uint8_t*
 
         if (remaining_len > length) {
             remaining_len = length;
-            length = 0;
+            length = 0; // no more data left to process
+
         } else {
             object_complete = true;
             length -= remaining_len;
