@@ -177,6 +177,8 @@ pq_event_cb(picoquic_cnx_t* cnx,
             transport->logger->info << std::flush;
 
             picoquic_set_callback(cnx, NULL, NULL);
+
+
             transport->deleteStreamContext(reinterpret_cast<uint64_t>(cnx), stream_id);
 
             if (not transport->_is_server_mode) {
@@ -374,12 +376,13 @@ PicoQuicTransport::deleteStreamContext(const TransportContextId& context_id, con
         StreamContext* s_cnx = &active_streams[context_id][stream_id];
 
         on_connection_status(s_cnx, TransportStatus::Disconnected);
-        picoquic_runner_queue.push([=, cnx = s_cnx->cnx]() {
-            picoquic_close(cnx, 0);
-        });
+
+        picoquic_close(s_cnx->cnx, 0);
 
         // Remove all streams if closing the root/datagram stream (closed connection)
         active_streams.clear();
+
+        conn_context.erase(context_id);
 
         return;
     }
@@ -1150,13 +1153,7 @@ void PicoQuicTransport::on_recv_stream_bytes(StreamContext* stream_cnx, uint8_t*
 
     bool object_complete = false;
 
-    if (stream_cnx->stream_rx_object != nullptr && stream_cnx->stream_rx_object_size == 0) {
-        logger->warning <<  "on_recv_stream_bytes has object size zero and non-null rx_object sid: "
-                        << std::to_string(stream_cnx->stream_id) << std::flush;
-
-    }
-
-    if (stream_cnx->stream_rx_object == nullptr || stream_cnx->stream_rx_object_size == 0) {
+    if (stream_cnx->stream_rx_object == nullptr) {
         if (length < 5) {
             logger->warning <<  "on_recv_stream_bytes is less than 5, cannot process sid: "
                             << std::to_string(stream_cnx->stream_id) << std::flush;
@@ -1193,6 +1190,7 @@ void PicoQuicTransport::on_recv_stream_bytes(StreamContext* stream_cnx, uint8_t*
 
             stream_cnx->stream_rx_object_size = 0;
             stream_cnx->stream_rx_object_offset = 0;
+            length = 0; // no more data left to process
         }
         else {
             // Need to wait for more data, create new object buffer
@@ -1201,7 +1199,7 @@ void PicoQuicTransport::on_recv_stream_bytes(StreamContext* stream_cnx, uint8_t*
             stream_cnx->stream_rx_object_offset = length;
             std::memcpy(stream_cnx->stream_rx_object, bytes_p, length);
             metrics.stream_bytes_recv += length;
-            length = 0;
+            length = 0; // no more data left to process
         }
     }
     else { // Existing object, append
@@ -1209,7 +1207,8 @@ void PicoQuicTransport::on_recv_stream_bytes(StreamContext* stream_cnx, uint8_t*
 
         if (remaining_len > length) {
             remaining_len = length;
-            length = 0;
+            length = 0; // no more data left to process
+
         } else {
             object_complete = true;
             length -= remaining_len;
