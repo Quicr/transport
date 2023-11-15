@@ -665,12 +665,13 @@ PicoQuicTransport::start()
     local_tp_options.max_datagram_frame_size = 1280;
     //  local_tp_options.max_packet_size = 1450;
     local_tp_options.idle_timeout = 60000; // TODO: Remove when we add reconnnect change back to 10 seconds
-    local_tp_options.max_ack_delay = 30000;
+    local_tp_options.max_ack_delay = 100000;
     local_tp_options.min_ack_delay = 1000;
 
     picoquic_set_default_tp(quic_ctx, &local_tp_options);
 
     picoquic_set_default_wifi_shadow_rtt(quic_ctx, tconfig.quic_wifi_shadow_rtt_us);
+    logger->info << "Setting wifi shadow RTT to " << tconfig.quic_wifi_shadow_rtt_us << "us" << std::flush;
 
     picoquic_runner_queue.set_limit(2000);
 
@@ -809,7 +810,7 @@ PicoQuicTransport::client(const TransportContextId tcid)
             return;
         }
 
-        ret = picoquic_packet_loop(quic_ctx, 0, PF_UNSPEC, 0, 1000000, 0, pq_loop_cb, this);
+        ret = picoquic_packet_loop(quic_ctx, 0, PF_UNSPEC, 0, 2000000, 0, pq_loop_cb, this);
 
         logger->info << "picoquic ended with " << ret << std::flush;
     }
