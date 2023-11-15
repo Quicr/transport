@@ -375,13 +375,13 @@ PicoQuicTransport::deleteStreamContext(const TransportContextId& context_id, con
 
         // Remove pointer references in picoquic for active streams
         for (const auto& [sid, _]: active_streams[context_id]) {
-            picoquic_mark_active_stream(s_cnx->cnx, sid, 0, NULL);
+            picoquic_add_to_stream(s_cnx->cnx, stream_id, NULL, 0, 1);
         }
 
         picoquic_close(s_cnx->cnx, 0);
 
         // Remove all streams if closing the root/datagram stream (closed connection)
-        active_streams.clear();
+        active_streams.erase(context_id);
 
         conn_context.erase(context_id);
 
