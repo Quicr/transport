@@ -603,6 +603,7 @@ PicoQuicTransport::createStream(const TransportContextId& context_id,
     const auto& iter = active_streams.find(context_id);
     if (iter == active_streams.end()) {
         logger->info << "Invalid context id, cannot create stream. context_id = " << context_id << std::flush;
+        return 0;
     }
 
     const auto datagram_stream_id = ::make_datagram_stream_id(_is_server_mode, _is_unidirectional);
@@ -706,7 +707,7 @@ void PicoQuicTransport::pq_runner() {
     }
 
     // note: check before running move of optional, which is more CPU taxing when empty
-    while (auto cb = std::move(picoquic_runner_queue.pop())) {
+    while (auto cb = picoquic_runner_queue.pop()) {
         (*cb)();
     }
 }
