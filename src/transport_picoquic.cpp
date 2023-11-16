@@ -231,7 +231,6 @@ pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode, void* ca
 {
     PicoQuicTransport* transport = static_cast<PicoQuicTransport*>(callback_ctx);
     int ret = 0;
-    std::ostringstream log_msg;
 
     if (transport == NULL) {
         std::cerr << "picoquic transport was called with NULL transport" << std::endl;
@@ -243,12 +242,10 @@ pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode, void* ca
     } else {
         transport->pq_runner();
 
-        log_msg << "Loop got cb_mode: ";
 
         switch (cb_mode) {
             case picoquic_packet_loop_ready: {
-                log_msg << "packet_loop_ready, waiting for packets";
-                transport->logger->info << log_msg.str() << std::flush;
+                transport->logger->info << "packet_loop_ready, waiting for packets" << std::flush;
 
                 if (transport->_is_server_mode)
                     transport->setStatus(TransportStatus::Ready);
@@ -272,8 +269,7 @@ pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode, void* ca
                 break;
 
             case picoquic_packet_loop_port_update:
-                log_msg << "packet_loop_port_update";
-                LOGGER_DEBUG(transport->logger, log_msg.str());
+                LOGGER_DEBUG(transport->logger, "packet_loop_port_update");
                 break;
 
             case picoquic_packet_loop_time_check: {
@@ -281,8 +277,8 @@ pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode, void* ca
 
                 // TODO: Add config to set this value. This will change the loop select
                 //   wait time to delta value in microseconds. Default is <= 10 seconds
-                if (targ->delta_t > 1000) {
-                    targ->delta_t = 1000;
+                if (targ->delta_t > 4000) {
+                    targ->delta_t = 4000;
                 }
 
                 if (!transport->prev_time) {
@@ -377,10 +373,15 @@ PicoQuicTransport::deleteStreamContext(const TransportContextId& context_id, con
 
         on_connection_status(s_cnx, TransportStatus::Disconnected);
 
+        // Remove pointer references in picoquic for active streams
+        for (const auto& [sid, _]: active_streams[context_id]) {
+            picoquic_add_to_stream(s_cnx->cnx, stream_id, NULL, 0, 1);
+        }
+
         picoquic_close(s_cnx->cnx, 0);
 
         // Remove all streams if closing the root/datagram stream (closed connection)
-        active_streams.clear();
+        active_streams.erase(context_id);
 
         conn_context.erase(context_id);
 
@@ -601,7 +602,8 @@ PicoQuicTransport::createStream(const TransportContextId& context_id,
 
     const auto& iter = active_streams.find(context_id);
     if (iter == active_streams.end()) {
-        throw std::invalid_argument("Invalid context id, cannot create stream. context_id = " + std::to_string(context_id));
+        logger->info << "Invalid context id, cannot create stream. context_id = " << context_id << std::flush;
+        return 0;
     }
 
     const auto datagram_stream_id = ::make_datagram_stream_id(_is_server_mode, _is_unidirectional);
@@ -663,11 +665,14 @@ PicoQuicTransport::start()
     picoquic_init_transport_parameters(&local_tp_options, 1);
     local_tp_options.max_datagram_frame_size = 1280;
     //  local_tp_options.max_packet_size = 1450;
-    local_tp_options.idle_timeout = 10000;
+    local_tp_options.idle_timeout = 60000; // TODO: Remove when we add reconnnect change back to 10 seconds
     local_tp_options.max_ack_delay = 100000;
     local_tp_options.min_ack_delay = 1000;
 
     picoquic_set_default_tp(quic_ctx, &local_tp_options);
+
+    picoquic_set_default_wifi_shadow_rtt(quic_ctx, tconfig.quic_wifi_shadow_rtt_us);
+    logger->info << "Setting wifi shadow RTT to " << tconfig.quic_wifi_shadow_rtt_us << "us" << std::flush;
 
     picoquic_runner_queue.set_limit(2000);
 
@@ -697,7 +702,12 @@ PicoQuicTransport::start()
 
 void PicoQuicTransport::pq_runner() {
 
-    while (auto cb = std::move(picoquic_runner_queue.pop())) {
+    if (picoquic_runner_queue.empty()) {
+        return;
+    }
+
+    // note: check before running move of optional, which is more CPU taxing when empty
+    while (auto cb = picoquic_runner_queue.pop()) {
         (*cb)();
     }
 }
@@ -1011,8 +1021,7 @@ PicoQuicTransport::send_stream_bytes(StreamContext* stream_cnx, uint8_t* bytes_c
 
     if (stream_cnx->stream_tx_object_offset == 0 && stream_cnx->stream_tx_object != nullptr) {
         // Zero offset at this point means the object was fully sent
-        delete []stream_cnx->stream_tx_object;
-        stream_cnx->stream_tx_object = nullptr;
+        stream_cnx->reset_tx_object();
     }
 }
 
@@ -1154,25 +1163,41 @@ void PicoQuicTransport::on_recv_stream_bytes(StreamContext* stream_cnx, uint8_t*
     bool object_complete = false;
 
     if (stream_cnx->stream_rx_object == nullptr) {
-        if (length < 5) {
-            logger->warning <<  "on_recv_stream_bytes is less than 5, cannot process sid: "
-                            << std::to_string(stream_cnx->stream_id) << std::flush;
 
-            // TODO: Should reset stream in this case
-            return;
+        if (stream_cnx->stream_rx_object_hdr_size < 4) {
+
+            uint16_t len_to_copy = length >= 4 ? 4 - stream_cnx->stream_rx_object_hdr_size : 4;
+
+
+            std::memcpy(&stream_cnx->stream_rx_object_size + stream_cnx->stream_rx_object_hdr_size,
+                        bytes_p, len_to_copy);
+
+            stream_cnx->stream_rx_object_hdr_size += len_to_copy;
+
+            if (stream_cnx->stream_rx_object_hdr_size < 4) {
+                logger->debug << "Stream header not complete. hdr " << stream_cnx->stream_rx_object_hdr_size
+                              << " len_to_copy: " << len_to_copy
+                              << " length: " << length
+                              << std::flush;
+            }
+
+            length -= len_to_copy;
+            bytes_p += len_to_copy;
+
+
+            if (length == 0 || stream_cnx->stream_rx_object_hdr_size < 4) {
+                // Either no data left to read or not enough data for the header (length) value
+                return;
+            }
         }
 
-        // Start of new object being received is the 4 byte length value
-        std::memcpy(&stream_cnx->stream_rx_object_size, bytes_p, 4);
-        bytes_p += 4;
-        length -= 4;
-
-        if (stream_cnx->stream_rx_object_size > 40000000) { // Safety check
+        if (stream_cnx->stream_rx_object_size > 40000000L) { // Safety check
             logger->warning << "on_recv_stream_bytes sid: " << stream_cnx->stream_id
                             << " data length is too large: "
                             << std::to_string(stream_cnx->stream_rx_object_size)
                             << std::flush;
 
+            stream_cnx->reset_rx_object();
             // TODO: Should reset stream in this case
             return;
         }
@@ -1188,8 +1213,7 @@ void PicoQuicTransport::on_recv_stream_bytes(StreamContext* stream_cnx, uint8_t*
 
             metrics.stream_bytes_recv += stream_cnx->stream_rx_object_size;
 
-            stream_cnx->stream_rx_object_size = 0;
-            stream_cnx->stream_rx_object_offset = 0;
+            stream_cnx->reset_rx_object();
             length = 0; // no more data left to process
         }
         else {
@@ -1223,10 +1247,7 @@ void PicoQuicTransport::on_recv_stream_bytes(StreamContext* stream_cnx, uint8_t*
             std::vector<uint8_t> data(stream_cnx->stream_rx_object, stream_cnx->stream_rx_object + stream_cnx->stream_rx_object_size);
             stream_cnx->rx_data->push(std::move(data));
 
-            delete []stream_cnx->stream_rx_object;
-            stream_cnx->stream_rx_object = nullptr;
-            stream_cnx->stream_rx_object_size = 0;
-            stream_cnx->stream_rx_object_offset = 0;
+            stream_cnx->reset_rx_object();
         }
         else {
             stream_cnx->stream_rx_object_offset += remaining_len;

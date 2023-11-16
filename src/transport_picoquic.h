@@ -71,6 +71,7 @@ class PicoQuicTransport : public ITransport
         size_t stream_tx_object_offset{0};                   /// Pointer offset to next byte to send
 
         uint8_t* stream_rx_object {nullptr};                 /// Current object that is being received via byte stream
+        uint16_t stream_rx_object_hdr_size { 0 };             /// Size of header read in (should be 4 right now)
         uint32_t stream_rx_object_size {0};                  /// Receive object data size to append up to before sending to app
         size_t stream_rx_object_offset{0};                   /// Pointer offset to next byte to append
 
@@ -96,6 +97,35 @@ class PicoQuicTransport : public ITransport
                 stream_rx_object = nullptr;
             }
         }
+
+        /**
+         * Reset the RX object buffer
+         */
+        void reset_rx_object() {
+            if (stream_rx_object != nullptr) {
+                delete[] stream_rx_object;
+            }
+
+            stream_rx_object = nullptr;
+            stream_rx_object_hdr_size = 0;
+            stream_rx_object_size = 0;
+            stream_rx_object_offset = 0;
+        }
+
+        /**
+         * Reset the TX object buffer
+         */
+        void reset_tx_object() {
+            if (stream_tx_object != nullptr) {
+                delete [] stream_tx_object;
+            }
+
+            stream_tx_object = nullptr;
+            stream_tx_object_offset = 0;
+            stream_tx_object_size = 0;
+        }
+
+
     };
 
     /*
