@@ -79,10 +79,9 @@ pq_event_cb(picoquic_cnx_t* cnx,
         return PICOQUIC_ERROR_UNEXPECTED_ERROR;
     }
 
+    transport->pq_runner();
+
     switch (fin_or_event) {
-        case picoquic_callback_pacing_changed:
-            transport->logger->info << "Pacing rate changed to bytes: " << stream_id;
-            break;
 
         case picoquic_callback_prepare_datagram: {
             // length is the max allowed data length
@@ -161,6 +160,33 @@ pq_event_cb(picoquic_cnx_t* cnx,
 
             transport->deleteStreamContext(reinterpret_cast<uint64_t>(cnx), stream_id);
             return 0;
+        }
+
+        case picoquic_callback_almost_ready:
+            break;
+
+        case picoquic_callback_path_suspended:
+            break;
+
+        case picoquic_callback_path_deleted:
+            break;
+
+        case picoquic_callback_path_available:
+            break;
+
+        case picoquic_callback_path_quality_changed:
+            break;
+
+        case picoquic_callback_pacing_changed: {
+            const auto cwin_bytes = picoquic_get_cwin(cnx);
+            const auto rtt_us = picoquic_get_rtt(cnx);
+
+            transport->logger->info << "Pacing rate changed; context_id: " << reinterpret_cast<uint64_t>(cnx)
+                                    << " rate bps: " << stream_id * 8
+                                    << " cwin_bytes: " << cwin_bytes
+                                    << " rtt_us: " << rtt_us
+                                    << std::flush;
+            break;
         }
 
         case picoquic_callback_application_close:
@@ -783,6 +809,9 @@ PicoQuicTransport::createClient()
     // Using default TP
     picoquic_set_transport_parameters(cnx, &local_tp_options);
 
+    picoquic_subscribe_pacing_rate_updates(cnx, tconfig.pacing_decrease_threshold_Bps,
+                                           tconfig.pacing_increase_threshold_Bps);
+
     (void)createStreamContext(cnx, 0);
 
     return reinterpret_cast<uint64_t>(cnx);
@@ -1109,13 +1138,15 @@ PicoQuicTransport::on_connection_status(PicoQuicTransport::StreamContext* stream
 void
 PicoQuicTransport::on_new_connection(picoquic_cnx_t *cnx)
 {
-
     const auto context_id = reinterpret_cast<uint64_t>(cnx);
 
     auto conn_ctx = getConnContext(context_id);
     logger->info << "New Connection " << conn_ctx.peer_addr_text << " port: " << conn_ctx.peer_port
                  << " context_id: " << context_id
                  << std::flush;
+
+    picoquic_subscribe_pacing_rate_updates(cnx, tconfig.pacing_decrease_threshold_Bps,
+                                           tconfig.pacing_increase_threshold_Bps);
 
     TransportRemote remote{ .host_or_ip = conn_ctx.peer_addr_text,
                             .port = conn_ctx.peer_port,
