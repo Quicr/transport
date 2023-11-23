@@ -78,6 +78,9 @@ struct TransportConfig
   bool debug {false};                                   /// Enable debug logging/processing
   const uint64_t quic_cwin_minimum { 131072 };          /// QUIC congestion control minimum size (default is 128k)
   const uint32_t quic_wifi_shadow_rtt_us { 20000 };     /// QUIC wifi shadow RTT in microseconds
+
+  const uint64_t pacing_decrease_threshold_Bps { 16000 };   /// QUIC pacing rate decrease threshold for notification in Bps
+  const uint64_t pacing_increase_threshold_Bps { 16000 };   /// QUIC pacing rate increase threshold for notification in Bps
 };
 
 /**
