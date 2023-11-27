@@ -192,10 +192,17 @@ pq_event_cb(picoquic_cnx_t* cnx,
         case picoquic_callback_application_close:
         case picoquic_callback_close: {
             transport->logger->info << "Closing connection stream_id: "
-                                    << " local_error: " << picoquic_get_local_error(cnx)
-                                    << " remote_error: " << picoquic_get_remote_error(cnx)
-                                    << " app_error: " << picoquic_get_application_error(cnx)
                                     << stream_id;
+
+            switch (picoquic_get_local_error(cnx)) {
+                case PICOQUIC_ERROR_IDLE_TIMEOUT:
+                    transport->logger->info << " Idle timeout";
+
+                default:
+                    transport->logger->info << " local_error: " << picoquic_get_local_error(cnx)
+                                            << " remote_error: " << picoquic_get_remote_error(cnx)
+                                            << " app_error: " << picoquic_get_application_error(cnx);
+            }
 
             if (stream_cnx != NULL) {
                 auto conn_ctx = transport->getConnContext(reinterpret_cast<uint64_t>(cnx));
