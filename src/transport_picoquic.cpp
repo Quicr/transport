@@ -166,6 +166,9 @@ pq_event_cb(picoquic_cnx_t* cnx,
         case picoquic_callback_application_close:
         case picoquic_callback_close: {
             transport->logger->info << "Closing connection stream_id: "
+                                    << " local_error: " << picoquic_get_local_error(cnx)
+                                    << " remote_error: " << picoquic_get_remote_error(cnx)
+                                    << " app_error: " << picoquic_get_application_error(cnx)
                                     << stream_id;
 
             if (stream_cnx != NULL) {
@@ -665,7 +668,7 @@ PicoQuicTransport::start()
     picoquic_init_transport_parameters(&local_tp_options, 1);
     local_tp_options.max_datagram_frame_size = 1280;
     //  local_tp_options.max_packet_size = 1450;
-    local_tp_options.idle_timeout = 60000; // TODO: Remove when we add reconnnect change back to 10 seconds
+    local_tp_options.idle_timeout = 30000; // TODO: Remove when we add reconnnect change back to 10 seconds
     local_tp_options.max_ack_delay = 100000;
     local_tp_options.min_ack_delay = 1000;
 
