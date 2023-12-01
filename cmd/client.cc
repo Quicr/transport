@@ -43,7 +43,7 @@ struct Delegate : public ITransport::TransportDelegate
 
     void on_new_connection(const TransportConnId& , const TransportRemote&) {}
 
-    void on_recv_notify(const TransportConnId& conn_id, const DataContextId& data_ctx_id)
+    void on_recv_notify(const TransportConnId& conn_id, const DataContextId& data_ctx_id, [[maybe_unused]] const bool is_bidir)
     {
         static uint32_t prev_msg_num = 0;
         static uint32_t prev_msgcount = 0;

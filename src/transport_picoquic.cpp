@@ -1038,7 +1038,7 @@ PicoQuicTransport::on_recv_datagram(DataContext* data_ctx, uint8_t* bytes, size_
     if (data_ctx->rx_data->size() < 2 || data_ctx->in_data_cb_skip_count > 30) {
         data_ctx->in_data_cb_skip_count = 0;
 
-        cbNotifyQueue.push([=, this]() { delegate.on_recv_notify(data_ctx->conn_id, data_ctx->current_stream_id); });
+        cbNotifyQueue.push([=, this]() { delegate.on_recv_notify(data_ctx->conn_id, data_ctx->current_stream_id, true); });
     } else {
         data_ctx->in_data_cb_skip_count++;
     }
@@ -1160,7 +1160,8 @@ void PicoQuicTransport::on_recv_stream_bytes(DataContext* data_ctx, uint8_t* byt
         if (too_many_in_queue || data_ctx->rx_data->size() < 4 || data_ctx->in_data_cb_skip_count > 30) {
             data_ctx->in_data_cb_skip_count = 0;
 
-            cbNotifyQueue.push([=, this]() { delegate.on_recv_notify(data_ctx->conn_id, data_ctx->data_ctx_id); });
+            cbNotifyQueue.push([=, this]() { delegate.on_recv_notify(data_ctx->conn_id,
+                                                                     data_ctx->data_ctx_id, data_ctx->is_bidir); });
         } else {
             data_ctx->in_data_cb_skip_count++;
         }

@@ -156,9 +156,11 @@ public:
      *
      * @param[in] conn_id 	Transport context identifier mapped to the connection
      * @param[in] data_ctx_id	Data context id that the data was received on
+     * @param[in] is_bidir      True if the message is from a bidirectional stream
      */
     virtual void on_recv_notify(const TransportConnId& conn_id,
-                                const DataContextId& data_ctx_id) = 0;
+                                const DataContextId& data_ctx_id,
+                                const bool is_bidir=false) = 0;
   };
 
   /* Factory APIs */
@@ -270,10 +272,10 @@ public:
    * when available.
    *
    * @param[in] context_id	Identifying the connection
-   * @param[in] data_ctx_id	  stream Id to send data on
-   * @param[in] bytes				Data to send/write
-   * @param[in] priority    Priority of the object, range should be 0 - 255
-   * @param[in] ttl_ms      The age the object should exist in queue in milliseconds
+   * @param[in] data_ctx_id	stream Id to send data on
+   * @param[in] bytes		Data to send/write
+   * @param[in] priority        Priority of the object, range should be 0 - 255
+   * @param[in] ttl_ms          The age the object should exist in queue in milliseconds
    *
    * @returns TransportError is returned indicating status of the operation
    */
