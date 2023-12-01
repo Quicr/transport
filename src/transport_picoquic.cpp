@@ -800,7 +800,8 @@ PicoQuicTransport::DataContext* PicoQuicTransport::createDataContextBiDirRecv(Tr
 
         data_ctx_it->second.current_stream_id = stream_id;
 
-        cbNotifyQueue.push([=, this]() { delegate.on_new_data_context(conn_id, data_ctx_it->second.data_ctx_id); });
+        cbNotifyQueue.push([=,data_ctx_id = data_ctx_it->second.data_ctx_id, this]() {
+            delegate.on_new_data_context(conn_id, data_ctx_id); });
 
         logger->info << "Created new bidir data context conn_id: " << conn_id
                      << " data_ctx_id: " << data_ctx_it->second.data_ctx_id
