@@ -11,9 +11,8 @@
 
 namespace qtransport {
 
-using TransportContextId = uint64_t; ///< Context Id is a 64bit number that is used as a key to maps
-using StreamId = uint64_t;           ///< stream Id is a 64bit number that is
-                                     ///< used as a key to maps
+using TransportConnId = uint64_t;        ///< Connection Id is a 64bit number that is used as a key to maps
+using DataContextId = uint64_t;          ///< Data Context 64bit number that identifies a data flow/track/stream
 /**
  * Transport status/state values
  */
@@ -37,8 +36,8 @@ enum class TransportError : uint8_t
   PeerDisconnected,
   PeerUnreachable,
   CannotResolveHostname,
-  InvalidContextId,
-  InvalidStreamId,
+  InvalidConnContextId,
+  InvalidDataContextId,
   InvalidIpv4Address,
   InvalidIpv6Address
 };
@@ -59,9 +58,9 @@ enum class TransportProtocol
  */
 struct TransportRemote
 {
-  std::string host_or_ip;  // IPv4/v6 or FQDN (user input)
-  uint16_t port;           // Port (user input)
-  TransportProtocol proto; // Protocol to use for the transport
+  std::string host_or_ip;       /// IPv4/v6 or FQDN (user input)
+  uint16_t port;                /// Port (user input)
+  TransportProtocol proto;      /// Protocol to use for the transport
 };
 
 /**
@@ -117,10 +116,10 @@ public:
      *
      * @details Called when the connection changes state/status
      *
-     * @param[in] context_id  Transport context Id
-     * @param[in] status 			Transport Status value
+     * @param[in] conn_id           Transport context Id
+     * @param[in] status 	    Transport Status value
      */
-    virtual void on_connection_status(const TransportContextId& context_id,
+    virtual void on_connection_status(const TransportConnId& conn_id,
                                       const TransportStatus status) = 0;
 
     /**
@@ -129,26 +128,24 @@ public:
      * @details Called when new connection is received. This is only used in
      * server mode.
      *
-     * @param[in] context_id	Transport context identifier mapped to the
-     * connection
-     * @param[in] remote			Transport information for the
-     * connection
+     * @param[in] conn_id	Transport context identifier mapped to the connection
+     * @param[in] remote	Transport information for the connection
      */
-    virtual void on_new_connection(const TransportContextId& context_id,
+    virtual void on_new_connection(const TransportConnId& conn_id,
                                    const TransportRemote& remote) = 0;
 
     /**
-     * @brief Report arrival of a new stream
+     * @brief Report a new data context created
      *
-     * @details Called when new connection is received. This is only used in
-     * server mode.
+     * @details Report that a new data context was created for a new bi-directional
+     *  stream that was received. This method is not called for app created
+     *  data contexts.
      *
-     * @param[in] context_id	Transport context identifier mapped to the
-     * connection
-     * @param[in] streamId		A new stream id created
+     * @param[in] conn_id	Transport context identifier mapped to the connection
+     * @param[in] data_ctx_id	Data context id for a new data context received by the transport
      */
-    virtual void on_new_stream(const TransportContextId& context_id,
-                               const StreamId & streamId) = 0;
+    virtual void on_new_data_context(const TransportConnId& conn_id,
+                                     const DataContextId& data_ctx_id) = 0;
 
     /**
      * @brief Event reporting transport has some data over
@@ -157,13 +154,11 @@ public:
      * @details Applications must invoke ITransport::deqeue() to obtain
      * 		the data by passing the transport context id
      *
-     * @param[in] context_id 	Transport context identifier mapped to the
-     * connection
-     * @param[in] streamId	Stream id that the data was
-     * received on
+     * @param[in] conn_id 	Transport context identifier mapped to the connection
+     * @param[in] data_ctx_id	Data context id that the data was received on
      */
-    virtual void on_recv_notify(const TransportContextId& context_id,
-                                const StreamId & streamId) = 0;
+    virtual void on_recv_notify(const TransportConnId& conn_id,
+                                const DataContextId& data_ctx_id) = 0;
   };
 
   /* Factory APIs */
@@ -222,34 +217,40 @@ public:
    *
    * @return TransportContextId: identifying the connection
    */
-  virtual TransportContextId start() = 0;
+  virtual TransportConnId start() = 0;
 
   /**
-   * @brief Create a stream in the context
+   * @brief Create a data context
+   * @details Data context is flow of data (track, namespace). This is similar to a pipe of data to be transmitted.
+   *        Metrics, shaping, etc. maintained at the data context level.
    *
-   * @todo change to generic stream
-   *
-   * @param[in] context_id              Identifying the connection
+   * @param[in] conn_id                 Connection ID to create data context
    * @param[in] use_reliable_transport 	Indicates a reliable stream is
    *                                 	preferred for transporting data
    * @param[in] priority                Priority for stream (default is 1)
+   * @param[in] bidir                   Set context to be bi-directional or unidirectional
    *
-   * @return StreamId identifying the stream via the connection
+   * @return DataContextId identifying the data context via the connection
    */
-  virtual StreamId createStream(const TransportContextId& context_id,
-                                bool use_reliable_transport,
-                                uint8_t priority=1) = 0;
+  virtual DataContextId createDataContext(const TransportConnId conn_id,
+                                          bool use_reliable_transport,
+                                          uint8_t priority = 1,
+                                          bool bidir = false) = 0;
 
   /**
    * @brief Close a transport context
    */
-  virtual void close(const TransportContextId& context_id) = 0;
+  virtual void close(const TransportConnId& context_id) = 0;
 
   /**
-   * @brief Close/end a stream within context
+   * @brief Delete data context
+   * @details Deletes a data context for the given connection id. If reliable, the stream will
+   *    be closed by FIN (graceful).
+   *
+   * @param[in] conn_id                 Connection ID to create data context
+   * @param[in] data_ctx_id             Data context ID to delete
    */
-  virtual void closeStream(const TransportContextId& context_id,
-                           StreamId stream_id) = 0;
+  virtual void deleteDataContext(const TransportConnId& conn_id, DataContextId data_ctx_id) = 0;
 
   /**
    * @brief Get the peer IP address and port associated with the stream
@@ -259,7 +260,7 @@ public:
    *
    * @returns True if the address was successfully returned, false otherwise
    */
-  virtual bool getPeerAddrInfo(const TransportContextId& context_id,
+  virtual bool getPeerAddrInfo(const TransportConnId& context_id,
                                sockaddr_storage* addr) = 0;
 
   /**
@@ -268,21 +269,21 @@ public:
    * @details Add data to the transport queue. Data enqueued will be transmitted
    * when available.
    *
-   * @todo is priority missing?
-   *
    * @param[in] context_id	Identifying the connection
-   * @param[in] streamId	  stream Id to send data on
+   * @param[in] data_ctx_id	  stream Id to send data on
    * @param[in] bytes				Data to send/write
    * @param[in] priority    Priority of the object, range should be 0 - 255
    * @param[in] ttl_ms      The age the object should exist in queue in milliseconds
    *
    * @returns TransportError is returned indicating status of the operation
    */
-  virtual TransportError enqueue(const TransportContextId& context_id,
-                                 const StreamId & streamId,
+  virtual TransportError enqueue(const TransportConnId& context_id,
+                                 const DataContextId& data_ctx_id,
                                  std::vector<uint8_t>&& bytes,
                                  const uint8_t priority = 1,
-                                 const uint32_t ttl_ms=350) = 0;
+                                 const uint32_t ttl_ms=350,
+                                 const bool new_stream=false,
+                                 const bool buffer_reset=false) = 0;
 
   /**
    * @brief Dequeue application data from transport queue
@@ -291,14 +292,13 @@ public:
    * to the caller using this method.  An empty return will be
    *
    * @param[in] context_id		Identifying the connection
-   * @param[in] streamId	        Stream Id to receive data
-   * from
+   * @param[in] data_ctx_id	        Stream Id to receive data from
    *
    * @returns std::nullopt if there is no data
    */
   virtual std::optional<std::vector<uint8_t>> dequeue(
-    const TransportContextId& context_id,
-    const StreamId & streamId) = 0;
+    const TransportConnId& context_id,
+    const DataContextId& data_ctx_id) = 0;
 };
 
 } // namespace qtransport

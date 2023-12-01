@@ -110,8 +110,6 @@ public:
     pop_front_internal();
   }
 
-
-
   /**
    * @brief Block waiting for data in queue, then remove the first object from
    * queue (oldest object)
@@ -143,6 +141,15 @@ public:
   {
     std::lock_guard<std::mutex> _(mutex);
     return queue.size();
+  }
+
+  /**
+   * @brief Clear the queue
+   */
+  void clear() {
+    std::lock_guard<std::mutex> _(mutex);
+    std::queue<T> empty;
+    std::swap(queue, empty);
   }
 
   /**
@@ -189,6 +196,10 @@ private:
     auto elem = queue.front();
     queue.pop();
 
+    if (queue.empty()) {
+      _empty = true;
+    }
+
     return std::move(elem);
   }
 
@@ -200,10 +211,15 @@ private:
   void pop_front_internal()
   {
     if (queue.empty()) {
+      _empty = true;
       return;
     }
 
     queue.pop();
+
+    if (queue.empty()) {
+      _empty = true;
+    }
   }
 
   std::atomic<bool> _empty { true };

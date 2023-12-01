@@ -308,7 +308,6 @@ namespace qtransport {
         size_t size() const noexcept { return _queue.size() - _queue_index; }
         bool empty() const noexcept { return _queue.empty() || _queue_index >= _queue.size(); }
 
-      private:
         /**
          * @brief Clear/reset the queue to no objects
          */
@@ -321,6 +320,9 @@ namespace qtransport {
                 bucket.clear();
             }
         }
+
+      private:
+
 
         /**
          * @brief Based on current time, adjust and move the bucket index with time
