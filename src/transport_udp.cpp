@@ -356,8 +356,7 @@ UDPTransport::enqueue(const TransportConnId& context_id,
                       std::vector<uint8_t>&& bytes,
                       [[maybe_unused]] const uint8_t priority,
                       [[maybe_unused]] const uint32_t ttl_m,
-                      [[maybe_unused]] const bool new_stream,
-                      [[maybe_unused]] const bool buffer_reset)
+                      [[maybe_unused]] const EncodeFlags flags)
 {
   if (bytes.empty()) {
     return TransportError::None;

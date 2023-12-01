@@ -81,8 +81,7 @@ public:
                          std::vector<uint8_t>&& bytes,
                          const uint8_t priority,
                          const uint32_t ttl_ms,
-                         const bool new_stream,
-                         const bool buffer_reset) override;
+                         const EncodeFlags flags) override;
 
   std::optional<std::vector<uint8_t>> dequeue(
     const TransportConnId& context_id,

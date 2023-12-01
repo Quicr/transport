@@ -54,6 +54,7 @@ class PicoQuicTransport : public ITransport
         uint64_t stream_prepare_send {0};
         uint64_t stream_rx_callbacks {0};
 
+        uint64_t tx_write_buffer_drops {0};                 /// Count of write buffer drops of data due to RESET request
         uint64_t tx_delayed_callback {0};                   /// Count of times transmit callbacks were delayed
         uint64_t prev_tx_delayed_callback {0};              /// Previous transmit delayed callback value, set each interval
         uint64_t stream_objects_sent {0};
@@ -81,6 +82,12 @@ class PicoQuicTransport : public ITransport
 
         DataContextId data_ctx_id {0};                       /// The ID of this context
         TransportConnId conn_id {0};                         /// The connection ID this context is under
+
+        enum class StreamAction : uint8_t {                  /// Stream action that should be done by send/receive processing
+            NO_ACTION=0,
+            REPLACE_STREAM_USE_RESET,
+            REPLACE_STREAM_USE_FIN,
+        } stream_action {StreamAction::NO_ACTION};
 
         uint64_t current_stream_id {0};                      /// Current active stream if the value is >= 4
 
@@ -253,8 +260,7 @@ class PicoQuicTransport : public ITransport
                            std::vector<uint8_t>&& bytes,
                            const uint8_t priority,
                            const uint32_t ttl_ms,
-                           const bool new_stream,
-                           const bool buffer_reset) override;
+                           const EncodeFlags flags) override;
 
     std::optional<std::vector<uint8_t>> dequeue(
       const TransportConnId& conn_id,
@@ -342,10 +348,9 @@ class PicoQuicTransport : public ITransport
      *
      * @param conn_ctx      Connection context for the stream
      * @param data_ctx      Data context for the stream
-     * @param send_reset    Indicates if the stream should be closed by RESET
-     * @param send_fin      Indicates if the stream should be closed by FIN (reset will take priority)
+     * @param send_reset    Indicates if the stream should be closed by RESET, otherwise FIN
      */
-    void close_stream(const ConnectionContext&conn_ctx, DataContext &data_ctx, const bool send_reset, const bool send_fin);
+    void close_stream(const ConnectionContext&conn_ctx, DataContext &data_ctx, const bool send_reset);
 
 
     /*

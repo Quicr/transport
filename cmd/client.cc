@@ -54,6 +54,10 @@ struct Delegate : public ITransport::TransportDelegate
             if (data.has_value()) {
                 msgcount++;
 
+                if (msgcount % 2000 == 0 && prev_msgcount != msgcount) {
+                    logger->info << "conn_id: " << conn_id << " data_ctx_id: " << data_ctx_id << "  msgcount: " << msgcount << std::flush;
+                }
+
                 uint32_t* msg_num = (uint32_t*)data.value().data();
 
                 if (prev_msg_num && (*msg_num - prev_msg_num) > 1) {
@@ -66,10 +70,6 @@ struct Delegate : public ITransport::TransportDelegate
                 prev_msg_num = *msg_num;
 
             } else {
-                if (msgcount % 2000 == 0 && prev_msgcount != msgcount) {
-                    logger->info << "conn_id: " << conn_id << " data_ctx_id: " << data_ctx_id << "  msgcount: " << msgcount << std::flush;
-                }
-
                 break;
             }
         }
@@ -124,13 +124,29 @@ main()
     DataContextId data_ctx_id = client->createDataContext(conn_id, true, 1, bidir);
 
     uint32_t* msg_num = (uint32_t*)&data_buf;
+    int period_count = 0;
+
+    ITransport::EncodeFlags encode_flags { .new_stream = true, .clear_tx_queue = true, .use_reset = true};
 
     while (client->status() != TransportStatus::Shutdown && client->status() != TransportStatus::Disconnected) {
+        period_count++;
         for (int i = 0; i < 10; i++) {
             (*msg_num)++;
             auto data = bytes(data_buf, data_buf + sizeof(data_buf));
 
-            client->enqueue(conn_id, server.proto == TransportProtocol::UDP ? 1 : data_ctx_id, std::move(data));
+            if (period_count > 2000) {
+                period_count = 0;
+                client->enqueue(conn_id,
+                                server.proto == TransportProtocol::UDP ? 1 : data_ctx_id,
+                                std::move(data),
+                                1,
+                                350,
+                                encode_flags);
+            }
+            else {
+                client->enqueue(conn_id, server.proto == TransportProtocol::UDP ? 1 : data_ctx_id, std::move(data));
+            }
+
         }
 
         // Increase delay if using UDP, need to pace more
@@ -139,6 +155,8 @@ main()
         } else {
             std::this_thread::sleep_for(std::chrono::milliseconds(2));
         }
+
+
     }
 
     client->deleteDataContext(conn_id, data_ctx_id);

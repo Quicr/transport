@@ -43,7 +43,7 @@ enum class TransportError : uint8_t
 };
 
 /**
- *
+ * Transport Protocol to use
  */
 enum class TransportProtocol
 {
@@ -266,6 +266,15 @@ public:
                                sockaddr_storage* addr) = 0;
 
   /**
+   * Encode flags
+   */
+  struct EncodeFlags {
+    bool new_stream { false };          /// Indicates that a new stream should be created to replace existing one
+    bool clear_tx_queue { false };      /// Indicates that the TX queue should be cleared before adding new object
+    bool use_reset { false };           /// Indicates new stream created will close the previous using reset/abrupt
+  };
+
+  /**
    * @brief Enqueue application data within the transport
    *
    * @details Add data to the transport queue. Data enqueued will be transmitted
@@ -277,6 +286,9 @@ public:
    * @param[in] priority        Priority of the object, range should be 0 - 255
    * @param[in] ttl_ms          The age the object should exist in queue in milliseconds
    *
+   * @param[in] new_stream      Indicates that a new stream should replace the existing on
+   * @param[in] clear_queue     Clear the TX priority queue before enqueueing this object
+   *
    * @returns TransportError is returned indicating status of the operation
    */
   virtual TransportError enqueue(const TransportConnId& context_id,
@@ -284,8 +296,7 @@ public:
                                  std::vector<uint8_t>&& bytes,
                                  const uint8_t priority = 1,
                                  const uint32_t ttl_ms=350,
-                                 const bool new_stream=false,
-                                 const bool buffer_reset=false) = 0;
+                                 const EncodeFlags flags={false, false, false}) = 0;
 
   /**
    * @brief Dequeue application data from transport queue

@@ -47,7 +47,7 @@ public:
   }
 
   void on_recv_notify(const TransportConnId &conn_id,
-                      const DataContextId &data_ctx_id) {
+                      const DataContextId &data_ctx_id, const bool is_bidir) {
 
     while (true) {
       auto data = server->dequeue(conn_id, data_ctx_id);
@@ -55,7 +55,14 @@ public:
       if (data.has_value()) {
         msgcount++;
 
+        if (msgcount % 2000 == 0 && prev_msgcount != msgcount) {
+            prev_msgcount = msgcount;
+            logger->info << "conn_id: " << conn_id << " data_ctx_id: " << data_ctx_id << "  msgcount: " << msgcount << std::flush;
+        }
+
         uint32_t *msg_num = (uint32_t *)data->data();
+        if (msg_num == nullptr)
+            continue;
 
         if (prev_msg_num && (*msg_num - prev_msg_num) > 1) {
             logger->info << "conn_id: " << conn_id << " data_ctx_id: " << data_ctx_id << "  length: " << data->size()
@@ -66,14 +73,14 @@ public:
 
         prev_msg_num = *msg_num;
 
-        server->enqueue(conn_id, out_data_ctx, std::move(data.value()));
+        if (is_bidir) {
+            server->enqueue(conn_id, data_ctx_id, std::move(data.value()));
 
-      } else {
-        if (msgcount % 2000 == 0 && prev_msgcount != msgcount) {
-            prev_msgcount = msgcount;
-            logger->info << "conn_id: " << conn_id << " data_ctx_id: " << data_ctx_id << "  msgcount: " << msgcount << std::flush;
+        } else {
+            server->enqueue(conn_id, out_data_ctx, std::move(data.value()));
         }
 
+      } else {
         break;
       }
     }
