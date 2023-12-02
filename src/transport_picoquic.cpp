@@ -163,14 +163,14 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
             if (is_fin) {
                 transport->logger->info << "Received FIN for stream " << stream_id << std::flush;
 
+                data_ctx->current_stream_id = 0;
+
                 if (data_ctx->is_default_context) {
                     data_ctx->reset_rx_object();
                     picoquic_set_app_stream_ctx(pq_cnx, stream_id, NULL);
-                    data_ctx->current_stream_id = 0;
-                }
-                else {
-                    transport->logger->info << "delete data context" << std::flush;
-                    transport->deleteDataContext(conn_id, stream_id);
+
+                } else {
+                    transport->deleteDataContext(conn_id, data_ctx->data_ctx_id);
                 }
             }
             break;
@@ -185,13 +185,13 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
                 data_ctx = transport->createDataContextBiDirRecv(conn_id, stream_id);
             }
 
+            data_ctx->current_stream_id = 0;
+
             if (data_ctx->is_default_context) {
                 data_ctx->reset_rx_object();
-                data_ctx->current_stream_id = 0;
             }
             else {
-                transport->logger->info << "delete data context" << std::flush;
-                transport->deleteDataContext(conn_id, stream_id);
+                transport->deleteDataContext(conn_id, data_ctx->data_ctx_id);
             }
 
             picoquic_set_app_stream_ctx(pq_cnx, stream_id, data_ctx);
@@ -800,7 +800,7 @@ PicoQuicTransport::DataContext* PicoQuicTransport::createDataContextBiDirRecv(Tr
 
         data_ctx_it->second.current_stream_id = stream_id;
 
-        cbNotifyQueue.push([=,data_ctx_id = data_ctx_it->second.data_ctx_id, this]() {
+        cbNotifyQueue.push([=, data_ctx_id = data_ctx_it->second.data_ctx_id, this]() {
             delegate.on_new_data_context(conn_id, data_ctx_id); });
 
         logger->info << "Created new bidir data context conn_id: " << conn_id
@@ -966,7 +966,7 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
             case DataContext::StreamAction::REPLACE_STREAM_USE_FIN: {
                 if (data_ctx->stream_tx_object == nullptr) {
                     logger->info << "Replacing stream using FIN; conn_id: " << data_ctx->conn_id
-                                 << " existing_stream: " << data_ctx->conn_id << std::flush;
+                                 << " existing_stream: " << data_ctx->current_stream_id << std::flush;
 
                     const auto conn_ctx = getConnContext(data_ctx->conn_id);
                     create_stream(*conn_ctx, *data_ctx, data_ctx->is_bidir);

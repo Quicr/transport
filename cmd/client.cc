@@ -75,6 +75,7 @@ struct Delegate : public ITransport::TransportDelegate
         }
     }
 
+
     void on_new_data_context(const TransportConnId&, const DataContextId&) {}
 };
 
@@ -126,7 +127,7 @@ main()
     uint32_t* msg_num = (uint32_t*)&data_buf;
     int period_count = 0;
 
-    ITransport::EncodeFlags encode_flags { .new_stream = true, .clear_tx_queue = true, .use_reset = true};
+    ITransport::EncodeFlags encode_flags { .new_stream = true, .clear_tx_queue = false, .use_reset = false};
 
     while (client->status() != TransportStatus::Shutdown && client->status() != TransportStatus::Disconnected) {
         period_count++;
