@@ -266,9 +266,10 @@ public:
                                sockaddr_storage* addr) = 0;
 
   /**
-   * Encode flags
+   * Enqueue flags
    */
-  struct EncodeFlags {
+  struct EnqueueFlags
+  {
     bool new_stream { false };          /// Indicates that a new stream should be created to replace existing one
     bool clear_tx_queue { false };      /// Indicates that the TX queue should be cleared before adding new object
     bool use_reset { false };           /// Indicates new stream created will close the previous using reset/abrupt
@@ -296,7 +297,7 @@ public:
                                  std::vector<uint8_t>&& bytes,
                                  const uint8_t priority = 1,
                                  const uint32_t ttl_ms=350,
-                                 const EncodeFlags flags={false, false, false}) = 0;
+                                 const EnqueueFlags flags={false, false, false}) = 0;
 
   /**
    * @brief Dequeue application data from transport queue

@@ -59,6 +59,7 @@ struct Delegate : public ITransport::TransportDelegate
                 }
 
                 uint32_t* msg_num = (uint32_t*)data.value().data();
+                if (msg_num == NULL) break;
 
                 if (prev_msg_num && (*msg_num - prev_msg_num) > 1) {
                     logger->info << "conn_id: " << conn_id << " data_ctx_id: " << data_ctx_id << "  length: " << data->size()
@@ -127,7 +128,7 @@ main()
     uint32_t* msg_num = (uint32_t*)&data_buf;
     int period_count = 0;
 
-    ITransport::EncodeFlags encode_flags { .new_stream = true, .clear_tx_queue = false, .use_reset = false};
+    ITransport::EnqueueFlags encode_flags { .new_stream = true, .clear_tx_queue = true, .use_reset = true};
 
     while (client->status() != TransportStatus::Shutdown && client->status() != TransportStatus::Disconnected) {
         period_count++;

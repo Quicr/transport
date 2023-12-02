@@ -260,7 +260,7 @@ class PicoQuicTransport : public ITransport
                            std::vector<uint8_t>&& bytes,
                            const uint8_t priority,
                            const uint32_t ttl_ms,
-                           const EncodeFlags flags) override;
+                           const EnqueueFlags flags) override;
 
     std::optional<std::vector<uint8_t>> dequeue(
       const TransportConnId& conn_id,
@@ -337,9 +337,8 @@ class PicoQuicTransport : public ITransport
      *
      * @param conn_ctx      Connection context to create stream under
      * @param data_ctx      Data context in connection context to create streams
-     * @param bidir         Stream should be created as bi-directional (true) or unidirectional (false)
      */
-    void create_stream(ConnectionContext&conn_ctx, DataContext &data_ctx, const bool bidir=false);
+    void create_stream(ConnectionContext&conn_ctx, DataContext *data_ctx);
 
     /**
      * @brief App initiated Close stream
@@ -350,7 +349,7 @@ class PicoQuicTransport : public ITransport
      * @param data_ctx      Data context for the stream
      * @param send_reset    Indicates if the stream should be closed by RESET, otherwise FIN
      */
-    void close_stream(const ConnectionContext&conn_ctx, DataContext &data_ctx, const bool send_reset);
+    void close_stream(const ConnectionContext& conn_ctx, DataContext *data_ctx, const bool send_reset);
 
 
     /*
