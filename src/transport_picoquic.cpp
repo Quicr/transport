@@ -132,8 +132,7 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
 
         case picoquic_callback_stream_fin:
             is_fin = true;
-            // fallthrough to picoquic_callback_stream_data
-
+            [[fallthrough]];
         case picoquic_callback_stream_data: {
             if (data_ctx == NULL) {
                 if (!((stream_id & 0x2) == 2) /* not unidir stream */) {
