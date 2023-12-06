@@ -287,7 +287,7 @@ class PicoQuicTransport : public ITransport
 
     ConnectionContext& createConnContext(picoquic_cnx_t * pq_cnx);
 
-    DataContext& getDefaultDataContext(TransportConnId conn_id);
+    DataContext* getDefaultDataContext(TransportConnId conn_id);
 
     void send_next_datagram(DataContext* data_ctx, uint8_t* bytes_ctx, size_t max_len);
     void send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, size_t max_len);

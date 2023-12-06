@@ -85,7 +85,7 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
 
         case picoquic_callback_prepare_datagram: {
             // length is the max allowed data length
-            data_ctx = &transport->getDefaultDataContext(conn_id);
+            data_ctx = transport->getDefaultDataContext(conn_id);
             data_ctx->metrics.dgram_prepare_send++;
             transport->send_next_datagram(data_ctx, bytes, length);
             break;
@@ -93,24 +93,24 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
 
         case picoquic_callback_datagram_acked:
             //   bytes carries the original packet data
-            data_ctx = &transport->getDefaultDataContext(conn_id);
+            data_ctx = transport->getDefaultDataContext(conn_id);
 //            transport->logger->info << "Got datagram ack send_time: " << stream_id
 //                                    << " bytes length: " << length << std::flush;
             data_ctx->metrics.dgram_ack++;
             break;
 
         case picoquic_callback_datagram_spurious:
-            data_ctx = &transport->getDefaultDataContext(conn_id);
+            data_ctx = transport->getDefaultDataContext(conn_id);
             data_ctx->metrics.dgram_spurious++;
             break;
 
         case picoquic_callback_datagram_lost:
-            data_ctx = &transport->getDefaultDataContext(conn_id);
+            data_ctx = transport->getDefaultDataContext(conn_id);
             data_ctx->metrics.dgram_lost++;
             break;
 
         case picoquic_callback_datagram: {
-            data_ctx = &transport->getDefaultDataContext(conn_id);
+            data_ctx = transport->getDefaultDataContext(conn_id);
             data_ctx->metrics.dgram_received++;
             transport->on_recv_datagram(data_ctx, bytes, length);
             break;
@@ -150,7 +150,7 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
                     }
                 }
                 else {
-                    data_ctx = &transport->getDefaultDataContext(conn_id);
+                    data_ctx = transport->getDefaultDataContext(conn_id);
                     picoquic_set_app_stream_ctx(pq_cnx, stream_id, data_ctx);
                 }
             }
@@ -185,7 +185,7 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
             picoquic_reset_stream_ctx(pq_cnx, stream_id);
 
             if (data_ctx == NULL) {
-                data_ctx = &transport->getDefaultDataContext(conn_id);
+                data_ctx = transport->getDefaultDataContext(conn_id);
             }
 
             data_ctx->current_stream_id = 0;
@@ -229,8 +229,8 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
 
         case picoquic_callback_application_close:
         case picoquic_callback_close: {
-            transport->logger->info << "Closing connection stream_id: "
-                                    << stream_id;
+            transport->logger->info << "Closing connection conn_id: " << conn_id
+                                    << "stream_id: " << stream_id;
 
             switch (picoquic_get_local_error(pq_cnx)) {
                 case PICOQUIC_ERROR_IDLE_TIMEOUT:
@@ -243,19 +243,25 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
                                             << " app_error: " << picoquic_get_application_error(pq_cnx);
             }
 
-            data_ctx = &transport->getDefaultDataContext(conn_id);
+            picoquic_set_callback(pq_cnx, NULL, NULL);
 
-            if (data_ctx != NULL) {
-                auto conn_ctx = transport->getConnContext(conn_id);
+            data_ctx = transport->getDefaultDataContext(conn_id);
 
-                transport->logger->info << " " << conn_ctx->peer_addr_text;
+            if (data_ctx == nullptr) {
+                transport->logger->info << std::flush;
+                transport->logger->error << "Close conn_id: " << conn_id
+                                         << " is missing connection context" << std::flush;
+                return 0;
+            }
 
-                transport->deleteDataContext(conn_id, data_ctx->data_ctx_id);
+            auto conn_ctx = transport->getConnContext(conn_id);
+            if (conn_ctx != nullptr) {
+                transport->logger->info << " remote: " << conn_ctx->peer_addr_text;
             }
 
             transport->logger->info << std::flush;
 
-            picoquic_set_callback(pq_cnx, NULL, NULL);
+            transport->deleteDataContext(conn_id, data_ctx->data_ctx_id);
 
             if (not transport->_is_server_mode) {
                 transport->setStatus(TransportStatus::Disconnected);
@@ -643,8 +649,6 @@ PicoQuicTransport::close(const TransportConnId& conn_id)
 
     picoquic_close(conn_it->second.pq_cnx, 0);
 
-    conn_context.erase(conn_it);
-
     if (not _is_server_mode) {
         setStatus(TransportStatus::Shutdown);
     }
@@ -655,23 +659,21 @@ PicoQuicTransport::close(const TransportConnId& conn_id)
  * ============================================================================
  */
 
-PicoQuicTransport::DataContext&
+PicoQuicTransport::DataContext*
 PicoQuicTransport::getDefaultDataContext(TransportConnId conn_id)
 {
     // Locate the specified transport connection context
     auto it = conn_context.find(conn_id);
 
     if (it == conn_context.end()) {
-
+        return nullptr;
     }
 
-    return it->second.default_data_context;
+    return &it->second.default_data_context;
 }
 
 PicoQuicTransport::ConnectionContext* PicoQuicTransport::getConnContext(const TransportConnId& conn_id)
 {
-    ConnectionContext conn_ctx { };
-
     // Locate the specified transport connection context
     auto it = conn_context.find(conn_id);
 
