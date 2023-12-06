@@ -80,38 +80,37 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
 
     transport->pq_runner();
 
-    if (data_ctx == NULL && stream_id == 0) {
-        data_ctx = &transport->getDefaultDataContext(conn_id);
-    }
 
     switch (fin_or_event) {
 
         case picoquic_callback_prepare_datagram: {
             // length is the max allowed data length
+            data_ctx = &transport->getDefaultDataContext(conn_id);
             data_ctx->metrics.dgram_prepare_send++;
             transport->send_next_datagram(data_ctx, bytes, length);
             break;
         }
 
         case picoquic_callback_datagram_acked:
-            // Called for each datagram - TODO: Revisit how often acked frames are coming in
             //   bytes carries the original packet data
-            //      log_msg.str("");
-            //      log_msg << "Got datagram ack send_time: " << stream_id
-            //              << " bytes length: " << length;
-            //      transport->logger.log(LogLevel::info, log_msg.str());
+            data_ctx = &transport->getDefaultDataContext(conn_id);
+//            transport->logger->info << "Got datagram ack send_time: " << stream_id
+//                                    << " bytes length: " << length << std::flush;
             data_ctx->metrics.dgram_ack++;
             break;
 
         case picoquic_callback_datagram_spurious:
+            data_ctx = &transport->getDefaultDataContext(conn_id);
             data_ctx->metrics.dgram_spurious++;
             break;
 
         case picoquic_callback_datagram_lost:
+            data_ctx = &transport->getDefaultDataContext(conn_id);
             data_ctx->metrics.dgram_lost++;
             break;
 
         case picoquic_callback_datagram: {
+            data_ctx = &transport->getDefaultDataContext(conn_id);
             data_ctx->metrics.dgram_received++;
             transport->on_recv_datagram(data_ctx, bytes, length);
             break;
@@ -184,11 +183,12 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
                                     << std::flush;
 
             picoquic_reset_stream_ctx(pq_cnx, stream_id);
-            data_ctx->current_stream_id = 0;
 
             if (data_ctx == NULL) {
-                break;
+                data_ctx = &transport->getDefaultDataContext(conn_id);
             }
+
+            data_ctx->current_stream_id = 0;
 
             if (data_ctx->is_default_context) {
                 data_ctx->reset_rx_object();

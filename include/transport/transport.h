@@ -242,7 +242,7 @@ public:
   /**
    * @brief Close a transport context
    */
-  virtual void close(const TransportConnId& context_id) = 0;
+  virtual void close(const TransportConnId& conn_id) = 0;
 
   /**
    * @brief Delete data context

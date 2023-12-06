@@ -13,7 +13,7 @@ all: ${BUILD_DIR}
 	cmake --build ${BUILD_DIR} --parallel 8
 
 ${BUILD_DIR}: CMakeLists.txt cmd/CMakeLists.txt
-	cmake -B${BUILD_DIR} -DBUILD_TESTING=TRUE -DQTRANSPORT_BUILD_TESTS=TRUE -DCMAKE_BUILD_TYPE=Debug .
+	cmake -B${BUILD_DIR} -DBUILD_TESTING=ON -DQTRANSPORT_BUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Debug .
 
 clean:
 	cmake --build ${BUILD_DIR} --target clean
