@@ -842,16 +842,11 @@ void PicoQuicTransport::deleteDataContext(const TransportConnId& conn_id, DataCo
     if (conn_it == conn_context.end())
         return;
 
-    const auto data_ctx_it = conn_it->second.active_data_contexts.find(data_ctx_id);
-
-    if (data_ctx_it == conn_it->second.active_data_contexts.end())
-        return;
-
     logger->info << "Delete data context " << data_ctx_id
                  << " in conn_id: " << conn_id
                  << std::flush;
 
-    if (data_ctx_it->second.is_default_context) {
+    if (data_ctx_id == 0) {
         logger->info << "Delete default context for conn_id: " << conn_id << ", closing connection" << std::flush;
 
         // Only one datagram context is per connection, if it's deleted, then the connection is to be terminated
@@ -874,6 +869,10 @@ void PicoQuicTransport::deleteDataContext(const TransportConnId& conn_id, DataCo
 
         return;
     }
+
+    const auto data_ctx_it = conn_it->second.active_data_contexts.find(data_ctx_id);
+    if (data_ctx_it == conn_it->second.active_data_contexts.end())
+        return;
 
     close_stream(conn_it->second, &data_ctx_it->second, false);
 
