@@ -189,11 +189,9 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
             }
 
             data_ctx->current_stream_id = 0;
+            data_ctx->reset_rx_object();
 
-            if (data_ctx->is_default_context) {
-                data_ctx->reset_rx_object();
-            }
-            else {
+            if (!data_ctx->is_default_context) {
                 transport->deleteDataContext(conn_id, data_ctx->data_ctx_id);
             }
 

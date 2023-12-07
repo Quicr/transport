@@ -369,6 +369,8 @@ namespace qtransport {
         {
             if (ttl > _duration) {
                 throw std::invalid_argument("TTL is greater than max duration");
+            } else if (ttl == 0) {
+                ttl = _duration;
             }
 
             ttl = ttl / _interval;
