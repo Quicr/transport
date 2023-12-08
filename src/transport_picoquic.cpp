@@ -193,6 +193,7 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
             data_ctx->reset_rx_object(stream_id);
 
             transport->logger->info << "Received RESET stream; conn_id: " << data_ctx->conn_id
+                                    << " data_ctx_id: " << data_ctx->data_ctx_id
                                     << " stream_id: " << stream_id
                                     << " Rx buf drops: " << data_ctx->metrics.tx_buffer_drops << std::flush;
 
@@ -233,7 +234,7 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
         case picoquic_callback_application_close:
         case picoquic_callback_close: {
             transport->logger->info << "Closing connection conn_id: " << conn_id
-                                    << "stream_id: " << stream_id;
+                                    << " stream_id: " << stream_id;
 
             switch (picoquic_get_local_error(pq_cnx)) {
                 case PICOQUIC_ERROR_IDLE_TIMEOUT:
@@ -966,6 +967,7 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
                 data_ctx->reset_tx_object();
 
                 logger->info << "Replacing stream using RESET; conn_id: " << data_ctx->conn_id
+                             << " data_ctx_id: " << data_ctx->data_ctx_id
                              << " existing_stream: " << data_ctx->current_stream_id
                              << " write buf drops: " << data_ctx->metrics.tx_buffer_drops << std::flush;
 
