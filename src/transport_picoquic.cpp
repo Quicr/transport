@@ -189,7 +189,12 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
             }
 
             data_ctx->current_stream_id = 0;
+
             data_ctx->reset_rx_object(stream_id);
+
+            transport->logger->info << "Received RESET stream; conn_id: " << data_ctx->conn_id
+                                    << " stream_id: " << stream_id
+                                    << " Rx buf drops: " << data_ctx->metrics.tx_buffer_drops << std::flush;
 
             if (!data_ctx->is_default_context) {
                 transport->deleteDataContext(conn_id, data_ctx->data_ctx_id);
@@ -951,18 +956,19 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
 
             case DataContext::StreamAction::REPLACE_STREAM_USE_RESET: {
                 if (data_ctx->stream_tx_object != nullptr) {
-                    data_ctx->metrics.tx_write_buffer_drops++;
+                    data_ctx->metrics.tx_buffer_drops++;
                 }
-
-                logger->info << "Replacing stream using RESET; conn_id: " << data_ctx->conn_id
-                             << " existing_stream: " << data_ctx->current_stream_id
-                             << " write buf drops: " << data_ctx->metrics.tx_write_buffer_drops << std::flush;
 
                 const auto conn_ctx = getConnContext(data_ctx->conn_id);
 
                 close_stream(*conn_ctx, data_ctx, true);
 
                 data_ctx->reset_tx_object();
+
+                logger->info << "Replacing stream using RESET; conn_id: " << data_ctx->conn_id
+                             << " existing_stream: " << data_ctx->current_stream_id
+                             << " write buf drops: " << data_ctx->metrics.tx_buffer_drops << std::flush;
+
 
                 create_stream(*conn_ctx, data_ctx);
 

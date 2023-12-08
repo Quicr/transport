@@ -54,7 +54,8 @@ class PicoQuicTransport : public ITransport
         uint64_t stream_prepare_send {0};
         uint64_t stream_rx_callbacks {0};
 
-        uint64_t tx_write_buffer_drops {0};                 /// Count of write buffer drops of data due to RESET request
+        uint64_t rx_buffer_drops {0};                       /// count of receive buffer drops of data due to RESET request
+        uint64_t tx_buffer_drops{0};                        /// Count of write buffer drops of data due to RESET request
         uint64_t tx_delayed_callback {0};                   /// Count of times transmit callbacks were delayed
         uint64_t prev_tx_delayed_callback {0};              /// Previous transmit delayed callback value, set each interval
         uint64_t stream_objects_sent {0};
@@ -144,6 +145,8 @@ class PicoQuicTransport : public ITransport
 
             auto it = stream_rx_buffer.find(stream_id);
             if (it != stream_rx_buffer.end()) {
+                metrics.rx_buffer_drops++;
+
                 delete[] it->second.object;
 
                 it->second.object = nullptr;
@@ -158,6 +161,7 @@ class PicoQuicTransport : public ITransport
          */
         void reset_tx_object() {
             if (stream_tx_object != nullptr) {
+                metrics.tx_buffer_drops++;
                 delete [] stream_tx_object;
             }
 
