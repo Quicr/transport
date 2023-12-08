@@ -62,7 +62,7 @@ class PicoQuicTransport : public ITransport
         uint64_t stream_bytes_recv {0};
         uint64_t stream_objects_recv {0};
 
-        auto operator<=>(const DataContextMetrics&) const = default;
+        constexpr auto operator<=>(const DataContextMetrics&) const = default;
 
     };
 
@@ -201,6 +201,10 @@ class PicoQuicTransport : public ITransport
 
         ConnectionContext() {
             default_data_context.is_default_context = true;
+        }
+
+        ConnectionContext(picoquic_cnx_t *cnx) : ConnectionContext() {
+            pq_cnx = cnx;
         }
 
         ConnectionContext(picoquic_cnx_t *cnx) : ConnectionContext() {

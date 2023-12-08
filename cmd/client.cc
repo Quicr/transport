@@ -34,7 +34,7 @@ struct Delegate : public ITransport::TransportDelegate
 
     void setClientTransport(std::shared_ptr<ITransport> client) { this->client = client; }
 
-    TransportConnId getContextId() { return conn_id; }
+    TransportConnId getContextId() const { return conn_id; }
 
     void on_connection_status(const TransportConnId& conn_id, const TransportStatus status)
     {

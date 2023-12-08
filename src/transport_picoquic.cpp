@@ -282,7 +282,6 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
                 transport->on_connection_status(conn_id, TransportStatus::Ready);
             }
 
-            picoquic_enable_keep_alive(pq_cnx, 3000000);
             (void)picoquic_mark_datagram_ready(pq_cnx, 1);
 
             break;
@@ -435,7 +434,7 @@ PicoQuicTransport::start()
     picoquic_init_transport_parameters(&local_tp_options, 1);
     local_tp_options.max_datagram_frame_size = 1280;
     //  local_tp_options.max_packet_size = 1450;
-    local_tp_options.idle_timeout = 30000; // TODO: Remove when we add reconnnect change back to 10 seconds
+    local_tp_options.idle_timeout = tconfig.idle_timeout_ms;
     local_tp_options.max_ack_delay = 100000;
     local_tp_options.min_ack_delay = 1000;
 
@@ -576,8 +575,6 @@ PicoQuicTransport::dequeue(const TransportConnId& conn_id, const DataContextId& 
     }
 
     return std::move(data_ctx_it->second.rx_data->pop());
-
-    return std::nullopt;
 }
 
 DataContextId
@@ -588,6 +585,10 @@ PicoQuicTransport::createDataContext(const TransportConnId conn_id,
     std::lock_guard<std::mutex> _(_state_mutex);
 
     if (priority > 127) {
+        /*
+         * Picoquic most significant bit of priority indicates to use round-robin. We don't want
+         *      to use round-robin of same priorities right now.
+         */
         throw std::runtime_error("Create stream priority cannot be greater than 127, range is 0 - 127");
     }
 
@@ -1107,6 +1108,8 @@ PicoQuicTransport::on_new_connection(const TransportConnId conn_id)
                             .port = conn_ctx->peer_port,
                             .proto = TransportProtocol::QUIC };
 
+    picoquic_enable_keep_alive(conn_ctx->pq_cnx, tconfig.idle_timeout_ms * 500);
+
     cbNotifyQueue.push([=, this]() { delegate.on_new_connection(conn_id, remote); });
 }
 
@@ -1408,7 +1411,7 @@ void PicoQuicTransport::client(const TransportConnId conn_id)
     } else {
         picoquic_set_callback(conn_ctx->pq_cnx, pq_event_cb, this);
 
-        picoquic_enable_keep_alive(conn_ctx->pq_cnx, 3000000);
+        picoquic_enable_keep_alive(conn_ctx->pq_cnx, tconfig.idle_timeout_ms * 500);
 
         ret = picoquic_start_client_cnx(conn_ctx->pq_cnx);
         if (ret < 0) {

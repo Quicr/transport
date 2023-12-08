@@ -80,6 +80,8 @@ struct TransportConfig
 
   const uint64_t pacing_decrease_threshold_Bps { 16000 };   /// QUIC pacing rate decrease threshold for notification in Bps
   const uint64_t pacing_increase_threshold_Bps { 16000 };   /// QUIC pacing rate increase threshold for notification in Bps
+
+  const uint64_t idle_timeout_ms { 30000 };             /// Idle timeout for transport connection(s) in milliseconds
 };
 
 /**
