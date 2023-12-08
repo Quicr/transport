@@ -190,12 +190,17 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
 
             data_ctx->current_stream_id = 0;
 
+            const auto rx_buf_it = data_ctx->stream_rx_buffer.find(stream_id);
+            if (rx_buf_it != data_ctx->stream_rx_buffer.end() && rx_buf_it->second.object != nullptr) {
+                data_ctx->metrics.rx_buffer_drops++;
+            }
+
             data_ctx->reset_rx_object(stream_id);
 
             transport->logger->info << "Received RESET stream; conn_id: " << data_ctx->conn_id
                                     << " data_ctx_id: " << data_ctx->data_ctx_id
                                     << " stream_id: " << stream_id
-                                    << " Rx buf drops: " << data_ctx->metrics.tx_buffer_drops << std::flush;
+                                    << " RX buf drops: " << data_ctx->metrics.tx_buffer_drops << std::flush;
 
             if (!data_ctx->is_default_context) {
                 transport->deleteDataContext(conn_id, data_ctx->data_ctx_id);

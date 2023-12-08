@@ -145,8 +145,6 @@ class PicoQuicTransport : public ITransport
 
             auto it = stream_rx_buffer.find(stream_id);
             if (it != stream_rx_buffer.end()) {
-                metrics.rx_buffer_drops++;
-
                 delete[] it->second.object;
 
                 it->second.object = nullptr;
@@ -161,7 +159,6 @@ class PicoQuicTransport : public ITransport
          */
         void reset_tx_object() {
             if (stream_tx_object != nullptr) {
-                metrics.tx_buffer_drops++;
                 delete [] stream_tx_object;
             }
 
