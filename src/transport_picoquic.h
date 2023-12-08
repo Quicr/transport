@@ -206,10 +206,6 @@ class PicoQuicTransport : public ITransport
         ConnectionContext(picoquic_cnx_t *cnx) : ConnectionContext() {
             pq_cnx = cnx;
         }
-
-        ConnectionContext(picoquic_cnx_t *cnx) : ConnectionContext() {
-            pq_cnx = cnx;
-        }
     };
 
     /*
