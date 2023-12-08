@@ -151,6 +151,19 @@ namespace qtransport {
             }
         }
 
+        /**
+         * @brief Clear queue
+         */
+        void clear() {
+            std::lock_guard<std::mutex> _(_mutex);
+
+            for (auto& tqueue: _queue) {
+                if (tqueue && !tqueue->empty()) {
+                    tqueue->clear();
+                }
+            }
+        }
+
         // TODO: Consider changing empty/size to look at timeQueue sizes - maybe support blocking pops
         size_t size() const
         {

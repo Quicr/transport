@@ -46,8 +46,8 @@ struct addrKey
 
 struct connData
 {
-  TransportContextId contextId;
-  StreamId streamId;
+  TransportConnId contextId;
+  DataContextId streamId;
   std::vector<uint8_t> data;
 };
 
@@ -63,34 +63,33 @@ public:
 
   TransportStatus status() const override;
 
-  TransportContextId start() override;
+  TransportConnId start() override;
 
-  void close(const TransportContextId& context_id) override;
-  void closeStream(const TransportContextId& context_id,
-                   StreamId streamId) override;
+  void close(const TransportConnId& context_id) override;
 
-  virtual bool getPeerAddrInfo(const TransportContextId& context_id,
+  virtual bool getPeerAddrInfo(const TransportConnId& context_id,
                                sockaddr_storage* addr) override;
 
-  StreamId createStream(const TransportContextId& context_id,
-                        bool use_reliable_transport,
-                        uint8_t priority) override;
+  DataContextId createDataContext(const TransportConnId conn_id,
+                                  bool use_reliable_transport,
+                                  uint8_t priority, bool bidir) override;
 
+  void deleteDataContext(const TransportConnId& conn_id, DataContextId data_ctx_id) override;
 
-  TransportError enqueue(const TransportContextId& context_id,
-                         const StreamId & stream_id,
+  TransportError enqueue(const TransportConnId& conn_id,
+                         const DataContextId& data_ctx_id,
                          std::vector<uint8_t>&& bytes,
-                         const uint8_t priority = 1,
-                         const uint32_t ttl_ms = 300) override;
-
+                         const uint8_t priority,
+                         const uint32_t ttl_ms,
+                         const EnqueueFlags flags) override;
 
   std::optional<std::vector<uint8_t>> dequeue(
-    const TransportContextId& context_id,
-    const StreamId &streamId) override;
+    const TransportConnId& context_id,
+    const DataContextId&streamId) override;
 
 private:
-  TransportContextId connect_client();
-  TransportContextId connect_server();
+  TransportConnId connect_client();
+  TransportConnId connect_server();
 
   void addr_to_remote(sockaddr_storage& addr, TransportRemote& remote);
   void addr_to_key(sockaddr_storage& addr, addrKey& key);
@@ -110,8 +109,8 @@ private:
 
   struct AddrStream
   {
-    TransportContextId tcid;
-    StreamId sid;
+    TransportConnId tcid;
+    DataContextId sid;
   };
 
   cantina::LoggerPointer logger;
@@ -124,14 +123,14 @@ private:
 
   // NOTE: this is a map supporting multiple streams, but UDP does not have that
   // right now.
-  std::map<TransportContextId, std::map<StreamId, safe_queue<connData>>>
+  std::map<TransportConnId, std::map<DataContextId, safe_queue<connData>>>
     dequeue_data_map;
 
   TransportDelegate& delegate;
 
-  TransportContextId last_context_id{ 0 };
-  StreamId last_stream_id{ 0 };
-  std::map<TransportContextId, Addr> remote_contexts = {};
+  TransportConnId last_context_id{ 0 };
+  DataContextId last_stream_id{ 0 };
+  std::map<TransportConnId, Addr> remote_contexts = {};
   std::map<addrKey, AddrStream> remote_addrs = {};
 };
 

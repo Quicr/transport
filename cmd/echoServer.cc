@@ -11,14 +11,17 @@ using namespace qtransport;
 struct Delegate : public ITransport::TransportDelegate {
 private:
   std::shared_ptr<ITransport> server;
-  uint64_t msgcount;
   cantina::LoggerPointer logger;
+
+  uint64_t msgcount {0};
+  uint64_t prev_msgcount {0};
+  uint32_t prev_msg_num {0};
+  DataContextId out_data_ctx {0};
 
 public:
   Delegate(const cantina::LoggerPointer& logger)
     : logger(std::make_shared<cantina::Logger>("ECHO", logger))
   {
-      msgcount = 0;
   }
 
   void stop() {
@@ -29,32 +32,40 @@ public:
     this->server = server;
   }
 
-  void on_connection_status(const TransportContextId &context_id,
+  void on_connection_status(const TransportConnId &conn_id,
                             const TransportStatus status) {
-    logger->info << "Connection state change context: " << context_id << ", "
+    logger->info << "Connection state change conn_id: " << conn_id << ", "
                  << int(status) << std::flush;
   }
 
-  void on_new_connection(const TransportContextId &context_id,
+  void on_new_connection(const TransportConnId &conn_id,
                          const TransportRemote &remote) {
-    logger->info << "New connection cid: " << context_id << " from "
+    logger->info << "New connection conn_id: " << conn_id << " from "
                  << remote.host_or_ip << ":" << remote.port << std::flush;
+
+    out_data_ctx = this->server->createDataContext(conn_id, true, 10);
   }
 
-  void on_recv_notify(const TransportContextId &context_id,
-                      const StreamId &streamId) {
-    static uint32_t prev_msg_num = 0;
+  void on_recv_notify(const TransportConnId &conn_id,
+                      const DataContextId &data_ctx_id, const bool is_bidir) {
 
     while (true) {
-      auto data = server->dequeue(context_id, streamId);
+      auto data = server->dequeue(conn_id, data_ctx_id);
 
       if (data.has_value()) {
         msgcount++;
 
+        if (msgcount % 2000 == 0 && prev_msgcount != msgcount) {
+            prev_msgcount = msgcount;
+            logger->info << "conn_id: " << conn_id << " data_ctx_id: " << data_ctx_id << "  msgcount: " << msgcount << std::flush;
+        }
+
         uint32_t *msg_num = (uint32_t *)data->data();
+        if (msg_num == nullptr)
+            continue;
 
         if (prev_msg_num && (*msg_num - prev_msg_num) > 1) {
-            logger->info << "cid: " << context_id << " sid: " << streamId << "  length: " << data->size()
+            logger->info << "conn_id: " << conn_id << " data_ctx_id: " << data_ctx_id << "  length: " << data->size()
                          << "  RecvMsg (" << msgcount << ")"
                          << "  msg_num: " << *msg_num << "  prev_num: " << prev_msg_num << "("
                          << *msg_num - prev_msg_num << ")" << std::flush;
@@ -62,15 +73,24 @@ public:
 
         prev_msg_num = *msg_num;
 
-        server->enqueue(context_id, streamId, std::move(data.value()));
+        if (is_bidir) {
+            server->enqueue(conn_id, data_ctx_id, std::move(data.value()));
+
+        } else {
+            server->enqueue(conn_id, out_data_ctx, std::move(data.value()));
+        }
+
       } else {
         break;
       }
     }
   }
 
-  void on_new_stream(const TransportContextId & /* context_id */,
-                     const StreamId & /* streamId */) {}
+  void on_new_data_context(const TransportConnId& conn_id, const DataContextId& data_ctx_id)
+  {
+    logger->info << "Callback for new data context conn_id: " << conn_id << " data_ctx_id: " << data_ctx_id
+                 << std::flush;
+  }
 };
 
 int main() {
@@ -94,8 +114,8 @@ int main() {
 
   d.setServerTransport(server);
 
-  while (true) {
-    std::this_thread::sleep_for(std::chrono::seconds(60));
+  while (server->status() != TransportStatus::Shutdown) {
+    std::this_thread::sleep_for(std::chrono::seconds(3));
   }
 
   server.reset();

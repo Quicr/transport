@@ -62,23 +62,24 @@ UDPTransport::status() const
  * UDP doesn't support multiple streams for clients.  This will return the same
  * stream ID used for the context
  */
-StreamId
-UDPTransport::createStream(
-  const qtransport::TransportContextId& context_id,
+DataContextId
+UDPTransport::createDataContext(
+  const qtransport::TransportConnId conn_id,
   [[maybe_unused]] bool use_reliable_transport,
-  [[maybe_unused]] uint8_t priority)
+  [[maybe_unused]] uint8_t priority,
+  [[maybe_unused]] bool bidir)
 {
 
-  if (remote_contexts.count(context_id) == 0) {
-    logger->error << "Invalid context id: " << context_id << std::flush;
+  if (remote_contexts.count(conn_id) == 0) {
+    logger->error << "Invalid context id: " << conn_id << std::flush;
     return 0; // Error
   }
 
-  auto addr = remote_contexts[context_id];
+  auto addr = remote_contexts[conn_id];
   return remote_addrs[addr.key].sid;
 }
 
-TransportContextId
+TransportConnId
 UDPTransport::start()
 {
 
@@ -92,8 +93,7 @@ UDPTransport::start()
 }
 
 void
-UDPTransport::closeStream(const TransportContextId& context_id,
-                          const StreamId streamId)
+UDPTransport::deleteDataContext(const TransportConnId& context_id, DataContextId streamId)
 {
 
   if (dequeue_data_map[context_id].count(streamId) > 0) {
@@ -102,7 +102,7 @@ UDPTransport::closeStream(const TransportContextId& context_id,
 }
 
 bool
-UDPTransport::getPeerAddrInfo(const TransportContextId& context_id,
+UDPTransport::getPeerAddrInfo(const TransportConnId& context_id,
                               sockaddr_storage* addr)
 {
   // Locate the given transport context
@@ -118,7 +118,7 @@ UDPTransport::getPeerAddrInfo(const TransportContextId& context_id,
 }
 
 void
-UDPTransport::close(const TransportContextId& context_id)
+UDPTransport::close(const TransportConnId& context_id)
 {
 
   if (isServerMode) {
@@ -351,11 +351,12 @@ UDPTransport::fd_reader()
 }
 
 TransportError
-UDPTransport::enqueue(const TransportContextId& context_id,
-                      const StreamId& streamId,
+UDPTransport::enqueue(const TransportConnId& context_id,
+                      const DataContextId& streamId,
                       std::vector<uint8_t>&& bytes,
                       [[maybe_unused]] const uint8_t priority,
-                      [[maybe_unused]] const uint32_t ttl_ms)
+                      [[maybe_unused]] const uint32_t ttl_m,
+                      [[maybe_unused]] const EnqueueFlags flags)
 {
   if (bytes.empty()) {
     return TransportError::None;
@@ -363,12 +364,12 @@ UDPTransport::enqueue(const TransportContextId& context_id,
 
   if (remote_contexts.count(context_id) == 0) {
     // Invalid context id
-    return TransportError::InvalidContextId;
+    return TransportError::InvalidConnContextId;
   }
 
   if (dequeue_data_map[context_id].count(streamId) == 0) {
     // Invalid stream Id
-    return TransportError::InvalidStreamId;
+    return TransportError::InvalidDataContextId;
   }
 
   connData cd;
@@ -384,8 +385,8 @@ UDPTransport::enqueue(const TransportContextId& context_id,
 }
 
 std::optional<std::vector<uint8_t>>
-UDPTransport::dequeue(const TransportContextId& context_id,
-                      const StreamId& streamId)
+UDPTransport::dequeue(const TransportConnId& context_id,
+                      const DataContextId& streamId)
 {
 
   if (remote_contexts.count(context_id) == 0) {
@@ -410,7 +411,7 @@ UDPTransport::dequeue(const TransportContextId& context_id,
   return dq.pop().value().data;
 }
 
-TransportContextId
+TransportConnId
 UDPTransport::connect_client()
 {
   std::stringstream s_log;
@@ -524,7 +525,7 @@ UDPTransport::connect_client()
   return last_context_id;
 }
 
-TransportContextId
+TransportConnId
 UDPTransport::connect_server()
 {
   std::stringstream s_log;
