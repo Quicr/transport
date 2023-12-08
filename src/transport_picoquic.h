@@ -101,10 +101,20 @@ class PicoQuicTransport : public ITransport
         size_t stream_tx_object_size {0};                    /// Size of the tx object
         size_t stream_tx_object_offset{0};                   /// Pointer offset to next byte to send
 
-        uint8_t* stream_rx_object {nullptr};                 /// Current object that is being received via byte stream
-        uint16_t stream_rx_object_hdr_size { 0 };             /// Size of header read in (should be 4 right now)
-        uint32_t stream_rx_object_size {0};                  /// Receive object data size to append up to before sending to app
-        size_t stream_rx_object_offset{0};                   /// Pointer offset to next byte to append
+        struct StreamRxBuffer
+        {
+            uint8_t* object { nullptr };           /// Current object that is being received via byte stream
+            uint16_t object_hdr_size{ 0 };         /// Size of header read in (should be 4 right now)
+            uint32_t object_size{ 0 };             /// Receive object data size to append up to before sending to app
+            size_t object_offset{ 0 };             /// Pointer offset to next byte to append
+
+            ~StreamRxBuffer() {
+                if (object != nullptr) {
+                    delete[] object;
+                }
+            }
+        };
+        std::map<uint64_t, StreamRxBuffer> stream_rx_buffer;        /// Map of stream receive buffers, key is stream_id
 
         // The last time TX callback was run
         std::chrono::time_point<std::chrono::steady_clock> last_tx_callback_time { std::chrono::steady_clock::now() };
@@ -125,25 +135,22 @@ class PicoQuicTransport : public ITransport
                 delete[] stream_tx_object;
                 stream_tx_object = nullptr;
             }
-
-            if (stream_rx_object != nullptr) {
-                delete[] stream_rx_object;
-                stream_rx_object = nullptr;
-            }
         }
 
         /**
          * Reset the RX object buffer
          */
-        void reset_rx_object() {
-            if (stream_rx_object != nullptr) {
-                delete[] stream_rx_object;
-            }
+        void reset_rx_object(uint64_t stream_id) {
 
-            stream_rx_object = nullptr;
-            stream_rx_object_hdr_size = 0;
-            stream_rx_object_size = 0;
-            stream_rx_object_offset = 0;
+            auto it = stream_rx_buffer.find(stream_id);
+            if (it != stream_rx_buffer.end()) {
+                delete[] it->second.object;
+
+                it->second.object = nullptr;
+                it->second.object_hdr_size = 0;
+                it->second.object_size = 0;
+                it->second.object_offset = 0;
+            }
         }
 
         /**
@@ -298,7 +305,7 @@ class PicoQuicTransport : public ITransport
     void on_new_connection(const TransportConnId conn_id);
     void on_recv_datagram(DataContext* data_ctx,
                           uint8_t* bytes, size_t length);
-    void on_recv_stream_bytes(DataContext* data_ctx,
+    void on_recv_stream_bytes(DataContext* data_ctx, uint64_t stream_id,
                              uint8_t* bytes, size_t length);
 
     void check_conns_for_congestion();
