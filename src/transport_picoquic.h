@@ -117,15 +117,14 @@ class PicoQuicTransport : public ITransport
             }
 
             void reset_buffer() {
-                if(object != nullptr)
-                {
+                if(object != nullptr) {
                     delete[] object;
-
-                    object = nullptr;
-                    object_hdr_size = 0;
-                    object_size = 0;
-                    object_offset = 0;
                 }
+
+                object = nullptr;
+                object_hdr_size = 0;
+                object_size = 0;
+                object_offset = 0;
             }
         };
         std::map<uint64_t, StreamRxBuffer> stream_rx_buffer;        /// Map of stream receive buffers, key is stream_id

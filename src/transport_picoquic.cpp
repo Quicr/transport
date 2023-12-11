@@ -986,9 +986,8 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
 
                 const auto conn_ctx = getConnContext(data_ctx->conn_id);
 
+                std::lock_guard<std::mutex> _(_state_mutex);
                 close_stream(*conn_ctx, data_ctx, true);
-
-                data_ctx->reset_tx_object();
 
                 logger->info << "Replacing stream using RESET; conn_id: " << data_ctx->conn_id
                              << " data_ctx_id: " << data_ctx->data_ctx_id
@@ -999,8 +998,6 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
 
 
                 create_stream(*conn_ctx, data_ctx);
-
-                std::lock_guard<std::mutex> _(_state_mutex);
                 data_ctx->stream_action = DataContext::StreamAction::NO_ACTION;
 
                 return;
@@ -1011,10 +1008,11 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
                     logger->info << "Replacing stream using FIN; conn_id: " << data_ctx->conn_id
                                  << " existing_stream: " << data_ctx->current_stream_id << std::flush;
 
+                    std::lock_guard<std::mutex> _(_state_mutex);
+
                     const auto conn_ctx = getConnContext(data_ctx->conn_id);
                     create_stream(*conn_ctx, data_ctx);
 
-                    std::lock_guard<std::mutex> _(_state_mutex);
                     data_ctx->stream_action = DataContext::StreamAction::NO_ACTION;
                 }
                 return;
@@ -1230,7 +1228,7 @@ void PicoQuicTransport::on_recv_stream_bytes(DataContext* data_ctx, uint64_t str
                             << std::to_string(rx_buf.object_size)
                             << std::flush;
 
-            data_ctx->reset_rx_object(stream_id);
+            rx_buf.reset_buffer();
             // TODO: Should reset stream in this case
             return;
         }
@@ -1246,7 +1244,7 @@ void PicoQuicTransport::on_recv_stream_bytes(DataContext* data_ctx, uint64_t str
 
             data_ctx->metrics.stream_bytes_recv += rx_buf.object_size;
 
-            data_ctx->reset_rx_object(stream_id);
+            rx_buf.reset_buffer();
             length = 0; // no more data left to process
         }
         else {
@@ -1281,7 +1279,7 @@ void PicoQuicTransport::on_recv_stream_bytes(DataContext* data_ctx, uint64_t str
                                       rx_buf.object + rx_buf.object_size);
             data_ctx->rx_data->push(std::move(data));
 
-            data_ctx->reset_rx_object(stream_id);
+            rx_buf.reset_buffer();
         }
         else {
             rx_buf.object_offset += remaining_len;
@@ -1576,18 +1574,15 @@ void PicoQuicTransport::close_stream(const ConnectionContext& conn_ctx, DataCont
         picoquic_reset_stream(conn_ctx.pq_cnx, data_ctx->current_stream_id, 0);
         picoquic_set_app_stream_ctx(conn_ctx.pq_cnx, data_ctx->current_stream_id , NULL);
 
-        data_ctx->reset_tx_object();
-
-        if (data_ctx->is_bidir) {
-            data_ctx->reset_rx_object(data_ctx->current_stream_id);
-        }
-
     } else {
         logger->info << "Sending FIN for stream_id: " << data_ctx->current_stream_id << " conn_id: " << conn_ctx.conn_id
                      << std::flush;
 
         picoquic_add_to_stream(conn_ctx.pq_cnx, data_ctx->current_stream_id, NULL, 0, 1);
     }
+
+    data_ctx->reset_tx_object();
+    data_ctx->stream_rx_buffer.erase(data_ctx->current_stream_id);
 
     data_ctx->current_stream_id = 0;
 }
