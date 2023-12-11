@@ -171,9 +171,12 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
                 if (data_ctx->is_default_context) {
 
                     const auto rx_buf_it = data_ctx->stream_rx_buffer.find(stream_id);
-                    if (rx_buf_it != data_ctx->stream_rx_buffer.end() && rx_buf_it->second.object != nullptr) {
-                        data_ctx->metrics.rx_buffer_drops++;
-                        rx_buf_it->second.reset_buffer();
+                    if (rx_buf_it != data_ctx->stream_rx_buffer.end()) {
+                        if (rx_buf_it->second.object != nullptr) {
+                            data_ctx->metrics.rx_buffer_drops++;
+                            rx_buf_it->second.reset_buffer();
+                        }
+
                         data_ctx->stream_rx_buffer.erase(rx_buf_it);
                     }
 
@@ -198,9 +201,12 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
             data_ctx->current_stream_id = 0;
 
             const auto rx_buf_it = data_ctx->stream_rx_buffer.find(stream_id);
-            if (rx_buf_it != data_ctx->stream_rx_buffer.end() && rx_buf_it->second.object != nullptr) {
-                data_ctx->metrics.rx_buffer_drops++;
-                rx_buf_it->second.reset_buffer();
+            if (rx_buf_it != data_ctx->stream_rx_buffer.end()) {
+                if (rx_buf_it->second.object != nullptr) {
+                    data_ctx->metrics.rx_buffer_drops++;
+                    rx_buf_it->second.reset_buffer();
+                }
+
                 data_ctx->stream_rx_buffer.erase(rx_buf_it);
             }
 
@@ -386,6 +392,11 @@ int pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode, void
                     transport->logger->Log("picoquic is shutting down");
 
                     picoquic_cnx_t* close_cnx = picoquic_get_first_cnx(quic);
+
+                    if (close_cnx == NULL) {
+                        return PICOQUIC_NO_ERROR_TERMINATE_PACKET_LOOP;
+                    }
+
                     while (close_cnx != NULL) {
                         transport->logger->info << "Closing connection id " << reinterpret_cast<uint64_t>(close_cnx)
                                                 << std::flush;
@@ -393,7 +404,7 @@ int pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode, void
                         close_cnx = picoquic_get_next_cnx(close_cnx);
                     }
 
-                    return PICOQUIC_NO_ERROR_TERMINATE_PACKET_LOOP;
+                    return 0;
                 }
 
                 break;
@@ -1176,12 +1187,8 @@ void PicoQuicTransport::on_recv_stream_bytes(DataContext* data_ctx, uint64_t str
                      << " stream_id: " << stream_id
                      << " into RX buffer" << std::flush;
 
-        auto [it, is_new] = data_ctx->stream_rx_buffer.try_emplace(stream_id);
+        auto [it, _] = data_ctx->stream_rx_buffer.try_emplace(stream_id);
         rx_buf_it = it;
-
-        if (!is_new) {
-            it->second.reset_buffer();
-        }
     }
 
     auto &rx_buf = rx_buf_it->second;
