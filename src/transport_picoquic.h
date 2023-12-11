@@ -56,6 +56,7 @@ class PicoQuicTransport : public ITransport
 
         uint64_t rx_buffer_drops {0};                       /// count of receive buffer drops of data due to RESET request
         uint64_t tx_buffer_drops{0};                        /// Count of write buffer drops of data due to RESET request
+        uint64_t tx_queue_discards {0};                     /// Number of objects discarded due to TTL expiry or clear
         uint64_t tx_delayed_callback {0};                   /// Count of times transmit callbacks were delayed
         uint64_t prev_tx_delayed_callback {0};              /// Previous transmit delayed callback value, set each interval
         uint64_t stream_objects_sent {0};
@@ -114,6 +115,17 @@ class PicoQuicTransport : public ITransport
                     delete[] object;
                 }
             }
+
+            void reset_buffer() {
+                if(object != nullptr) {
+                    delete[] object;
+                }
+
+                object = nullptr;
+                object_hdr_size = 0;
+                object_size = 0;
+                object_offset = 0;
+            }
         };
         std::map<uint64_t, StreamRxBuffer> stream_rx_buffer;        /// Map of stream receive buffers, key is stream_id
 
@@ -129,9 +141,7 @@ class PicoQuicTransport : public ITransport
         DataContext& operator=(DataContext&&) = delete;
 
         ~DataContext() {
-            /*
-             * Free legacy pointers if not null
-             */
+            // Free the TX object
             if (stream_tx_object != nullptr) {
                 delete[] stream_tx_object;
                 stream_tx_object = nullptr;
@@ -145,12 +155,7 @@ class PicoQuicTransport : public ITransport
 
             auto it = stream_rx_buffer.find(stream_id);
             if (it != stream_rx_buffer.end()) {
-                delete[] it->second.object;
-
-                it->second.object = nullptr;
-                it->second.object_hdr_size = 0;
-                it->second.object_size = 0;
-                it->second.object_offset = 0;
+                it->second.reset_buffer();
             }
         }
 
