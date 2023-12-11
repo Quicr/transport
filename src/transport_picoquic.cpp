@@ -169,7 +169,14 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
                 picoquic_reset_stream_ctx(pq_cnx, data_ctx->current_stream_id);
 
                 if (data_ctx->is_default_context) {
-                    data_ctx->reset_rx_object(stream_id);
+
+                    const auto rx_buf_it = data_ctx->stream_rx_buffer.find(stream_id);
+                    if (rx_buf_it != data_ctx->stream_rx_buffer.end() && rx_buf_it->second.object != nullptr) {
+                        data_ctx->metrics.rx_buffer_drops++;
+                        rx_buf_it->second.reset_buffer();
+                        data_ctx->stream_rx_buffer.erase(rx_buf_it);
+                    }
+
                 } else {
                     transport->deleteDataContext(conn_id, data_ctx->data_ctx_id);
                 }
@@ -193,9 +200,9 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
             const auto rx_buf_it = data_ctx->stream_rx_buffer.find(stream_id);
             if (rx_buf_it != data_ctx->stream_rx_buffer.end() && rx_buf_it->second.object != nullptr) {
                 data_ctx->metrics.rx_buffer_drops++;
+                rx_buf_it->second.reset_buffer();
+                data_ctx->stream_rx_buffer.erase(rx_buf_it);
             }
-
-            data_ctx->reset_rx_object(stream_id);
 
             transport->logger->info << "Received RESET stream; conn_id: " << data_ctx->conn_id
                                     << " data_ctx_id: " << data_ctx->data_ctx_id
@@ -551,6 +558,7 @@ PicoQuicTransport::enqueue(const TransportConnId& conn_id,
         }
 
         if (flags.clear_tx_queue) {
+            data_ctx_it->second.metrics.tx_queue_discards += data_ctx_it->second.tx_data->size();
             data_ctx_it->second.tx_data->clear();
         }
 
@@ -974,7 +982,9 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
                 logger->info << "Replacing stream using RESET; conn_id: " << data_ctx->conn_id
                              << " data_ctx_id: " << data_ctx->data_ctx_id
                              << " existing_stream: " << data_ctx->current_stream_id
-                             << " write buf drops: " << data_ctx->metrics.tx_buffer_drops << std::flush;
+                             << " write buf drops: " << data_ctx->metrics.tx_buffer_drops
+                             << " tx_queue_discards: " << data_ctx->metrics.tx_queue_discards
+                             << std::flush;
 
 
                 create_stream(*conn_ctx, data_ctx);
@@ -1166,8 +1176,12 @@ void PicoQuicTransport::on_recv_stream_bytes(DataContext* data_ctx, uint64_t str
                      << " stream_id: " << stream_id
                      << " into RX buffer" << std::flush;
 
-        auto [it, _] = data_ctx->stream_rx_buffer.try_emplace(stream_id);
+        auto [it, is_new] = data_ctx->stream_rx_buffer.try_emplace(stream_id);
         rx_buf_it = it;
+
+        if (!is_new) {
+            it->second.reset_buffer();
+        }
     }
 
     auto &rx_buf = rx_buf_it->second;
@@ -1204,7 +1218,7 @@ void PicoQuicTransport::on_recv_stream_bytes(DataContext* data_ctx, uint64_t str
         }
 
         if (rx_buf.object_size > 40000000L) { // Safety check
-            logger->warning << "on_recv_stream_bytes sid: " << stream_id
+            logger->warning << "on_recv_stream_bytes stream_id: " << stream_id
                             << " data length is too large: "
                             << std::to_string(rx_buf.object_size)
                             << std::flush;
