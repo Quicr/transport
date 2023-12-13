@@ -990,15 +990,17 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
                 const auto conn_ctx = getConnContext(data_ctx->conn_id);
 
                 std::lock_guard<std::mutex> _(_state_mutex);
+
+                const auto existing_stream_id = data_ctx->current_stream_id;
+
                 close_stream(*conn_ctx, data_ctx, true);
 
                 logger->info << "Replacing stream using RESET; conn_id: " << data_ctx->conn_id
                              << " data_ctx_id: " << data_ctx->data_ctx_id
-                             << " existing_stream: " << data_ctx->current_stream_id
+                             << " existing_stream: " << existing_stream_id
                              << " write buf drops: " << data_ctx->metrics.tx_buffer_drops
                              << " tx_queue_discards: " << data_ctx->metrics.tx_queue_discards
                              << std::flush;
-
 
                 create_stream(*conn_ctx, data_ctx);
                 data_ctx->stream_action = DataContext::StreamAction::NO_ACTION;
