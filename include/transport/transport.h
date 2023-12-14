@@ -286,11 +286,10 @@ public:
    * @param[in] context_id	Identifying the connection
    * @param[in] data_ctx_id	stream Id to send data on
    * @param[in] bytes		Data to send/write
-   * @param[in] priority        Priority of the object, range should be 0 - 255
-   * @param[in] ttl_ms          The age the object should exist in queue in milliseconds
+   * @param[in] priority    Priority of the object, range should be 0 - 255
+   * @param[in] ttl_ms      The age the object should exist in queue in milliseconds
    *
-   * @param[in] new_stream      Indicates that a new stream should replace the existing on
-   * @param[in] clear_queue     Clear the TX priority queue before enqueueing this object
+   * @param[in] flags       Flags for stream and queue handling on enqueue of object
    *
    * @returns TransportError is returned indicating status of the operation
    */

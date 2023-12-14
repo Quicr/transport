@@ -468,7 +468,9 @@ PicoQuicTransport::start()
     local_tp_options.min_ack_delay = 1000;
 
     picoquic_set_default_tp(quic_ctx, &local_tp_options);
+    picoquic_set_default_idle_timeout(quic_ctx, tconfig.idle_timeout_ms);
 
+    logger->info << "Setting idle timeout to " << tconfig.idle_timeout_ms << "ms" << std::flush;
     picoquic_set_default_wifi_shadow_rtt(quic_ctx, tconfig.quic_wifi_shadow_rtt_us);
     logger->info << "Setting wifi shadow RTT to " << tconfig.quic_wifi_shadow_rtt_us << "us" << std::flush;
 
@@ -491,8 +493,9 @@ PicoQuicTransport::start()
         logger->info << "Connecting to server " << serverInfo.host_or_ip << ':' << serverInfo.port
                      << std::flush;
 
-        cid = createClient();
-        picoQuicThread = std::thread(&PicoQuicTransport::client, this, cid);
+        if ((cid = createClient())) {
+            picoQuicThread = std::thread(&PicoQuicTransport::client, this, cid);
+        }
     }
 
     return cid;
@@ -987,15 +990,17 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
                 const auto conn_ctx = getConnContext(data_ctx->conn_id);
 
                 std::lock_guard<std::mutex> _(_state_mutex);
+
+                const auto existing_stream_id = data_ctx->current_stream_id;
+
                 close_stream(*conn_ctx, data_ctx, true);
 
                 logger->info << "Replacing stream using RESET; conn_id: " << data_ctx->conn_id
                              << " data_ctx_id: " << data_ctx->data_ctx_id
-                             << " existing_stream: " << data_ctx->current_stream_id
+                             << " existing_stream: " << existing_stream_id
                              << " write buf drops: " << data_ctx->metrics.tx_buffer_drops
                              << " tx_queue_discards: " << data_ctx->metrics.tx_queue_discards
                              << std::flush;
-
 
                 create_stream(*conn_ctx, data_ctx);
                 data_ctx->stream_action = DataContext::StreamAction::NO_ACTION;
@@ -1393,9 +1398,11 @@ TransportConnId PicoQuicTransport::createClient()
     int is_name = 0;
 
     ret = picoquic_get_server_address(serverInfo.host_or_ip.c_str(), serverInfo.port, &server_address, &is_name);
-    if (ret != 0) {
+    if (ret != 0 || server_address.ss_family == 0) {
         logger->error << "Failed to get server: " << serverInfo.host_or_ip << " port: " << serverInfo.port
                       << std::flush;
+        setStatus(TransportStatus::Disconnected);
+        return 0;
     } else if (is_name) {
         sni = serverInfo.host_or_ip.c_str();
     }
@@ -1435,6 +1442,12 @@ void PicoQuicTransport::client(const TransportConnId conn_id)
     int ret;
 
     auto conn_ctx = getConnContext(conn_id);
+
+    if (conn_ctx == nullptr) {
+        logger->error << "Client connection does not exist, check connection settings." << std::flush;
+        setStatus(TransportStatus::Disconnected);
+        return;
+    }
 
     logger->info << "Thread client packet loop for client conn_id: " << conn_id << std::flush;
 
