@@ -463,10 +463,11 @@ PicoQuicTransport::start()
     picoquic_init_transport_parameters(&local_tp_options, 1);
     local_tp_options.max_datagram_frame_size = 1280;
     //  local_tp_options.max_packet_size = 1450;
-    local_tp_options.idle_timeout = tconfig.idle_timeout_ms;
+    local_tp_options.max_idle_timeout = tconfig.idle_timeout_ms;
     local_tp_options.max_ack_delay = 100000;
     local_tp_options.min_ack_delay = 1000;
 
+    picoquic_set_default_handshake_timeout(quic_ctx, (tconfig.idle_timeout_ms * 1000) / 2);
     picoquic_set_default_tp(quic_ctx, &local_tp_options);
     picoquic_set_default_idle_timeout(quic_ctx, tconfig.idle_timeout_ms);
 
@@ -1523,6 +1524,7 @@ void PicoQuicTransport::check_callback_delta(DataContext* data_ctx, bool tx) {
         data_ctx->metrics.tx_delayed_callback++;
 
         logger->debug << "conn_id: " << data_ctx->conn_id
+                      << " data_ctx_id: " << data_ctx->data_ctx_id
                       << " stream_id: " << data_ctx->current_stream_id
                       << " pri: " << static_cast<int>(data_ctx->priority)
                       << " CB TX delta " << delta_ms << " ms"
