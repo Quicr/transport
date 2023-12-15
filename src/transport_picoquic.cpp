@@ -1188,6 +1188,7 @@ void PicoQuicTransport::on_recv_stream_bytes(DataContext* data_ctx, uint64_t str
     auto rx_buf_it = data_ctx->stream_rx_buffer.find(stream_id);
     if (rx_buf_it == data_ctx->stream_rx_buffer.end()) {
         logger->debug << "Adding received conn_id: " << data_ctx->conn_id
+                     << " data_ctx_id: " << data_ctx->data_ctx_id
                      << " stream_id: " << stream_id
                      << " into RX buffer" << std::flush;
 
