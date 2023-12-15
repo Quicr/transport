@@ -550,10 +550,13 @@ PicoQuicTransport::enqueue(const TransportConnId& conn_id,
 
         conn_ctx_it->second.default_data_context.tx_data->push(bytes, ttl_ms, priority);
 
-        picoquic_runner_queue.push([=]() {
-            if (conn_ctx_it->second.pq_cnx != NULL)
-                picoquic_mark_datagram_ready(conn_ctx_it->second.pq_cnx, 1);
-        });
+        if (!conn_ctx_it->second.default_data_context.mark_dgram_ready) {
+            conn_ctx_it->second.default_data_context.mark_dgram_ready = true;
+
+            picoquic_runner_queue.push([=]() {
+                mark_dgram_ready(conn_id);
+            });
+        }
 
     }
     else { // is stream
@@ -579,11 +582,13 @@ PicoQuicTransport::enqueue(const TransportConnId& conn_id,
 
         data_ctx_it->second.tx_data->push(bytes, ttl_ms, priority);
 
-        picoquic_runner_queue.push([=]() {
-            if (conn_ctx_it->second.pq_cnx != NULL)
-                picoquic_mark_active_stream(
-                  conn_ctx_it->second.pq_cnx, data_ctx_it->second.current_stream_id, 1, &data_ctx_it->second);
-        });
+        if (! data_ctx_it->second.mark_stream_active) {
+            data_ctx_it->second.mark_stream_active = true;
+
+            picoquic_runner_queue.push([=]() {
+                mark_stream_active(conn_id, data_ctx_id);
+            });
+        }
     }
 
     return TransportError::None;
@@ -1601,4 +1606,33 @@ void PicoQuicTransport::close_stream(const ConnectionContext& conn_ctx, DataCont
     data_ctx->stream_rx_buffer.erase(data_ctx->current_stream_id);
 
     data_ctx->current_stream_id = 0;
+}
+
+void PicoQuicTransport::mark_stream_active(const TransportConnId conn_id, const DataContextId data_ctx_id) {
+    const auto conn_it = conn_context.find(conn_id);
+    if (conn_it == conn_context.end()) {
+        return;
+    }
+
+    const auto data_ctx_it = conn_it->second.active_data_contexts.find(data_ctx_id);
+    if (data_ctx_it == conn_it->second.active_data_contexts.end()) {
+        return;
+    }
+    
+    picoquic_mark_active_stream(conn_it->second.pq_cnx,
+                                data_ctx_it->second.current_stream_id,1,
+                                &data_ctx_it->second);
+
+    data_ctx_it->second.mark_stream_active = false;
+}
+
+void PicoQuicTransport::mark_dgram_ready(const TransportConnId conn_id) {
+    const auto conn_it = conn_context.find(conn_id);
+    if (conn_it == conn_context.end()) {
+        return;
+    }
+
+    picoquic_mark_datagram_ready(conn_it->second.pq_cnx, 1);
+
+    conn_it->second.default_data_context.mark_dgram_ready = false;
 }
