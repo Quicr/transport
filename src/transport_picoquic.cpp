@@ -1620,7 +1620,8 @@ void PicoQuicTransport::mark_stream_active(const TransportConnId conn_id, const 
     }
     
     picoquic_mark_active_stream(conn_it->second.pq_cnx,
-                                data_ctx_it->second.current_stream_id,1,
+                                data_ctx_it->second.current_stream_id,
+                                1,
                                 &data_ctx_it->second);
 
     data_ctx_it->second.mark_stream_active = false;
