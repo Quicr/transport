@@ -1592,8 +1592,8 @@ void PicoQuicTransport::close_stream(const ConnectionContext& conn_ctx, DataCont
         logger->info << "Reset stream_id: " << data_ctx->current_stream_id << " conn_id: " << conn_ctx.conn_id
                      << std::flush;
 
-        picoquic_reset_stream(conn_ctx.pq_cnx, data_ctx->current_stream_id, 0);
         picoquic_set_app_stream_ctx(conn_ctx.pq_cnx, data_ctx->current_stream_id , NULL);
+        picoquic_reset_stream(conn_ctx.pq_cnx, data_ctx->current_stream_id, 0);
 
     } else {
         logger->info << "Sending FIN for stream_id: " << data_ctx->current_stream_id << " conn_id: " << conn_ctx.conn_id
