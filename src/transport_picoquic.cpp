@@ -463,10 +463,11 @@ PicoQuicTransport::start()
     picoquic_init_transport_parameters(&local_tp_options, 1);
     local_tp_options.max_datagram_frame_size = 1280;
     //  local_tp_options.max_packet_size = 1450;
-    local_tp_options.idle_timeout = tconfig.idle_timeout_ms;
+    local_tp_options.max_idle_timeout = tconfig.idle_timeout_ms;
     local_tp_options.max_ack_delay = 100000;
     local_tp_options.min_ack_delay = 1000;
 
+    picoquic_set_default_handshake_timeout(quic_ctx, (tconfig.idle_timeout_ms * 1000) / 2);
     picoquic_set_default_tp(quic_ctx, &local_tp_options);
     picoquic_set_default_idle_timeout(quic_ctx, tconfig.idle_timeout_ms);
 
@@ -549,10 +550,13 @@ PicoQuicTransport::enqueue(const TransportConnId& conn_id,
 
         conn_ctx_it->second.default_data_context.tx_data->push(bytes, ttl_ms, priority);
 
-        picoquic_runner_queue.push([=]() {
-            if (conn_ctx_it->second.pq_cnx != NULL)
-                picoquic_mark_datagram_ready(conn_ctx_it->second.pq_cnx, 1);
-        });
+        if (!conn_ctx_it->second.default_data_context.mark_dgram_ready) {
+            conn_ctx_it->second.default_data_context.mark_dgram_ready = true;
+
+            picoquic_runner_queue.push([=]() {
+                mark_dgram_ready(conn_id);
+            });
+        }
 
     }
     else { // is stream
@@ -578,11 +582,13 @@ PicoQuicTransport::enqueue(const TransportConnId& conn_id,
 
         data_ctx_it->second.tx_data->push(bytes, ttl_ms, priority);
 
-        picoquic_runner_queue.push([=]() {
-            if (conn_ctx_it->second.pq_cnx != NULL)
-                picoquic_mark_active_stream(
-                  conn_ctx_it->second.pq_cnx, data_ctx_it->second.current_stream_id, 1, &data_ctx_it->second);
-        });
+        if (! data_ctx_it->second.mark_stream_active) {
+            data_ctx_it->second.mark_stream_active = true;
+
+            picoquic_runner_queue.push([=]() {
+                mark_stream_active(conn_id, data_ctx_id);
+            });
+        }
     }
 
     return TransportError::None;
@@ -1187,6 +1193,7 @@ void PicoQuicTransport::on_recv_stream_bytes(DataContext* data_ctx, uint64_t str
     auto rx_buf_it = data_ctx->stream_rx_buffer.find(stream_id);
     if (rx_buf_it == data_ctx->stream_rx_buffer.end()) {
         logger->debug << "Adding received conn_id: " << data_ctx->conn_id
+                     << " data_ctx_id: " << data_ctx->data_ctx_id
                      << " stream_id: " << stream_id
                      << " into RX buffer" << std::flush;
 
@@ -1523,6 +1530,7 @@ void PicoQuicTransport::check_callback_delta(DataContext* data_ctx, bool tx) {
         data_ctx->metrics.tx_delayed_callback++;
 
         logger->debug << "conn_id: " << data_ctx->conn_id
+                      << " data_ctx_id: " << data_ctx->data_ctx_id
                       << " stream_id: " << data_ctx->current_stream_id
                       << " pri: " << static_cast<int>(data_ctx->priority)
                       << " CB TX delta " << delta_ms << " ms"
@@ -1584,8 +1592,8 @@ void PicoQuicTransport::close_stream(const ConnectionContext& conn_ctx, DataCont
         logger->info << "Reset stream_id: " << data_ctx->current_stream_id << " conn_id: " << conn_ctx.conn_id
                      << std::flush;
 
-        picoquic_reset_stream(conn_ctx.pq_cnx, data_ctx->current_stream_id, 0);
         picoquic_set_app_stream_ctx(conn_ctx.pq_cnx, data_ctx->current_stream_id , NULL);
+        picoquic_reset_stream(conn_ctx.pq_cnx, data_ctx->current_stream_id, 0);
 
     } else {
         logger->info << "Sending FIN for stream_id: " << data_ctx->current_stream_id << " conn_id: " << conn_ctx.conn_id
@@ -1598,4 +1606,34 @@ void PicoQuicTransport::close_stream(const ConnectionContext& conn_ctx, DataCont
     data_ctx->stream_rx_buffer.erase(data_ctx->current_stream_id);
 
     data_ctx->current_stream_id = 0;
+}
+
+void PicoQuicTransport::mark_stream_active(const TransportConnId conn_id, const DataContextId data_ctx_id) {
+    const auto conn_it = conn_context.find(conn_id);
+    if (conn_it == conn_context.end()) {
+        return;
+    }
+
+    const auto data_ctx_it = conn_it->second.active_data_contexts.find(data_ctx_id);
+    if (data_ctx_it == conn_it->second.active_data_contexts.end()) {
+        return;
+    }
+    
+    picoquic_mark_active_stream(conn_it->second.pq_cnx,
+                                data_ctx_it->second.current_stream_id,
+                                1,
+                                &data_ctx_it->second);
+
+    data_ctx_it->second.mark_stream_active = false;
+}
+
+void PicoQuicTransport::mark_dgram_ready(const TransportConnId conn_id) {
+    const auto conn_it = conn_context.find(conn_id);
+    if (conn_it == conn_context.end()) {
+        return;
+    }
+
+    picoquic_mark_datagram_ready(conn_it->second.pq_cnx, 1);
+
+    conn_it->second.default_data_context.mark_dgram_ready = false;
 }

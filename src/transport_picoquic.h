@@ -81,6 +81,8 @@ class PicoQuicTransport : public ITransport
     struct DataContext {
         bool is_default_context { false };                   /// Indicates if the data context is the default context
         bool is_bidir { false };                             /// Indicates if the stream is bidir (true) or unidir (false)
+        bool mark_stream_active { false };                   /// Instructs the stream to be marked active
+        bool mark_dgram_ready {false };                      /// Instructs datagram to be marked ready/active
 
         DataContextId data_ctx_id {0};                       /// The ID of this context
         TransportConnId conn_id {0};                         /// The connection ID this context is under
@@ -344,6 +346,20 @@ class PicoQuicTransport : public ITransport
     void cbNotifier();
 
     void check_callback_delta(DataContext* data_ctx, bool tx=true);
+
+    /**
+     * @brief Mark a stream active
+     * @details This method MUST only be called within the picoquic thread. Enqueue and other
+     *      thread methods can call this via the pq_runner.
+     */
+    void mark_stream_active(const TransportConnId conn_id, const DataContextId data_ctx_id);
+
+    /**
+     * @brief Mark datagram ready
+     * @details This method MUST only be called within the picoquic thread. Enqueue and other
+     *      thread methods can call this via the pq_runner.
+     */
+    void mark_dgram_ready(const TransportConnId conn_id);
 
     /**
      * @brief Create a new stream
