@@ -91,20 +91,13 @@ namespace qtransport {
       private:
         void tick_loop()
         {
-            const auto check_delay = _interval / 2;
-            const auto interval_delta = _interval.count();
-            auto last_time = clock_type::now();
+            const int interval_us = _interval.count();
 
+            timeval sleep_time = {.tv_sec = 0, .tv_usec = interval_us};
             while (!_stop) {
-                auto now = clock_type::now();
-                const auto& diff = (now - last_time).count();
-
-                if (diff >= interval_delta) {
-                    ++_ticks;
-                    last_time += _interval;
-                }
-
-                std::this_thread::sleep_for(check_delay);
+                select(1, NULL, NULL, NULL, &sleep_time);
+                sleep_time.tv_usec = interval_us;
+                ++_ticks;
             }
         }
 
@@ -308,7 +301,6 @@ namespace qtransport {
         size_t size() const noexcept { return _queue.size() - _queue_index; }
         bool empty() const noexcept { return _queue.empty() || _queue_index >= _queue.size(); }
 
-      private:
         /**
          * @brief Clear/reset the queue to no objects
          */
@@ -321,6 +313,9 @@ namespace qtransport {
                 bucket.clear();
             }
         }
+
+      private:
+
 
         /**
          * @brief Based on current time, adjust and move the bucket index with time
@@ -367,6 +362,8 @@ namespace qtransport {
         {
             if (ttl > _duration) {
                 throw std::invalid_argument("TTL is greater than max duration");
+            } else if (ttl == 0) {
+                ttl = _duration;
             }
 
             ttl = ttl / _interval;

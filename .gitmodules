@@ -11,4 +11,4 @@
 	branch = master
 [submodule "dependencies/logger"]
 	path = dependencies/logger
-	url = git@github.com:Quicr/logger.git
+	url = https://github.com/Quicr/logger.git
