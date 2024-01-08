@@ -31,6 +31,7 @@
 #include <thread>
 #include <type_traits>
 #include <vector>
+#include <sys/select.h>
 
 namespace qtransport {
 
