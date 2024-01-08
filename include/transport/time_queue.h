@@ -314,9 +314,7 @@ namespace qtransport {
             }
         }
 
-      private:
-
-
+    private:
         /**
          * @brief Based on current time, adjust and move the bucket index with time
          *        (sliding window)

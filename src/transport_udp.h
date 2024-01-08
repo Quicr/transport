@@ -16,6 +16,7 @@
 
 #include <transport/transport.h>
 
+#include "transport/priority_queue.h"
 #include "transport/safe_queue.h"
 
 namespace qtransport {
@@ -44,10 +45,11 @@ struct addrKey
   }
 };
 
-struct connData
+struct ConnData
 {
-  TransportConnId contextId;
+  TransportConnId connId;
   DataContextId streamId;
+  uint8_t priority;
   std::vector<uint8_t> data;
 };
 
@@ -113,25 +115,31 @@ private:
     DataContextId sid;
   };
 
+  struct ConnectionContext {
+    Addr addr;
+    uint64_t bytes_sent_in_interval { 0 };
+  };
+
   cantina::LoggerPointer logger;
   int fd; // UDP socket
   bool isServerMode;
 
   TransportRemote serverInfo;
   Addr serverAddr;
-  safe_queue<connData> fd_write_queue;
+  std::unique_ptr<priority_queue<ConnData>> fd_write_queue;
 
   // NOTE: this is a map supporting multiple streams, but UDP does not have that
   // right now.
-  std::map<TransportConnId, std::map<DataContextId, safe_queue<connData>>>
-    dequeue_data_map;
+  std::map<TransportConnId, std::map<DataContextId, safe_queue<ConnData>>> dequeue_data_map;
 
   TransportDelegate& delegate;
 
-  TransportConnId last_context_id{ 0 };
+  TransportConnId last_conn_id{ 0 };
   DataContextId last_stream_id{ 0 };
-  std::map<TransportConnId, Addr> remote_contexts = {};
+  std::map<TransportConnId, ConnectionContext> connections = {};
   std::map<addrKey, AddrStream> remote_addrs = {};
+
+  std::shared_ptr<tick_service> _tick_service;
 };
 
 } // namespace qtransport

@@ -26,7 +26,7 @@ UDPTransport::~UDPTransport()
   stop = true;
 
   // Clear threads from the queue
-  fd_write_queue.stop_waiting();
+  fd_write_queue.reset();
 
   // Close socket fd
   if (fd >= 0)
@@ -37,6 +37,8 @@ UDPTransport::~UDPTransport()
     if (thread.joinable())
         thread.join();
   }
+
+  _tick_service.reset();
 }
 
 UDPTransport::UDPTransport(const TransportRemote& server,
@@ -50,6 +52,9 @@ UDPTransport::UDPTransport(const TransportRemote& server,
   , serverInfo(server)
   , delegate(delegate)
 {
+  _tick_service = std::make_shared<threaded_tick_service>();
+  fd_write_queue = std::make_unique<priority_queue<ConnData>>(
+          1000, 1, _tick_service, 1000);
 }
 
 TransportStatus
@@ -70,13 +75,13 @@ UDPTransport::createDataContext(
   [[maybe_unused]] bool bidir)
 {
 
-  if (remote_contexts.count(conn_id) == 0) {
-    logger->error << "Invalid context id: " << conn_id << std::flush;
+  if (connections.count(conn_id) == 0) {
+    logger->error << "Invalid connection id: " << conn_id << std::flush;
     return 0; // Error
   }
 
-  auto addr = remote_contexts[conn_id];
-  return remote_addrs[addr.key].sid;
+  auto conn = connections[conn_id];
+  return remote_addrs[conn.addr.key].sid;
 }
 
 TransportConnId
@@ -102,14 +107,14 @@ UDPTransport::deleteDataContext(const TransportConnId& context_id, DataContextId
 }
 
 bool
-UDPTransport::getPeerAddrInfo(const TransportConnId& context_id,
+UDPTransport::getPeerAddrInfo(const TransportConnId& conn_id,
                               sockaddr_storage* addr)
 {
   // Locate the given transport context
-  auto it = remote_contexts.find(context_id);
+  auto it = connections.find(conn_id);
 
   // If not found, return false
-  if (it == remote_contexts.end()) return false;
+  if (it == connections.end()) return false;
 
   // Copy the address information
   std::memcpy(addr, &it->second.addr, sizeof(it->second.addr));
@@ -118,17 +123,17 @@ UDPTransport::getPeerAddrInfo(const TransportConnId& context_id,
 }
 
 void
-UDPTransport::close(const TransportConnId& context_id)
+UDPTransport::close(const TransportConnId& conn_id)
 {
 
   if (isServerMode) {
     addrKey ak;
 
-    addr_to_key(remote_contexts[context_id].addr, ak);
+    addr_to_key(connections[conn_id].addr.addr, ak);
 
     remote_addrs.erase(ak);
-    remote_contexts.erase(context_id);
-    dequeue_data_map.erase(context_id);
+    connections.erase(conn_id);
+    dequeue_data_map.erase(conn_id);
   }
 }
 
@@ -194,44 +199,64 @@ UDPTransport::addr_to_remote(sockaddr_storage& addr, TransportRemote& remote)
  *  - loop reads data from fd_write_queue and writes it to the socket
  */
 void
-UDPTransport::fd_writer()
-{
+UDPTransport::fd_writer() {
+    timeval to;
+    to.tv_usec = 1000;
+    to.tv_sec = 0;
 
-  logger->Log("Starting transport writer thread");
+    logger->Log("Starting transport writer thread");
 
-  while (not stop) {
-    auto cd = fd_write_queue.block_pop();
+    const double bytes_per_us = 187'500 /* 1.5Mbps */ / 1'000'000.0 /* 1 second double */;
 
-    if (cd) {
-      if ((dequeue_data_map.count(cd->contextId) == 0 || dequeue_data_map[cd->contextId].count(cd->streamId) == 0)
-          || remote_contexts.count(cd->contextId) == 0) {
-        // Drop/ignore connection data since the connection or stream no
-        // longer exists
-        continue;
-      }
+    logger->info << "Shaping rate to " << bytes_per_us << " Bp_us" << std::flush;
 
-      auto& r = remote_contexts.at(cd->contextId);
+    while (not stop) {
+        // TODO: Add blocking pop front
 
-      int numSent = sendto(fd,
-                           cd.value().data.data(),
-                           cd.value().data.size(),
-                           0 /*flags*/,
-                           (struct sockaddr*)&r.addr,
-                           sizeof(sockaddr_in));
+        auto cd = fd_write_queue->pop_front();
 
-      if (numSent < 0) {
-        logger->error << "Error sending on UDP socket: " << strerror(errno)
-                      << std::flush;
+        if (!cd) {
+            to.tv_usec = 1000;
+            select(0, NULL, NULL, NULL, &to);
+        }
 
-        break;
+        if ((dequeue_data_map.count(cd->connId) == 0 || dequeue_data_map[cd->connId].count(cd->streamId) == 0)
+            || connections.count(cd->connId) == 0) {
+            // Drop/ignore connection data since the connection or stream no
+            // longer exists
+            continue;
+        }
 
-      } else if (numSent != (int)cd.value().data.size()) {
-        continue;
-      }
+        auto &conn = connections.at(cd->connId);
+        const auto data_len = cd.value().data.size();
+
+        int numSent = sendto(fd,
+                             cd.value().data.data(),
+                             data_len,
+                             0 /*flags*/,
+                             (struct sockaddr *) &conn.addr.addr,
+                             sizeof(sockaddr_in));
+
+
+        if (numSent < 0) {
+            logger->error << "Error sending on UDP socket: " << strerror(errno)
+                          << std::flush;
+
+            break;
+
+        } else if (numSent != data_len) {
+            logger->info << "Failed to send all data data_size: " << data_len << " sent: " << numSent << std::flush;
+        }
+
+        // Wait for the amount of time that it should take to transmit current data
+
+        // TODO: check if tv_usec is zero, if so accumulate it
+        to.tv_usec = static_cast<int>(data_len / bytes_per_us);
+        select(0, NULL, NULL, NULL, &to);
+        logger->info << "sent pri: " << static_cast<int>(cd->priority) << " data_len: " << data_len << " us: " << to.tv_usec << std::flush;
     }
-  }
 
-  logger->Log("Done transport writer thread");
+    logger->Log("Done transport writer thread");
 }
 
 /*
@@ -242,7 +267,7 @@ UDPTransport::fd_writer()
  *  - Lookup addr in map to find context and name info
  *  - If context doesn't exist, then it's a new connection and the delegate will
  * be called after creating new context
- *  - Create connData and send to queue
+ *  - Create ConnData and send to queue
  *  - Call on_recv_notify() delegate to notify of new data available. This is
  * not called again if there is still pending data to be dequeued for the same
  * StreamId
@@ -286,7 +311,7 @@ UDPTransport::fd_reader()
 
     std::vector<uint8_t> buffer (data, data + rLen);
 
-    connData cd;
+    ConnData cd;
     cd.data = buffer;
     cd.streamId = 0;
 
@@ -299,30 +324,29 @@ UDPTransport::fd_reader()
         TransportRemote remote;
         addr_to_remote(remoteAddr, remote);
 
-        Addr r;
-        r.key = ra_key;
-        r.addr_len = remoteAddrLen;
-        memcpy(&(r.addr), &remoteAddr, remoteAddrLen);
+        ConnectionContext conn;
+        conn.addr.key = ra_key;
+        conn.addr.addr_len = remoteAddrLen;
+        memcpy(&(conn.addr.addr), &remoteAddr, remoteAddrLen);
 
-        ++last_context_id;
+        ++last_conn_id;
         ++last_stream_id;
 
-        remote_contexts[last_context_id] = r;
+        connections[last_conn_id] = std::move(conn);
         remote_addrs[ra_key] = {
-          last_context_id,
-            last_stream_id,
+                last_conn_id,
+                last_stream_id,
         };
 
-        cd.contextId = last_context_id;
+        cd.connId = last_conn_id;
         cd.streamId = last_stream_id;
 
         // Create dequeue
-        dequeue_data_map[last_context_id][last_stream_id].set_limit(1000);
-
-        cd.contextId = last_context_id;
+        dequeue_data_map[last_conn_id][last_stream_id].set_limit(1000);
+        cd.connId = last_conn_id;
 
         // Notify caller that there is a new connection
-        delegate.on_new_connection(last_context_id, std::move(remote));
+        delegate.on_new_connection(last_conn_id, std::move(remote));
 
       } else {
         // Client mode doesn't support creating connections based on received
@@ -331,19 +355,18 @@ UDPTransport::fd_reader()
       }
     } else {
       auto sctx = remote_addrs[ra_key];
-      cd.contextId = sctx.tcid;
+      cd.connId = sctx.tcid;
       cd.streamId = sctx.sid;
     }
 
     // Add data to caller queue for processing
-    auto& dq = dequeue_data_map[cd.contextId][cd.streamId];
+    auto& dq = dequeue_data_map[cd.connId][cd.streamId];
 
-    // TODO: Notify caller that packets are being dropped on queue full
     dq.push(cd);
 
-    if (dq.size() < 2) {
+    if (dq.size() < 4) {
       // Notify the caller that there is data to process
-      delegate.on_recv_notify(cd.contextId, cd.streamId);
+      delegate.on_recv_notify(cd.connId, cd.streamId);
     }
   }
 
@@ -354,15 +377,15 @@ TransportError
 UDPTransport::enqueue(const TransportConnId& context_id,
                       const DataContextId& streamId,
                       std::vector<uint8_t>&& bytes,
-                      [[maybe_unused]] const uint8_t priority,
-                      [[maybe_unused]] const uint32_t ttl_m,
+                      const uint8_t priority,
+                      const uint32_t ttl_ms,
                       [[maybe_unused]] const EnqueueFlags flags)
 {
   if (bytes.empty()) {
     return TransportError::None;
   }
 
-  if (remote_contexts.count(context_id) == 0) {
+  if (connections.count(context_id) == 0) {
     // Invalid context id
     return TransportError::InvalidConnContextId;
   }
@@ -372,14 +395,13 @@ UDPTransport::enqueue(const TransportConnId& context_id,
     return TransportError::InvalidDataContextId;
   }
 
-  connData cd;
+  ConnData cd;
   cd.data = bytes;
-  cd.contextId = context_id;
+  cd.connId = context_id;
   cd.streamId = streamId;
+  cd.priority = priority;
 
-  if (not fd_write_queue.push(cd)) {
-    return TransportError::QueueFull;
-  }
+  fd_write_queue->push(cd, ttl_ms, priority);
 
   return TransportError::None;
 }
@@ -389,7 +411,7 @@ UDPTransport::dequeue(const TransportConnId& context_id,
                       const DataContextId& streamId)
 {
 
-  if (remote_contexts.count(context_id) == 0) {
+  if (connections.count(context_id) == 0) {
     logger->warning << "dequeue: invalid context id: " << context_id
                     << std::flush;
     // Invalid context id
@@ -404,11 +426,11 @@ UDPTransport::dequeue(const TransportConnId& context_id,
 
   auto& dq = dequeue_data_map[context_id][streamId];
 
-  if (dq.size() <= 0) {
-    return std::nullopt;
+  if (auto cd = dq.pop()) {
+      return cd.value().data;
   }
 
-  return dq.pop().value().data;
+  return std::nullopt;
 }
 
 TransportConnId
@@ -422,9 +444,8 @@ UDPTransport::connect_client()
   }
 
   // TODO: Add config for these values
-  size_t snd_rcv_max = 2000000;
-  timeval rcv_timeout { .tv_sec = 0, .tv_usec = 10000 };
-
+  size_t snd_rcv_max = 64000;
+  timeval rcv_timeout { .tv_sec = 0, .tv_usec = 1000 };
 
   int err =
     setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &snd_rcv_max, sizeof(snd_rcv_max));
@@ -435,6 +456,7 @@ UDPTransport::connect_client()
     throw std::runtime_error(s_log.str());
   }
 
+  snd_rcv_max = 1000000;
   err =
     setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &snd_rcv_max, sizeof(snd_rcv_max));
   if (err != 0) {
@@ -506,23 +528,24 @@ UDPTransport::connect_client()
 
   serverAddr.key = sa_key;
 
-  ++last_context_id;
+  ++last_conn_id;
   ++last_stream_id;
 
-  remote_contexts[last_context_id] = serverAddr;
-  remote_addrs[sa_key] = { last_context_id, last_stream_id};
+  connections.emplace(last_conn_id, ConnectionContext { .addr = serverAddr });
+
+  remote_addrs[sa_key] = {last_conn_id, last_stream_id};
 
   // Create dequeue
-  dequeue_data_map[last_context_id][last_stream_id].set_limit(50000);
+  dequeue_data_map[last_conn_id][last_stream_id].set_limit(1000);
 
   // Notify caller that the connection is now ready
-  delegate.on_connection_status(last_context_id, TransportStatus::Ready);
+  delegate.on_connection_status(last_conn_id, TransportStatus::Ready);
 
   running_threads.emplace_back(&UDPTransport::fd_reader, this);
 
   running_threads.emplace_back(&UDPTransport::fd_writer, this);
 
-  return last_context_id;
+  return last_conn_id;
 }
 
 TransportConnId
@@ -598,5 +621,5 @@ UDPTransport::connect_server()
   running_threads.emplace_back(&UDPTransport::fd_reader, this);
   running_threads.emplace_back(&UDPTransport::fd_writer, this);
 
-  return last_context_id;
+  return last_conn_id;
 }

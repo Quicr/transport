@@ -42,6 +42,10 @@ namespace qtransport {
         };
 
       public:
+        ~priority_queue() {
+            std::lock_guard<std::mutex> _(_mutex);
+        }
+
         /**
          * Construct a priority queue
          * @param tick_service Shared pointer to tick_service service
@@ -154,13 +158,13 @@ namespace qtransport {
         /**
          * @brief Clear queue
          */
-        void clear() {
+         void clear()
+        {
             std::lock_guard<std::mutex> _(_mutex);
 
-            for (auto& tqueue: _queue) {
-                if (tqueue && !tqueue->empty()) {
+            for (auto& tqueue : _queue) {
+                if (tqueue && !tqueue->empty())
                     tqueue->clear();
-                }
             }
         }
 
