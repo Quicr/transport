@@ -1034,7 +1034,7 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
 
         if (max_len < 5) {
             // Not enough bytes to send
-            logger->debug << "Not enough bytes to send stream size header, waiting for next callback. sid: "
+            logger->debug << "Not enough bytes to send stream size header, waiting for next callback. data_ctx_id: "
                          << data_ctx->current_stream_id << std::flush;
             return;
         }
@@ -1305,7 +1305,7 @@ void PicoQuicTransport::on_recv_stream_bytes(DataContext* data_ctx, uint64_t str
 
         bool too_many_in_queue = false;
         if (cbNotifyQueue.size() > 200) {
-            logger->warning << "on_recv_stream_bytes sid: " << data_ctx->current_stream_id << "cbNotifyQueue size" << cbNotifyQueue.size()
+            logger->warning << "on_recv_stream_bytes data_ctx_id: " << data_ctx->current_stream_id << "cbNotifyQueue size" << cbNotifyQueue.size()
                             << std::flush;
         }
 

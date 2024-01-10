@@ -21,125 +21,133 @@
 
 namespace qtransport {
 
-struct addrKey
-{
-  uint64_t ip_hi;
-  uint64_t ip_lo;
-  uint16_t port;
+    struct AddrId {
+        uint64_t ip_hi;
+        uint64_t ip_lo;
+        uint16_t port;
 
-  addrKey()
-  {
-    ip_hi = 0;
-    ip_lo = 0;
-    port = 0;
-  }
+        AddrId() {
+            ip_hi = 0;
+            ip_lo = 0;
+            port = 0;
+        }
 
-  bool operator==(const addrKey& o) const
-  {
-    return ip_hi == o.ip_hi && ip_lo == o.ip_lo && port == o.port;
-  }
+        bool operator==(const AddrId &o) const {
+            return ip_hi == o.ip_hi && ip_lo == o.ip_lo && port == o.port;
+        }
 
-  bool operator<(const addrKey& o) const
-  {
-    return std::tie(ip_hi, ip_lo, port) < std::tie(o.ip_hi, o.ip_lo, o.port);
-  }
-};
+        bool operator<(const AddrId &o) const {
+            return std::tie(ip_hi, ip_lo, port) < std::tie(o.ip_hi, o.ip_lo, o.port);
+        }
+    };
 
-struct ConnData
-{
-  TransportConnId connId;
-  DataContextId streamId;
-  uint8_t priority;
-  std::vector<uint8_t> data;
-};
+    struct ConnData {
+        TransportConnId conn_id;
+        DataContextId data_ctx_id;
+        uint8_t priority;
+        std::vector<uint8_t> data;
+    };
 
-class UDPTransport : public ITransport
-{
-public:
-  UDPTransport(const TransportRemote& server,
-               TransportDelegate& delegate,
-               bool isServerMode,
-               const cantina::LoggerPointer& logger);
+    class UDPTransport : public ITransport {
+    public:
+        UDPTransport(const TransportRemote &server,
+                     TransportDelegate &delegate,
+                     bool isServerMode,
+                     const cantina::LoggerPointer &logger);
 
-  virtual ~UDPTransport();
+        virtual ~UDPTransport();
 
-  TransportStatus status() const override;
+        TransportStatus status() const override;
 
-  TransportConnId start() override;
+        TransportConnId start() override;
 
-  void close(const TransportConnId& context_id) override;
+        void close(const TransportConnId &conn_id) override;
 
-  virtual bool getPeerAddrInfo(const TransportConnId& context_id,
-                               sockaddr_storage* addr) override;
+        virtual bool getPeerAddrInfo(const TransportConnId &conn_id,
+                                     sockaddr_storage *addr) override;
 
-  DataContextId createDataContext(const TransportConnId conn_id,
-                                  bool use_reliable_transport,
-                                  uint8_t priority, bool bidir) override;
+        DataContextId createDataContext(const TransportConnId conn_id,
+                                        bool use_reliable_transport,
+                                        uint8_t priority, bool bidir) override;
 
-  void deleteDataContext(const TransportConnId& conn_id, DataContextId data_ctx_id) override;
+        void deleteDataContext(const TransportConnId &conn_id, DataContextId data_ctx_id) override;
 
-  TransportError enqueue(const TransportConnId& conn_id,
-                         const DataContextId& data_ctx_id,
-                         std::vector<uint8_t>&& bytes,
-                         const uint8_t priority,
-                         const uint32_t ttl_ms,
-                         const EnqueueFlags flags) override;
+        TransportError enqueue(const TransportConnId &conn_id,
+                               const DataContextId &data_ctx_id,
+                               std::vector<uint8_t> &&bytes,
+                               const uint8_t priority,
+                               const uint32_t ttl_ms,
+                               const EnqueueFlags flags) override;
 
-  std::optional<std::vector<uint8_t>> dequeue(
-    const TransportConnId& context_id,
-    const DataContextId&streamId) override;
+        std::optional<std::vector<uint8_t>>
+        dequeue(const TransportConnId &conn_id, const DataContextId &data_ctx_id) override;
 
-private:
-  TransportConnId connect_client();
-  TransportConnId connect_server();
+    private:
+        TransportConnId connect_client();
 
-  void addr_to_remote(sockaddr_storage& addr, TransportRemote& remote);
-  void addr_to_key(sockaddr_storage& addr, addrKey& key);
+        TransportConnId connect_server();
 
-  void fd_reader();
-  void fd_writer();
+        TransportRemote create_addr_remote(const sockaddr_storage& addr);
 
-  bool stop;
-  std::vector<std::thread> running_threads;
+        AddrId create_addr_id(const sockaddr_storage& addr);
 
-  struct Addr
-  {
-    socklen_t addr_len;
-    struct sockaddr_storage addr;
-    addrKey key;
-  };
+        void fd_reader();
 
-  struct AddrStream
-  {
-    TransportConnId tcid;
-    DataContextId sid;
-  };
+        void fd_writer();
 
-  struct ConnectionContext {
-    Addr addr;
-    uint64_t bytes_sent_in_interval { 0 };
-  };
+        bool stop;
+        std::vector<std::thread> running_threads;
 
-  cantina::LoggerPointer logger;
-  int fd; // UDP socket
-  bool isServerMode;
+        struct Addr {
+            socklen_t addr_len;
+            struct sockaddr_storage addr {0};
+            AddrId id;
 
-  TransportRemote serverInfo;
-  Addr serverAddr;
-  std::unique_ptr<priority_queue<ConnData>> fd_write_queue;
+            Addr() {
+                addr_len = sizeof(addr);
+            }
+        };
 
-  // NOTE: this is a map supporting multiple streams, but UDP does not have that
-  // right now.
-  std::map<TransportConnId, std::map<DataContextId, safe_queue<ConnData>>> dequeue_data_map;
+        struct DataContext {
+            DataContextId data_ctx_id{0};
+            uint8_t priority {10};
 
-  TransportDelegate& delegate;
+            safe_queue<ConnData> rx_data;
+            std::unique_ptr<priority_queue<ConnData>> tx_data;
+        };
 
-  TransportConnId last_conn_id{ 0 };
-  DataContextId last_stream_id{ 0 };
-  std::map<TransportConnId, ConnectionContext> connections = {};
-  std::map<addrKey, AddrStream> remote_addrs = {};
+        struct ConnectionContext {
+            Addr addr;
+            TransportConnId id;                     // This/conn ID
+            DataContextId next_data_ctx_id{1};
+            std::map<DataContextId, DataContext> data_contexts;
 
-  std::shared_ptr<tick_service> _tick_service;
-};
+            // Shaping variables
+            uint64_t wait_for_tick {0};
+            uint64_t running_wait_us {0};   // Running wait time in microseconds - When more than 1ms, the wait for tick will be updated
+
+            double bytes_per_us {6.4};     // Default to 50Mbps
+
+            void set_bytes_per_us(uint32_t Kbps) {
+                const auto bytes_per_sec = (Kbps * 1024) / 8;
+                bytes_per_us = ((Kbps * 1024) / 8) / 1'000'000.0 /* 1 second double value */;
+            }
+        };
+
+        cantina::LoggerPointer logger;
+        int fd; // UDP socket
+        bool isServerMode;
+
+        TransportRemote serverInfo;
+        Addr serverAddr;
+
+        TransportDelegate &delegate;
+
+        TransportConnId last_conn_id{0};
+        std::map<TransportConnId, std::shared_ptr<ConnectionContext>> conn_contexts;
+        std::map<AddrId, std::shared_ptr<ConnectionContext>> addr_conn_contexts;
+
+        std::shared_ptr<tick_service> _tick_service;
+    };
 
 } // namespace qtransport
