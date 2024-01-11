@@ -16,6 +16,7 @@
 
 #include <transport/transport.h>
 
+#include "transport_udp_protocol.h"
 #include "transport/priority_queue.h"
 #include "transport/safe_queue.h"
 
@@ -84,15 +85,15 @@ namespace qtransport {
 
     private:
         TransportConnId connect_client();
-
         TransportConnId connect_server();
 
         TransportRemote create_addr_remote(const sockaddr_storage& addr);
-
         AddrId create_addr_id(const sockaddr_storage& addr);
 
-        void fd_reader();
 
+
+        /* Threads */
+        void fd_reader();
         void fd_writer();
 
         bool stop;
@@ -102,6 +103,7 @@ namespace qtransport {
             socklen_t addr_len;
             struct sockaddr_storage addr {0};
             AddrId id;
+            bool is_ipv6 { false };
 
             Addr() {
                 addr_len = sizeof(addr);
@@ -122,7 +124,29 @@ namespace qtransport {
             DataContextId next_data_ctx_id{1};
             std::map<DataContextId, DataContext> data_contexts;
 
-            // Shaping variables
+            uint64_t last_rx_msg_tick { 0 };            /// Tick value (ms) when last message was received
+            uint64_t last_tx_msg_tick { 0 };            /// Tick value (ms) when last message was sent
+
+            /*
+             * Received/negotiated config parameters
+             */
+            uint32_t idle_timeout_ms { 120'000 };       /// Idle timeout in milliseconds
+            uint32_t ka_interval_ms { 40'000 };         /// Interval in ms for when to send a keepalive (1/3 of idle_timeout)
+
+            /*
+             * Report variables
+             */
+            uint16_t report_id {0};                 // Report ID increments on interval. Wrap is okay
+            uint16_t report_interval_ms { 100 };    // Report ID interval in milliseconds
+            uint64_t next_report_tick {0};          // Tick value to start a new report ID
+            UdpProtocol::ReportMessage report;       // Report to be sent back to sender upon received report_id change
+
+            UdpProtocol::ReportMetrics tx_report_metrics;
+
+
+            /*
+             * Shaping variables
+             */
             uint64_t wait_for_tick {0};
             uint64_t running_wait_us {0};   // Running wait time in microseconds - When more than 1ms, the wait for tick will be updated
 
@@ -134,6 +158,13 @@ namespace qtransport {
             }
         };
 
+        /* Protocol methods */
+        bool send_connect(const TransportConnId conn_id, const Addr& addr);
+        bool send_disconnect(const TransportConnId conn_id, const Addr& addr);
+        bool send_keepalive(const TransportConnId conn_id, const Addr& addr);
+        bool send_data(ConnectionContext& conn, const ConnData& cd, bool discard=false);
+        bool send_report(ConnectionContext& conn);
+
         cantina::LoggerPointer logger;
         int fd; // UDP socket
         bool isServerMode;
@@ -142,6 +173,8 @@ namespace qtransport {
         Addr serverAddr;
 
         TransportDelegate &delegate;
+        std::mutex _socket_write_mutex;                        /// Used to sync socket writes
+
 
         TransportConnId last_conn_id{0};
         std::map<TransportConnId, std::shared_ptr<ConnectionContext>> conn_contexts;
