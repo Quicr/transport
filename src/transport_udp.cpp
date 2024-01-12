@@ -125,6 +125,12 @@ bool UDPTransport::getPeerAddrInfo(const TransportConnId &conn_id,
 
 void UDPTransport::close(const TransportConnId &conn_id) {
 
+    if (!isServerMode) { // Client mode, stop threads
+        stop = true;
+    }
+
+    std::lock_guard<std::mutex> _(_connections_mutex);
+
     auto conn_it = conn_contexts.find(conn_id);
     if (conn_it != conn_contexts.end()) {
         send_disconnect(conn_it->second->id, conn_it->second->addr);
@@ -292,9 +298,6 @@ bool UDPTransport::send_keepalive(const TransportConnId conn_id, const Addr &add
 }
 
 bool UDPTransport::send_report(ConnectionContext& conn) {
-    logger->debug << "conn_id: " << conn.id
-                  << " send REPORT" << std::flush;
-
     std::lock_guard<std::mutex> _(_socket_write_mutex);
 
     int numSent = sendto(fd,
@@ -329,7 +332,7 @@ bool UDPTransport::send_report(ConnectionContext& conn) {
 
 bool UDPTransport::send_data(ConnectionContext& conn, const ConnData& cd, bool discard) {
     UdpProtocol::DataMsg dhdr {};
-    uint8_t data[65535] {0};
+    uint8_t data[65000] {0};
 
     if (discard) {
         dhdr.type = UdpProtocol::ProtocolType::DATA_DISCARD;
@@ -339,29 +342,37 @@ bool UDPTransport::send_data(ConnectionContext& conn, const ConnData& cd, bool d
 
     if (current_tick >= conn.next_report_tick) {
         // New report ID
-        logger->info << "Report change conn_id: " << conn.id
-                     << " previous id: " << conn.report_id
-                     << " duration_ms: " << conn.tx_report_metrics.duration_ms
-                     << " total_bytes: " << conn.tx_report_metrics.total_bytes
-                     << " total_packets: " << conn.tx_report_metrics.total_packets
-                     << std::flush;
+        /* Too noisy, uncomment when debugging reports
+        logger->debug << "Report change conn_id: " << conn.id
+                      << " previous id: " << conn.report_id
+                      << " duration_ms: " << conn.tx_report_metrics.duration_ms
+                      << " total_bytes: " << conn.tx_report_metrics.total_bytes
+                      << " total_packets: " << conn.tx_report_metrics.total_packets
+                      << " curr_tick: " << current_tick
+                      << " prev_report_tick: " << conn.next_report_tick
+                      << std::flush;
+        */
+
+        conn.prev_tx_report_metrics = conn.tx_report_metrics;
+        conn.tx_report_metrics = {};
 
         conn.report_id++;
         conn.next_report_tick = current_tick + conn.report_interval_ms;
-
-        // TODO: Save copy of report metrics to be compared on REPORT received
-        conn.tx_report_metrics.duration_ms = 0;
-        conn.tx_report_metrics.total_bytes = 0;
-        conn.tx_report_metrics.total_packets = 0;
     }
 
     dhdr.report_id = conn.report_id;
 
+    std::lock_guard<std::mutex> _(_socket_write_mutex);
+
+    const auto data_len = sizeof(dhdr) + cd.data.size();
+    if (data_len > sizeof(data)) {
+        logger->error << "conn_id: " << conn.id << " data_len: " << data_len << " is too large" << std::flush;
+        return false;
+    }
+
     memcpy(data, &dhdr, sizeof(dhdr));
     memcpy(data + sizeof(dhdr), cd.data.data(), cd.data.size());
-    const auto data_len = sizeof(dhdr) + cd.data.size();
 
-    std::lock_guard<std::mutex> _(_socket_write_mutex);
 
     int numSent = sendto(fd,
                          data,
@@ -386,7 +397,9 @@ bool UDPTransport::send_data(ConnectionContext& conn, const ConnData& cd, bool d
 
     conn.tx_report_metrics.total_bytes += cd.data.size();
     conn.tx_report_metrics.total_packets++;
-    conn.tx_report_metrics.duration_ms += current_tick - conn.last_tx_msg_tick;
+
+    if (conn.last_tx_msg_tick)
+        conn.tx_report_metrics.duration_ms += current_tick - conn.last_tx_msg_tick;
 
     return true;
 }
@@ -411,6 +424,9 @@ void UDPTransport::fd_writer() {
     while (not stop) {
         sent_data = false;
 
+
+        std::unique_lock<std::mutex> lock(_connections_mutex);
+
         // Check each connection context for data to send
         for (const auto& [conn_id, conn]: conn_contexts) {
             // NOTE: Currently only implement single data context
@@ -427,11 +443,13 @@ void UDPTransport::fd_writer() {
 
             // Shape flow by only processing data if wait for tick value is less than or equal to current tick
             if (conn->wait_for_tick > current_tick) {
-                logger->info << "SHAPING conn_id: " << conn_id
+                /* Noisy - Enable when debugging shaping
+                logger->debug << "SHAPING conn_id: " << conn_id
                              << " running_age: " << conn->running_wait_us
                              << " wait_for_tick: " << conn->wait_for_tick
                              << " current_tick: " << current_tick
                              << std::flush;
+                */
                 continue;
             }
 
@@ -446,7 +464,7 @@ void UDPTransport::fd_writer() {
 
             auto cd = data_ctx.tx_data->pop_front();
 
-            if (!cd) {
+            if (!cd.has_value()) {
                 // Send keepalive if needed
                 if (conn->last_tx_msg_tick && current_tick - conn->last_tx_msg_tick > conn->ka_interval_ms) {
                     conn->last_tx_msg_tick = current_tick;
@@ -469,13 +487,15 @@ void UDPTransport::fd_writer() {
                 conn->running_wait_us %= 1000; // Set running age to remainder value less than a tick
             }
 
-            logger->info << "sent conn_id: " << conn_id
+            /* Noisy - Enable when debugging shaping
+            logger->debug << "sent conn_id: " << conn_id
                          << " pri: " << static_cast<int>(cd->priority)
                          << " data_len: " << cd->data.size()
                          << " running_age: " << conn->running_wait_us
                          << " wait_for_tick: " << conn->wait_for_tick
                          << " current_tick: " << current_tick
                          << std::flush;
+            */
         }
 
         if (!sent_data) {
@@ -626,12 +646,22 @@ void UDPTransport::fd_reader() {
                     UdpProtocol::ReportMessage hdr;
                     memcpy(&hdr, data, sizeof(hdr));
 
-                    logger->info << "Received REPORT conn_id: " << a_conn_it->second->id
-                                 << " report_id: " << hdr.report_id
-                                 << " duration_ms: " << hdr.metrics.duration_ms
-                                 << " total_bytes: " << hdr.metrics.total_bytes
-                                 << " total_packets: " << hdr.metrics.total_packets
-                                 << std::flush;
+                    const auto Kbps = static_cast<int>((hdr.metrics.total_bytes * 8) / hdr.metrics.duration_ms);
+                    const auto loss_pct = 1.0 - static_cast<double>(hdr.metrics.total_packets) / a_conn_it->second->prev_tx_report_metrics.total_packets;
+
+                    if (loss_pct != 0 && hdr.metrics.total_packets > 2) {
+                        logger->info << "Received REPORT conn_id: " << a_conn_it->second->id
+                                     << " report_id: " << hdr.report_id
+                                     << " duration_ms: " << hdr.metrics.duration_ms
+                                     << " (" << a_conn_it->second->prev_tx_report_metrics.duration_ms << ")"
+                                     << " total_bytes: " << hdr.metrics.total_bytes
+                                     << " (" << a_conn_it->second->prev_tx_report_metrics.total_bytes << ")"
+                                     << " total_packets: " << hdr.metrics.total_packets
+                                     << " (" << a_conn_it->second->prev_tx_report_metrics.total_packets << ")"
+                                     << " Kbps: " << Kbps
+                                     << " Loss: " << loss_pct << "%"
+                                     << std::flush;
+                    }
                 }
                 break;
             }
@@ -642,17 +672,26 @@ void UDPTransport::fd_reader() {
                 rLen -= sizeof(hdr);
 
                 if (a_conn_it != addr_conn_contexts.end()) {
-                    // TODO: Handle out of order. Old report ID is received after new...
-                    if (hdr.report_id == 0 || a_conn_it->second->report.report_id != hdr.report_id) {
-                        logger->info << "conn_id: " << a_conn_it->second->id
+                    if (hdr.report_id != a_conn_it->second->report_id &&
+                            (hdr.report_id > a_conn_it->second->report.report_id
+                             || hdr.report_id == 0 || hdr.report_id <= 10 /* wrap likely */)) {
+                        /* Too noisy, add back only if debugging reports
+                        logger->debug << "conn_id: " << a_conn_it->second->id
                                      << " New REPORT id: " << hdr.report_id
                                      << " previous id: " <<  a_conn_it->second->report.report_id
                                      << std::flush;
+                        */
 
                         send_report(*a_conn_it->second);
-                        a_conn_it->second->report.report_id = hdr.report_id;
 
-                    } else {
+                        // Init metrics with this packet/data
+                        a_conn_it->second->report.report_id = hdr.report_id;
+                        a_conn_it->second->report.metrics.duration_ms = current_tick - a_conn_it->second->last_rx_msg_tick;
+                        a_conn_it->second->report.metrics.total_bytes = rLen;
+                        a_conn_it->second->report.metrics.total_packets = 1;
+
+
+                    } else if (hdr.report_id == a_conn_it->second->report.report_id) {
                         a_conn_it->second->report.metrics.duration_ms += current_tick - a_conn_it->second->last_rx_msg_tick;
                         a_conn_it->second->report.metrics.total_bytes += rLen;
                         a_conn_it->second->report.metrics.total_packets++;
@@ -684,10 +723,6 @@ void UDPTransport::fd_reader() {
                     a_conn_it->second->last_rx_msg_tick = _tick_service->get_ticks(std::chrono::milliseconds(1));
 
                     if (hdr.report_id == 0 || a_conn_it->second->report.report_id != hdr.report_id) {
-                        logger->info << "conn_id: " << a_conn_it->second->id
-                                     << " New REPORT id: " << hdr.report_id
-                                     << " previous id: " <<  a_conn_it->second->report.report_id
-                                     << std::flush;
 
                         a_conn_it->second->report.report_id = hdr.report_id;
                         a_conn_it->second->report.metrics.duration_ms = 0;
@@ -871,7 +906,7 @@ TransportConnId UDPTransport::connect_client() {
     auto &conn = *conn_it->second;
     conn.addr = serverAddr;
     conn.id = last_conn_id;
-    conn.set_bytes_per_us(16000); // Set to 6Mbps connection rate
+    conn.set_bytes_per_us(16000); // Set to 16Mbps connection rate
 
     createDataContext(last_conn_id, false, 10, false);
 

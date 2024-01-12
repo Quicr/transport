@@ -142,6 +142,8 @@ namespace qtransport {
             UdpProtocol::ReportMessage report;       // Report to be sent back to sender upon received report_id change
 
             UdpProtocol::ReportMetrics tx_report_metrics;
+            UdpProtocol::ReportMetrics prev_tx_report_metrics; // Last report
+
 
 
             /*
@@ -174,6 +176,7 @@ namespace qtransport {
 
         TransportDelegate &delegate;
         std::mutex _socket_write_mutex;                        /// Used to sync socket writes
+        std::mutex _connections_mutex;                         /// Mutex for connections map changes
 
 
         TransportConnId last_conn_id{0};
