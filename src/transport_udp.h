@@ -154,9 +154,11 @@ namespace qtransport {
 
             double bytes_per_us {6.4};     // Default to 50Mbps
 
-            void set_bytes_per_us(uint32_t Kbps) {
-                const auto bytes_per_sec = (Kbps * 1024) / 8;
-                bytes_per_us = ((Kbps * 1024) / 8) / 1'000'000.0 /* 1 second double value */;
+            void set_bytes_per_us(uint32_t Kbps, bool max_of=false) {
+                const auto bpUs = ((Kbps * 1024) / 8) / 1'000'000.0 /* 1 second double value */;
+                if (!max_of || bpUs > bytes_per_us) {
+                    bytes_per_us = bpUs;
+                }
             }
         };
 

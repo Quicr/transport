@@ -125,10 +125,6 @@ bool UDPTransport::getPeerAddrInfo(const TransportConnId &conn_id,
 
 void UDPTransport::close(const TransportConnId &conn_id) {
 
-    if (!isServerMode) { // Client mode, stop threads
-        stop = true;
-    }
-
     std::lock_guard<std::mutex> _(_connections_mutex);
 
     auto conn_it = conn_contexts.find(conn_id);
@@ -146,6 +142,7 @@ void UDPTransport::close(const TransportConnId &conn_id) {
     if (!isServerMode) { // Client mode, stop threads
         stop = true;
     }
+
 }
 
 AddrId UDPTransport::create_addr_id(const sockaddr_storage &addr) {
@@ -205,7 +202,7 @@ TransportRemote UDPTransport::create_addr_remote(const sockaddr_storage &addr) {
 bool UDPTransport::send_connect(const TransportConnId conn_id, const Addr& addr) {
     UdpProtocol::ConnectMsg chdr {};
 
-    chdr.idle_timeout = 120;
+    chdr.idle_timeout = 20;
 
     std::lock_guard<std::mutex> _(_socket_write_mutex);
 
@@ -424,7 +421,7 @@ void UDPTransport::fd_writer() {
     while (not stop) {
         sent_data = false;
 
-
+        bool unlock = true;
         std::unique_lock<std::mutex> lock(_connections_mutex);
 
         // Check each connection context for data to send
@@ -437,6 +434,8 @@ void UDPTransport::fd_writer() {
             // Check if idle
             if (conn->last_rx_msg_tick && current_tick - conn->last_rx_msg_tick >= conn->idle_timeout_ms) {
                 logger->error << "conn_id: " << conn_id << " TIME OUT, disconnecting connection" << std::flush;
+                unlock = false;
+                lock.unlock();
                 close(conn_id);
                 break; // Don't continue with for loop since iterator will be invalidated upon close
             }
@@ -497,6 +496,8 @@ void UDPTransport::fd_writer() {
                          << std::flush;
             */
         }
+
+        if (unlock) lock.unlock();
 
         if (!sent_data) {
             all_empty_count++;
@@ -649,7 +650,7 @@ void UDPTransport::fd_reader() {
                     const auto Kbps = static_cast<int>((hdr.metrics.total_bytes * 8) / hdr.metrics.duration_ms);
                     const auto loss_pct = 1.0 - static_cast<double>(hdr.metrics.total_packets) / a_conn_it->second->prev_tx_report_metrics.total_packets;
 
-                    if (loss_pct != 0 && hdr.metrics.total_packets > 2) {
+                    if (loss_pct != 0 && hdr.metrics.total_packets > 20) {
                         logger->info << "Received REPORT conn_id: " << a_conn_it->second->id
                                      << " report_id: " << hdr.report_id
                                      << " duration_ms: " << hdr.metrics.duration_ms
@@ -659,8 +660,14 @@ void UDPTransport::fd_reader() {
                                      << " total_packets: " << hdr.metrics.total_packets
                                      << " (" << a_conn_it->second->prev_tx_report_metrics.total_packets << ")"
                                      << " Kbps: " << Kbps
+                                     << " prev_Kbps: " << a_conn_it->second->bytes_per_us * 1'000'000 * 8 / 1024
                                      << " Loss: " << loss_pct << "%"
                                      << std::flush;
+
+                        a_conn_it->second->set_bytes_per_us(Kbps * 0.80);
+
+                    } else if (hdr.metrics.total_packets > 20 && loss_pct == 0) {
+                        a_conn_it->second->set_bytes_per_us(Kbps * 1.1, true);
                     }
                 }
                 break;
