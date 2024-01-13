@@ -329,7 +329,7 @@ bool UDPTransport::send_report(ConnectionContext& conn) {
 
 bool UDPTransport::send_data(ConnectionContext& conn, const ConnData& cd, bool discard) {
     UdpProtocol::DataMsg dhdr {};
-    uint8_t data[65000] {0};
+    uint8_t data[UDP_MAX_PACKET_SIZE] {0};
 
     if (discard) {
         dhdr.type = UdpProtocol::ProtocolType::DATA_DISCARD;
@@ -417,12 +417,12 @@ void UDPTransport::fd_writer() {
 
     bool sent_data = false;
     int all_empty_count = 0;
+    std::unique_lock<std::mutex> lock(_connections_mutex);
 
     while (not stop) {
         sent_data = false;
 
         bool unlock = true;
-        std::unique_lock<std::mutex> lock(_connections_mutex);
 
         // Check each connection context for data to send
         for (const auto& [conn_id, conn]: conn_contexts) {
@@ -508,6 +508,8 @@ void UDPTransport::fd_writer() {
                 select(0, NULL, NULL, NULL, &to);
             }
         }
+
+        lock.lock();
     }
 
     logger->Log("Done transport writer thread");
@@ -529,7 +531,7 @@ void UDPTransport::fd_writer() {
 void UDPTransport::fd_reader() {
     logger->Log("Starting transport reader thread");
 
-    const int dataSize = 65535; // TODO Add config var to set this value.  Sizes
+    const int dataSize = UDP_MAX_PACKET_SIZE; // TODO Add config var to set this value.  Sizes
     // larger than actual MTU require IP frags
     uint8_t data[dataSize];
 
@@ -584,6 +586,8 @@ void UDPTransport::fd_reader() {
                     if (isServerMode) {
                         ++last_conn_id;
 
+                        std::unique_lock<std::mutex> lock(_connections_mutex);
+
                         const auto [conn_it, _] = conn_contexts.emplace(last_conn_id,
                                                                         std::make_shared<ConnectionContext>());
 
@@ -602,6 +606,8 @@ void UDPTransport::fd_reader() {
                         conn.set_bytes_per_us(50000); // Set to 50Mbps connection rate
 
                         addr_conn_contexts.emplace(remote_addr.id, conn_it->second); // Add to the addr lookup map
+
+                        lock.unlock(); // no need to hold lock, especially with a call to a delegate
 
                         // New remote address/connection
                         const TransportRemote remote = create_addr_remote(remote_addr.addr);
@@ -765,6 +771,7 @@ TransportError UDPTransport::enqueue(const TransportConnId &conn_id,
         return TransportError::None;
     }
 
+    std::lock_guard<std::mutex> _(_connections_mutex);
 
     const auto conn_it = conn_contexts.find(conn_id);
 
@@ -792,6 +799,8 @@ TransportError UDPTransport::enqueue(const TransportConnId &conn_id,
 
 std::optional<std::vector<uint8_t>> UDPTransport::dequeue(const TransportConnId &conn_id,
                                                           const DataContextId &data_ctx_id) {
+
+    std::lock_guard<std::mutex> _(_connections_mutex);
 
     const auto conn_it = conn_contexts.find(conn_id);
     if (conn_it == conn_contexts.end()) {
@@ -824,7 +833,7 @@ TransportConnId UDPTransport::connect_client() {
         throw std::runtime_error("socket() failed");
     }
 
-    size_t snd_rcv_max = 64000;   // TODO: Add config for value
+    size_t snd_rcv_max = UDP_MAX_PACKET_SIZE;   // TODO: Add config for value
     timeval rcv_timeout{.tv_sec = 0, .tv_usec = 1000};
 
     int err =
@@ -907,7 +916,9 @@ TransportConnId UDPTransport::connect_client() {
 
     ++last_conn_id;
 
-    const auto& [conn_it, _] = conn_contexts.emplace(last_conn_id,
+    std::lock_guard<std::mutex> _(_connections_mutex);  // just for safety in case a close is called at the same time
+
+    const auto& [conn_it, is_new] = conn_contexts.emplace(last_conn_id,
                                                     std::make_shared<ConnectionContext>());
 
     auto &conn = *conn_it->second;

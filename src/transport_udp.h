@@ -21,6 +21,7 @@
 #include "transport/safe_queue.h"
 
 namespace qtransport {
+    constexpr size_t UDP_MAX_PACKET_SIZE = 64000;
 
     struct AddrId {
         uint64_t ip_hi;
