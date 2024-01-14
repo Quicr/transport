@@ -186,7 +186,7 @@ TransportRemote UDPTransport::create_addr_remote(const sockaddr_storage &addr) {
             inet_ntop(AF_INET, &s->sin_addr, ip, sizeof(ip));
             break;
         }
-        default: {
+        case AF_INET6: {
             // IPv6
             sockaddr_in6 *s = (sockaddr_in6 *) &addr;
 
@@ -194,6 +194,9 @@ TransportRemote UDPTransport::create_addr_remote(const sockaddr_storage &addr) {
             inet_ntop(AF_INET6, &s->sin6_addr, ip, sizeof(ip));
             break;
         }
+        default:
+            logger->error << "Unknown AFI: " << static_cast<int>(addr.ss_family) << std::flush;
+            break;
     }
 
     return std::move(remote);
