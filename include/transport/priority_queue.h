@@ -43,7 +43,6 @@ namespace qtransport {
 
       public:
         ~priority_queue() {
-            std::lock_guard<std::mutex> _(_mutex);
         }
 
         /**
