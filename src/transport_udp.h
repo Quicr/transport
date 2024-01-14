@@ -178,7 +178,7 @@ namespace qtransport {
         Addr serverAddr;
 
         TransportDelegate &delegate;
-        std::mutex _socket_write_mutex;                        /// Used to sync socket writes
+        std::mutex _send_recv_sync_mutex;                      /// Sync send/recv packets and calculations
         std::mutex _connections_mutex;                         /// Mutex for connections map changes
 
 

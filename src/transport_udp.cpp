@@ -204,7 +204,7 @@ bool UDPTransport::send_connect(const TransportConnId conn_id, const Addr& addr)
 
     chdr.idle_timeout = 20;
 
-    std::lock_guard<std::mutex> _(_socket_write_mutex);
+    std::lock_guard<std::mutex> _(_send_recv_sync_mutex);
 
     int numSent = sendto(fd,
                          (uint8_t *)&chdr,
@@ -234,7 +234,7 @@ bool UDPTransport::send_connect(const TransportConnId conn_id, const Addr& addr)
 bool UDPTransport::send_disconnect(const TransportConnId conn_id, const Addr& addr) {
     UdpProtocol::DisconnectMsg dhdr {};
 
-    std::lock_guard<std::mutex> _(_socket_write_mutex);
+    std::lock_guard<std::mutex> _(_send_recv_sync_mutex);
 
     int numSent = sendto(fd,
                          (uint8_t *)&dhdr,
@@ -267,7 +267,7 @@ bool UDPTransport::send_keepalive(const TransportConnId conn_id, const Addr &add
     logger->debug << "conn_id: " << conn_id
                   << " send KEEPALIVE" << std::flush;
 
-    std::lock_guard<std::mutex> _(_socket_write_mutex);
+    std::lock_guard<std::mutex> _(_send_recv_sync_mutex);
 
     int numSent = sendto(fd,
                          (uint8_t *)&khdr,
@@ -295,7 +295,7 @@ bool UDPTransport::send_keepalive(const TransportConnId conn_id, const Addr &add
 }
 
 bool UDPTransport::send_report(ConnectionContext& conn) {
-    std::lock_guard<std::mutex> _(_socket_write_mutex);
+    std::lock_guard<std::mutex> _(_send_recv_sync_mutex);
 
     int numSent = sendto(fd,
                          (uint8_t *)&conn.report,
@@ -359,7 +359,7 @@ bool UDPTransport::send_data(ConnectionContext& conn, const ConnData& cd, bool d
 
     dhdr.report_id = conn.report_id;
 
-    std::lock_guard<std::mutex> _(_socket_write_mutex);
+    std::lock_guard<std::mutex> _(_send_recv_sync_mutex);
 
     const auto data_len = sizeof(dhdr) + cd.data.size();
     if (data_len > sizeof(data)) {
