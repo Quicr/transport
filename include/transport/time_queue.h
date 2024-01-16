@@ -31,6 +31,7 @@
 #include <thread>
 #include <type_traits>
 #include <vector>
+#include <sys/select.h>
 
 namespace qtransport {
 
@@ -95,7 +96,7 @@ namespace qtransport {
 
             timeval sleep_time = {.tv_sec = 0, .tv_usec = interval_us};
             while (!_stop) {
-                select(1, NULL, NULL, NULL, &sleep_time);
+                select(0, NULL, NULL, NULL, &sleep_time);
                 sleep_time.tv_usec = interval_us;
                 ++_ticks;
             }
@@ -314,9 +315,7 @@ namespace qtransport {
             }
         }
 
-      private:
-
-
+    private:
         /**
          * @brief Based on current time, adjust and move the bucket index with time
          *        (sliding window)

@@ -8,7 +8,6 @@
 #include <cstring>
 #include <ctime>
 #include <iostream>
-#include <netdb.h>
 #include <thread>
 #include <unistd.h>
 
@@ -213,7 +212,7 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
             transport->logger->info << "Received RESET stream; conn_id: " << data_ctx->conn_id
                                     << " data_ctx_id: " << data_ctx->data_ctx_id
                                     << " stream_id: " << stream_id
-                                    << " RX buf drops: " << data_ctx->metrics.tx_buffer_drops << std::flush;
+                                    << " RX buf drops: " << data_ctx->metrics.rx_buffer_drops << std::flush;
 
             if (!data_ctx->is_default_context) {
                 transport->deleteDataContext(conn_id, data_ctx->data_ctx_id);
@@ -1035,7 +1034,7 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
 
         if (max_len < 5) {
             // Not enough bytes to send
-            logger->debug << "Not enough bytes to send stream size header, waiting for next callback. sid: "
+            logger->debug << "Not enough bytes to send stream size header, waiting for next callback. data_ctx_id: "
                          << data_ctx->current_stream_id << std::flush;
             return;
         }
@@ -1209,7 +1208,7 @@ void PicoQuicTransport::on_recv_stream_bytes(DataContext* data_ctx, uint64_t str
 
         if (rx_buf.object_hdr_size < 4) {
 
-            uint16_t len_to_copy = length >= 4 ? 4 - rx_buf.object_hdr_size : 4;
+            uint16_t len_to_copy = length > 4 ? 4 - rx_buf.object_hdr_size : length - rx_buf.object_hdr_size;
 
 
             std::memcpy(&rx_buf.object_size + rx_buf.object_hdr_size,
@@ -1219,6 +1218,8 @@ void PicoQuicTransport::on_recv_stream_bytes(DataContext* data_ctx, uint64_t str
 
             if (rx_buf.object_hdr_size < 4) {
                 logger->debug << "Stream header not complete. hdr " << rx_buf.object_hdr_size
+                              << " conn_id: " << data_ctx->conn_id
+                              << " data_ctx_id: " << data_ctx->data_ctx_id
                               << " len_to_copy: " << len_to_copy
                               << " length: " << length
                               << std::flush;
@@ -1236,8 +1237,9 @@ void PicoQuicTransport::on_recv_stream_bytes(DataContext* data_ctx, uint64_t str
 
         if (rx_buf.object_size > 40000000L) { // Safety check
             logger->warning << "on_recv_stream_bytes stream_id: " << stream_id
-                            << " data length is too large: "
-                            << std::to_string(rx_buf.object_size)
+                            << " conn_id: " << data_ctx->conn_id
+                            << " data_ctx_id: " << data_ctx->data_ctx_id
+                            << " data length is too large: " << rx_buf.object_size
                             << std::flush;
 
             rx_buf.reset_buffer();
@@ -1303,7 +1305,7 @@ void PicoQuicTransport::on_recv_stream_bytes(DataContext* data_ctx, uint64_t str
 
         bool too_many_in_queue = false;
         if (cbNotifyQueue.size() > 200) {
-            logger->warning << "on_recv_stream_bytes sid: " << data_ctx->current_stream_id << "cbNotifyQueue size" << cbNotifyQueue.size()
+            logger->warning << "on_recv_stream_bytes data_ctx_id: " << data_ctx->current_stream_id << "cbNotifyQueue size" << cbNotifyQueue.size()
                             << std::flush;
         }
 
@@ -1318,7 +1320,15 @@ void PicoQuicTransport::on_recv_stream_bytes(DataContext* data_ctx, uint64_t str
     }
 
     if (length > 0) {
-        logger->debug << "on_stream_bytes has remaining bytes: " << length << std::flush;
+        logger->debug << "on_recv_stream_bytes has remaining bytes: " << length
+                      << " conn_id: " << data_ctx->conn_id
+                      << " data_ctx_id: " << data_ctx->data_ctx_id
+                      << " stream_id: " << data_ctx->current_stream_id
+                      << " rx_hdr_sz: " << rx_buf.object_hdr_size
+                      << " rx_obj_offset: " << rx_buf.object_offset
+                      << " rx_obj_sz: " << rx_buf.object_size
+                      << std::flush;
+
         on_recv_stream_bytes(data_ctx, stream_id, bytes_p, length);
     }
 }
