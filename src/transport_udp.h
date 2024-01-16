@@ -125,6 +125,8 @@ namespace qtransport {
             DataContextId next_data_ctx_id{1};
             std::map<DataContextId, DataContext> data_contexts;
 
+            TransportStatus status { TransportStatus::Disconnected };
+
             uint64_t last_rx_msg_tick { 0 };            /// Tick value (ms) when last message was received
             uint64_t last_tx_msg_tick { 0 };            /// Tick value (ms) when last message was sent
 
@@ -145,8 +147,6 @@ namespace qtransport {
             UdpProtocol::ReportMetrics tx_report_metrics;
             UdpProtocol::ReportMetrics prev_tx_report_metrics; // Last report
 
-
-
             /*
              * Shaping variables
              */
@@ -164,21 +164,80 @@ namespace qtransport {
         };
 
         /* Protocol methods */
+        /**
+         * @brief Send UDP protocol connect message
+         *
+         * @param conn_id       Connection context ID
+         * @param addr          Address to send the message to
+         *
+         * @return True if sent, false if not sent/error
+         */
         bool send_connect(const TransportConnId conn_id, const Addr& addr);
+
+        /**
+         * @brief Send UDP protocol connect OK message
+         *
+         * @param conn_id       Connection context ID
+         * @param addr          Address to send the message to
+         *
+         * @return True if sent, false if not sent/error
+         */
+        bool send_connect_ok(const TransportConnId conn_id, const Addr& addr);
+
+        /**
+         * @brief Send UDP protocol disconnect message
+         *
+         * @param conn_id       Connection context ID
+         * @param addr          Address to send the message to
+         *
+         * @return True if sent, false if not sent/error
+         */
         bool send_disconnect(const TransportConnId conn_id, const Addr& addr);
+
+        /**
+         * @brief Send UDP protocol keepalive message
+         *
+         * @param conn_id       Connection context ID
+         * @param addr          Address to send the message to
+         *
+         * @return True if sent, false if not sent/error
+         */
         bool send_keepalive(const TransportConnId conn_id, const Addr& addr);
+
+        /**
+         * @brief Send UDP protocol data message
+         *
+         * @notes: REQUIRES locking since the connection context will be updated
+         *
+         * @param conn[in,out]      Connection context reference, will be updated
+         * @param cd[in]            Connection data to send
+         * @param discard[in]       True if data should be discarded on receive
+         *
+         * @return True if sent, false if not sent/error
+         */
         bool send_data(ConnectionContext& conn, const ConnData& cd, bool discard=false);
+
+        /**
+         * @brief Send UDP protocol report message
+         *
+         * @notes: REQUIRES locking since the connection context will be updated
+         *
+         * @param conn[in,out]      Connection context reference, will be updated
+         *
+         * @return True if sent, false if not sent/error
+         */
         bool send_report(ConnectionContext& conn);
 
         cantina::LoggerPointer logger;
         int fd; // UDP socket
         bool isServerMode;
 
+        std::atomic<TransportStatus> clientStatus {TransportStatus::Disconnected };
+
         TransportRemote serverInfo;
         Addr serverAddr;
 
         TransportDelegate &delegate;
-        std::mutex _send_recv_sync_mutex;                      /// Sync send/recv packets and calculations
         std::mutex _connections_mutex;                         /// Mutex for connections map changes
 
 

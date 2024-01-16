@@ -50,7 +50,13 @@ UDPTransport::UDPTransport(const TransportRemote &server,
 }
 
 TransportStatus UDPTransport::status() const {
-    return (fd > 0 && !stop) ? TransportStatus::Ready : TransportStatus::Disconnected;
+    if (stop) {
+        return TransportStatus::Shutdown;
+    } else if (isServerMode && fd > 0) {
+        return TransportStatus::Ready;
+    } else if (!isServerMode) {
+        return clientStatus;
+    }
 }
 
 /*
@@ -90,6 +96,7 @@ DataContextId UDPTransport::createDataContext(const qtransport::TransportConnId 
 }
 
 TransportConnId UDPTransport::start() {
+
     if (isServerMode) {
         return connect_server();
     }
@@ -135,8 +142,6 @@ void UDPTransport::close(const TransportConnId &conn_id) {
 
         addr_conn_contexts.erase(conn_it->second->addr.id);
         conn_contexts.erase(conn_it);
-
-        delegate.on_connection_status(last_conn_id, TransportStatus::Ready);
     }
 
     if (!isServerMode) { // Client mode, stop threads
@@ -207,8 +212,6 @@ bool UDPTransport::send_connect(const TransportConnId conn_id, const Addr& addr)
 
     chdr.idle_timeout = 20;
 
-    std::lock_guard<std::mutex> _(_send_recv_sync_mutex);
-
     int numSent = sendto(fd,
                          (uint8_t *)&chdr,
                          sizeof(chdr),
@@ -234,10 +237,36 @@ bool UDPTransport::send_connect(const TransportConnId conn_id, const Addr& addr)
     return true;
 }
 
+bool UDPTransport::send_connect_ok(const TransportConnId conn_id, const Addr& addr) {
+    UdpProtocol::ConnectOkMsg hdr {};
+
+    int numSent = sendto(fd,
+                         (uint8_t *)&hdr,
+                         sizeof(hdr),
+                         0 /*flags*/,
+                         (struct sockaddr *) &addr.addr,
+                         addr.addr_len);
+
+
+    if (numSent < 0) {
+        logger->error << "conn_id: " << conn_id
+                      << " Error sending CONNECT OK to UDP socket: " << strerror(errno)
+                      << std::flush;
+
+        return false;
+
+    } else if (numSent != sizeof(hdr)) {
+        logger->info << "conn_id: " << conn_id
+                     << " Failed to send CONNECT OK message, sent: " << numSent
+                     << std::flush;
+        return false;
+    }
+
+    return true;
+}
+
 bool UDPTransport::send_disconnect(const TransportConnId conn_id, const Addr& addr) {
     UdpProtocol::DisconnectMsg dhdr {};
-
-    std::lock_guard<std::mutex> _(_send_recv_sync_mutex);
 
     int numSent = sendto(fd,
                          (uint8_t *)&dhdr,
@@ -270,8 +299,6 @@ bool UDPTransport::send_keepalive(const TransportConnId conn_id, const Addr &add
     logger->debug << "conn_id: " << conn_id
                   << " send KEEPALIVE" << std::flush;
 
-    std::lock_guard<std::mutex> _(_send_recv_sync_mutex);
-
     int numSent = sendto(fd,
                          (uint8_t *)&khdr,
                          sizeof(khdr),
@@ -298,8 +325,6 @@ bool UDPTransport::send_keepalive(const TransportConnId conn_id, const Addr &add
 }
 
 bool UDPTransport::send_report(ConnectionContext& conn) {
-    std::lock_guard<std::mutex> _(_send_recv_sync_mutex);
-
     int numSent = sendto(fd,
                          (uint8_t *)&conn.report,
                          sizeof(conn.report),
@@ -361,8 +386,6 @@ bool UDPTransport::send_data(ConnectionContext& conn, const ConnData& cd, bool d
     }
 
     dhdr.report_id = conn.report_id;
-
-    std::lock_guard<std::mutex> _(_send_recv_sync_mutex);
 
     const auto data_len = sizeof(dhdr) + cd.data.size();
     if (data_len > sizeof(data)) {
@@ -538,6 +561,9 @@ void UDPTransport::fd_reader() {
     // larger than actual MTU require IP frags
     uint8_t data[dataSize];
 
+    std::unique_lock<std::mutex> lock(_connections_mutex);
+    lock.unlock();      // Will lock later in while loop
+
     while (not stop) {
         Addr remote_addr;
 
@@ -572,6 +598,8 @@ void UDPTransport::fd_reader() {
         const auto current_tick = _tick_service->get_ticks(std::chrono::milliseconds(1));
 
         remote_addr.id = create_addr_id(remote_addr.addr);
+
+        lock.lock();
         const auto a_conn_it = addr_conn_contexts.find(remote_addr.id);
 
         switch (static_cast<UdpProtocol::ProtocolType>(data[1])) { // Process based on type of message
@@ -582,6 +610,7 @@ void UDPTransport::fd_reader() {
                 if (chdr.idle_timeout == 0) {
                     // TODO: Add metric for invalid idle_timeout
                     logger->debug << "Invalid zero idle timeout for new connection, ignoring" << std::flush;
+                    lock.unlock();
                     continue;
                 }
 
@@ -589,7 +618,7 @@ void UDPTransport::fd_reader() {
                     if (isServerMode) {
                         ++last_conn_id;
 
-                        std::unique_lock<std::mutex> lock(_connections_mutex);
+                        send_connect_ok(a_conn_it->second->id, remote_addr);
 
                         const auto [conn_it, _] = conn_contexts.emplace(last_conn_id,
                                                                         std::make_shared<ConnectionContext>());
@@ -624,21 +653,44 @@ void UDPTransport::fd_reader() {
                          * Client mode doesn't support creating connections based on received
                          * packets. This will happen when there are scanners/etc. sending random data to this socket
                          */
+                        lock.unlock();
                         continue;
                     }
                 } else {
                     // Connection already exists, update idle timeout
                     a_conn_it->second->idle_timeout_ms = chdr.idle_timeout * 1000;
                     a_conn_it->second->ka_interval_ms = a_conn_it->second->idle_timeout_ms / 3;
+                    lock.unlock();
                     continue;
                 }
                 break;
             }
+            case UdpProtocol::ProtocolType::CONNECT_OK: {
+                if (!isServerMode) {
+                    clientStatus = TransportStatus::Ready;
+                }
+
+                if (a_conn_it != addr_conn_contexts.end()) {
+                    logger->info << "conn_id: " << a_conn_it->second->id
+                                 << " received CONNECT_OK" << std::flush;
+
+                    a_conn_it->second->status = TransportStatus::Ready;
+                }
+
+                break;
+            }
             case UdpProtocol::ProtocolType::DISCONNECT: {
+                if (!isServerMode) {
+                    clientStatus = TransportStatus::Disconnected;
+                }
+
                 if (a_conn_it != addr_conn_contexts.end()) {
                     logger->info << "conn_id: " << a_conn_it->second->id
                                  << " received DISCONNECT" << std::flush;
+
+                    lock.unlock();
                     close(a_conn_it->second->id);
+                    lock.unlock();
                     continue;
                 }
                 break;
@@ -724,9 +776,11 @@ void UDPTransport::fd_reader() {
 
                     a_conn_it->second->data_contexts[0].rx_data.push(cd);
 
+                    lock.unlock();
                     if (a_conn_it->second->data_contexts[0].rx_data.size() < 4) {
                         delegate.on_recv_notify(cd.conn_id, cd.data_ctx_id);
                     }
+                    continue;
                 }
                 break;
             }
@@ -759,6 +813,7 @@ void UDPTransport::fd_reader() {
                 // TODO: Add metric to track discard due to invalid type
                 break;
         }
+        lock.unlock();
     }
 
     logger->Log("Done transport reader thread");
@@ -830,6 +885,8 @@ std::optional<std::vector<uint8_t>> UDPTransport::dequeue(const TransportConnId 
 
 TransportConnId UDPTransport::connect_client() {
     std::stringstream s_log;
+
+    clientStatus = TransportStatus::Connecting;
 
     fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (fd == -1) {

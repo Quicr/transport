@@ -14,11 +14,12 @@ namespace qtransport {
          */
         enum class ProtocolType : uint8_t {
             CONNECT = 0,
-            DISCONNECT = 1,
-            KEEPALIVE = 2,
-            DATA = 3,
-            DATA_DISCARD = 4,
-            REPORT = 5,
+            CONNECT_OK = 1,
+            DISCONNECT = 2,
+            KEEPALIVE = 3,
+            DATA = 4,
+            DATA_DISCARD = 5,
+            REPORT = 6,
         };
 
         /**
@@ -41,6 +42,13 @@ namespace qtransport {
 
             uint16_t idle_timeout { 120 };            /// Idle timeout in seconds. Must not be zero
 
+        } __attribute__((__packed__, aligned(1)));
+
+        /**
+         * @brief Connect OK Message
+         */
+        struct ConnectOkMsg : CommonHeader {
+            ConnectOkMsg() { type = ProtocolType::CONNECT_OK; }
         } __attribute__((__packed__, aligned(1)));
 
         /**
