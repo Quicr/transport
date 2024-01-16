@@ -36,8 +36,6 @@ UDPTransport::~UDPTransport() {
         if (thread.joinable())
             thread.join();
     }
-
-    _tick_service.reset();
 }
 
 UDPTransport::UDPTransport(const TransportRemote &server,
@@ -132,22 +130,24 @@ bool UDPTransport::getPeerAddrInfo(const TransportConnId &conn_id,
 
 void UDPTransport::close(const TransportConnId &conn_id) {
 
-    std::lock_guard<std::mutex> _(_connections_mutex);
+    std::unique_lock<std::mutex> lock(_connections_mutex);
 
     auto conn_it = conn_contexts.find(conn_id);
     if (conn_it != conn_contexts.end()) {
-        send_disconnect(conn_it->second->id, conn_it->second->addr);
 
-        delegate.on_connection_status(conn_it->second->id, TransportStatus::Disconnected);
-
+        if (conn_it->second->status == TransportStatus::Ready) {
+            send_disconnect(conn_it->second->id, conn_it->second->addr);
+        }
         addr_conn_contexts.erase(conn_it->second->addr.id);
         conn_contexts.erase(conn_it);
+
+        lock.unlock(); // Make sure to not lock when calling delegates
+        delegate.on_connection_status(conn_id, TransportStatus::Disconnected);
     }
 
     if (!isServerMode) { // Client mode, stop threads
         stop = true;
     }
-
 }
 
 AddrId UDPTransport::create_addr_id(const sockaddr_storage &addr) {
@@ -618,7 +618,7 @@ void UDPTransport::fd_reader() {
                     if (isServerMode) {
                         ++last_conn_id;
 
-                        send_connect_ok(a_conn_it->second->id, remote_addr);
+                        send_connect_ok(last_conn_id, remote_addr);
 
                         const auto [conn_it, _] = conn_contexts.emplace(last_conn_id,
                                                                         std::make_shared<ConnectionContext>());
@@ -688,9 +688,10 @@ void UDPTransport::fd_reader() {
                     logger->info << "conn_id: " << a_conn_it->second->id
                                  << " received DISCONNECT" << std::flush;
 
+                    a_conn_it->second->status = TransportStatus::Disconnected;
                     lock.unlock();
-                    close(a_conn_it->second->id);
-                    lock.unlock();
+                    const auto conn_id = a_conn_it->second->id;
+                    close(conn_id);
                     continue;
                 }
                 break;
