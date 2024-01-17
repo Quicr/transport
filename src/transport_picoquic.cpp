@@ -604,7 +604,7 @@ PicoQuicTransport::dequeue(const TransportConnId& conn_id, const DataContextId& 
     }
 
     if (!data_ctx_id) { // Default data context
-        return std::move(conn_ctx_it->second.default_data_context.rx_data->pop());
+        return std::move(conn_ctx_it->second.default_data_context.rx_data->pop_front());
     }
 
     const auto data_ctx_it = conn_ctx_it->second.active_data_contexts.find(data_ctx_id);
@@ -612,7 +612,7 @@ PicoQuicTransport::dequeue(const TransportConnId& conn_id, const DataContextId& 
         return std::nullopt;
     }
 
-    return std::move(data_ctx_it->second.rx_data->pop());
+    return std::move(data_ctx_it->second.rx_data->pop_front());
 }
 
 DataContextId
@@ -651,7 +651,11 @@ PicoQuicTransport::createDataContext(const TransportConnId conn_id,
 
         data_ctx_it->second.priority = priority;
 
-        data_ctx_it->second.rx_data = std::make_unique<safe_queue<bytes_t>>(tconfig.time_queue_size_rx);
+        data_ctx_it->second.rx_data = std::make_unique<timeQueue>(tconfig.time_queue_max_duration,
+                                                                  tconfig.time_queue_bucket_interval,
+                                                                  _tick_service,
+                                                                  tconfig.time_queue_init_queue_size);
+
         data_ctx_it->second.tx_data = std::make_unique<priority_queue<bytes_t>>(tconfig.time_queue_max_duration,
                                                                                 tconfig.time_queue_bucket_interval,
                                                                                 _tick_service,
@@ -763,7 +767,10 @@ PicoQuicTransport::ConnectionContext& PicoQuicTransport::createConnContext(picoq
         conn_ctx.default_data_context.is_default_context = true;
         conn_ctx.default_data_context.conn_id = conn_ctx.conn_id;
         conn_ctx.default_data_context.priority = 1;
-        conn_ctx.default_data_context.rx_data = std::make_unique<safe_queue<bytes_t>>(tconfig.time_queue_size_rx);
+        conn_ctx.default_data_context.rx_data = std::make_unique<timeQueue>(tconfig.time_queue_max_duration,
+                                                                            tconfig.time_queue_bucket_interval,
+                                                                            _tick_service,
+                                                                            tconfig.time_queue_init_queue_size);
 
         conn_ctx.default_data_context.tx_data = std::make_unique<priority_queue<bytes_t>>(
           tconfig.time_queue_max_duration, tconfig.time_queue_bucket_interval, _tick_service,
@@ -838,7 +845,10 @@ PicoQuicTransport::DataContext* PicoQuicTransport::createDataContextBiDirRecv(Tr
 
         data_ctx_it->second.priority = 10; // TODO: Need to get priority from remote
 
-        data_ctx_it->second.rx_data = std::make_unique<safe_queue<bytes_t>>(tconfig.time_queue_size_rx);
+        data_ctx_it->second.rx_data = std::make_unique<timeQueue>(tconfig.time_queue_max_duration,
+                                                                  tconfig.time_queue_bucket_interval,
+                                                                  _tick_service,
+                                                                  tconfig.time_queue_init_queue_size);
         data_ctx_it->second.tx_data = std::make_unique<priority_queue<bytes_t>>(tconfig.time_queue_max_duration,
                                                                                 tconfig.time_queue_bucket_interval,
                                                                                 _tick_service,
@@ -1164,7 +1174,7 @@ PicoQuicTransport::on_recv_datagram(DataContext* data_ctx, uint8_t* bytes, size_
     }
 
     std::vector<uint8_t> data(bytes, bytes + length);
-    data_ctx->rx_data->push(std::move(data));
+    data_ctx->rx_data->push(std::move(data), tconfig.time_queue_rx_ttl);
 
     if (cbNotifyQueue.size() > 100) {
         logger->info << "on_recv_datagram cbNotifyQueue size"
@@ -1172,25 +1182,18 @@ PicoQuicTransport::on_recv_datagram(DataContext* data_ctx, uint8_t* bytes, size_
     }
 
 
-    if (cbNotifyQueue.push([=, this]() { delegate.on_recv_notify(data_ctx->conn_id, data_ctx->current_stream_id, true); })) {
-        if (_is_server_mode) {
+    if (data_ctx->rx_data->size() < 4 || data_ctx->in_data_cb_skip_count > 30) {
+        data_ctx->in_data_cb_skip_count = 0;
+
+        if (cbNotifyQueue.push([=, this]() { delegate.on_recv_notify(data_ctx->conn_id, data_ctx->current_stream_id, true); })) {
+
             logger->error << "conn_id: " << data_ctx->conn_id
                           << " data_ctx_id: " << data_ctx->data_ctx_id
                           << " notify queue is full" << std::flush;
-        } else {
-            throw std::runtime_error("RECV DATAGRAM CB notify queue full");
         }
-    }
-
-    /*
-    if (data_ctx->rx_data->size() < 2 || data_ctx->in_data_cb_skip_count > 30) {
-        data_ctx->in_data_cb_skip_count = 0;
-
-        cbNotifyQueue.push([=, this]() { delegate.on_recv_notify(data_ctx->conn_id, data_ctx->current_stream_id, true); });
     } else {
         data_ctx->in_data_cb_skip_count++;
     }
-    */
 }
 
 void PicoQuicTransport::on_recv_stream_bytes(DataContext* data_ctx, uint64_t stream_id, uint8_t* bytes, size_t length)
@@ -1264,7 +1267,7 @@ void PicoQuicTransport::on_recv_stream_bytes(DataContext* data_ctx, uint64_t str
             object_complete = true;
 
             std::vector<uint8_t> data(bytes_p, bytes_p + rx_buf.object_size);
-            data_ctx->rx_data->push(std::move(data));
+            data_ctx->rx_data->push(std::move(data), tconfig.time_queue_rx_ttl);
 
             bytes_p += rx_buf.object_size;
             length -= rx_buf.object_size;
@@ -1304,7 +1307,7 @@ void PicoQuicTransport::on_recv_stream_bytes(DataContext* data_ctx, uint64_t str
         if (object_complete) {
             std::vector<uint8_t> data(rx_buf.object,
                                       rx_buf.object + rx_buf.object_size);
-            data_ctx->rx_data->push(std::move(data));
+            data_ctx->rx_data->push(std::move(data), tconfig.time_queue_rx_ttl);
 
             rx_buf.reset_buffer();
         }
@@ -1316,32 +1319,24 @@ void PicoQuicTransport::on_recv_stream_bytes(DataContext* data_ctx, uint64_t str
     if (object_complete) {
         data_ctx->metrics.stream_objects_recv++;
 
-        bool too_many_in_queue = false;
-        if (cbNotifyQueue.size() > 100) {
+        if (cbNotifyQueue.size() > 150) {
             logger->warning << "on_recv_stream_bytes data_ctx_id: " << data_ctx->current_stream_id << "cbNotifyQueue size" << cbNotifyQueue.size()
                             << std::flush;
         }
 
-        if (cbNotifyQueue.push([=, this]() { delegate.on_recv_notify(data_ctx->conn_id,
+        if (data_ctx->rx_data->size() < 4 || data_ctx->in_data_cb_skip_count > 30) {
+            data_ctx->in_data_cb_skip_count = 0;
+
+            if (cbNotifyQueue.push([=, this]() { delegate.on_recv_notify(data_ctx->conn_id,
                                                                      data_ctx->data_ctx_id, data_ctx->is_bidir); })) {
-            if (_is_server_mode) {
                 logger->error << "conn_id: " << data_ctx->conn_id
                               << " data_ctx_id: " << data_ctx->data_ctx_id
                               << " notify queue is full" << std::flush;
-            } else {
-                throw std::runtime_error("RECV STREAM OBJ CB notify queue full");
-            }
-        }
-        /*
-        if (too_many_in_queue || data_ctx->rx_data->size() < 4 || data_ctx->in_data_cb_skip_count > 30) {
-            data_ctx->in_data_cb_skip_count = 0;
 
-            cbNotifyQueue.push([=, this]() { delegate.on_recv_notify(data_ctx->conn_id,
-                                                                     data_ctx->data_ctx_id, data_ctx->is_bidir); });
+            }
         } else {
             data_ctx->in_data_cb_skip_count++;
         }
-        */
     }
 
     if (length > 0) {

@@ -39,11 +39,16 @@ UDPTransport::~UDPTransport() {
 }
 
 UDPTransport::UDPTransport(const TransportRemote &server,
+                           const TransportConfig& tcfg,
                            TransportDelegate &delegate,
                            bool isServerMode,
                            const cantina::LoggerPointer &logger)
-        : stop(false), logger(std::make_shared<cantina::Logger>("UDP", logger)), fd(-1), isServerMode(isServerMode),
-          serverInfo(server), delegate(delegate) {
+        : stop(false),
+        logger(std::make_shared<cantina::Logger>("UDP", logger)),
+        tconfig(tcfg),
+        fd(-1),
+        isServerMode(isServerMode),
+        serverInfo(server), delegate(delegate) {
     _tick_service = std::make_shared<threaded_tick_service>();
 }
 
@@ -83,11 +88,11 @@ DataContextId UDPTransport::createDataContext(const qtransport::TransportConnId 
     if (is_new) {
         data_ctx_it->second.data_ctx_id = data_ctx_id;
         data_ctx_it->second.priority = priority;
-        data_ctx_it->second.rx_data.set_limit(1000);
-        data_ctx_it->second.tx_data = std::make_unique<priority_queue<ConnData>>(1000,
-                                                                                 1,
+        data_ctx_it->second.rx_data.set_limit(tconfig.time_queue_rx_ttl);
+        data_ctx_it->second.tx_data = std::make_unique<priority_queue<ConnData>>(tconfig.time_queue_max_duration,
+                                                                                 tconfig.time_queue_bucket_interval,
                                                                                  _tick_service,
-                                                                                 1000);
+                                                                                 tconfig.time_queue_init_queue_size);
     }
 
     return data_ctx_id;
@@ -629,6 +634,9 @@ void UDPTransport::fd_reader() {
 
                         conn.addr = remote_addr;
                         conn.id = last_conn_id;
+
+                        conn.report_interval_ms = tconfig.time_queue_rx_ttl; // TODO: this temp to set this via UI
+
                         conn.last_rx_msg_tick = _tick_service->get_ticks(std::chrono::milliseconds(1));
 
                         conn.idle_timeout_ms = chdr.idle_timeout * 1000;
@@ -990,6 +998,9 @@ TransportConnId UDPTransport::connect_client() {
     auto &conn = *conn_it->second;
     conn.addr = serverAddr;
     conn.id = last_conn_id;
+
+    conn.report_interval_ms = tconfig.time_queue_rx_ttl; // TODO: this temp to set this via UI
+
     conn.set_bytes_per_us(16000); // Set to 16Mbps connection rate
 
     createDataContext(last_conn_id, false, 10, false);

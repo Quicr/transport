@@ -53,6 +53,7 @@ namespace qtransport {
     class UDPTransport : public ITransport {
     public:
         UDPTransport(const TransportRemote &server,
+                     const TransportConfig &tcfg,
                      TransportDelegate &delegate,
                      bool isServerMode,
                      const cantina::LoggerPointer &logger);
@@ -236,6 +237,7 @@ namespace qtransport {
 
         TransportRemote serverInfo;
         Addr serverAddr;
+        TransportConfig tconfig;
 
         TransportDelegate &delegate;
         std::mutex _connections_mutex;                         /// Mutex for connections map changes
