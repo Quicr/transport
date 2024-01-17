@@ -88,7 +88,7 @@ DataContextId UDPTransport::createDataContext(const qtransport::TransportConnId 
     if (is_new) {
         data_ctx_it->second.data_ctx_id = data_ctx_id;
         data_ctx_it->second.priority = priority;
-        data_ctx_it->second.rx_data.set_limit(tconfig.time_queue_rx_ttl);
+        data_ctx_it->second.rx_data.set_limit(tconfig.time_queue_rx_size);
         data_ctx_it->second.tx_data = std::make_unique<priority_queue<ConnData>>(tconfig.time_queue_max_duration,
                                                                                  tconfig.time_queue_bucket_interval,
                                                                                  _tick_service,
@@ -635,7 +635,7 @@ void UDPTransport::fd_reader() {
                         conn.addr = remote_addr;
                         conn.id = last_conn_id;
 
-                        conn.report_interval_ms = tconfig.time_queue_rx_ttl; // TODO: this temp to set this via UI
+                        conn.report_interval_ms = tconfig.time_queue_rx_size; // TODO: this temp to set this via UI
 
                         conn.last_rx_msg_tick = _tick_service->get_ticks(std::chrono::milliseconds(1));
 
@@ -999,7 +999,7 @@ TransportConnId UDPTransport::connect_client() {
     conn.addr = serverAddr;
     conn.id = last_conn_id;
 
-    conn.report_interval_ms = tconfig.time_queue_rx_ttl; // TODO: this temp to set this via UI
+    conn.report_interval_ms = tconfig.time_queue_rx_size; // TODO: this temp to set this via UI
 
     conn.set_bytes_per_us(16000); // Set to 16Mbps connection rate
 
