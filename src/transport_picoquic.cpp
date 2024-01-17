@@ -1166,11 +1166,23 @@ PicoQuicTransport::on_recv_datagram(DataContext* data_ctx, uint8_t* bytes, size_
     std::vector<uint8_t> data(bytes, bytes + length);
     data_ctx->rx_data->push(std::move(data));
 
-    if (cbNotifyQueue.size() > 200) {
+    if (cbNotifyQueue.size() > 100) {
         logger->info << "on_recv_datagram cbNotifyQueue size"
                      << cbNotifyQueue.size() << std::flush;
     }
 
+
+    if (cbNotifyQueue.push([=, this]() { delegate.on_recv_notify(data_ctx->conn_id, data_ctx->current_stream_id, true); })) {
+        if (_is_server_mode) {
+            logger->error << "conn_id: " << data_ctx->conn_id
+                          << " data_ctx_id: " << data_ctx->data_ctx_id
+                          << " notify queue is full" << std::flush;
+        } else {
+            throw std::runtime_error("RECV DATAGRAM CB notify queue full");
+        }
+    }
+
+    /*
     if (data_ctx->rx_data->size() < 2 || data_ctx->in_data_cb_skip_count > 30) {
         data_ctx->in_data_cb_skip_count = 0;
 
@@ -1178,6 +1190,7 @@ PicoQuicTransport::on_recv_datagram(DataContext* data_ctx, uint8_t* bytes, size_
     } else {
         data_ctx->in_data_cb_skip_count++;
     }
+    */
 }
 
 void PicoQuicTransport::on_recv_stream_bytes(DataContext* data_ctx, uint64_t stream_id, uint8_t* bytes, size_t length)
@@ -1304,11 +1317,22 @@ void PicoQuicTransport::on_recv_stream_bytes(DataContext* data_ctx, uint64_t str
         data_ctx->metrics.stream_objects_recv++;
 
         bool too_many_in_queue = false;
-        if (cbNotifyQueue.size() > 200) {
+        if (cbNotifyQueue.size() > 100) {
             logger->warning << "on_recv_stream_bytes data_ctx_id: " << data_ctx->current_stream_id << "cbNotifyQueue size" << cbNotifyQueue.size()
                             << std::flush;
         }
 
+        if (cbNotifyQueue.push([=, this]() { delegate.on_recv_notify(data_ctx->conn_id,
+                                                                     data_ctx->data_ctx_id, data_ctx->is_bidir); })) {
+            if (_is_server_mode) {
+                logger->error << "conn_id: " << data_ctx->conn_id
+                              << " data_ctx_id: " << data_ctx->data_ctx_id
+                              << " notify queue is full" << std::flush;
+            } else {
+                throw std::runtime_error("RECV STREAM OBJ CB notify queue full");
+            }
+        }
+        /*
         if (too_many_in_queue || data_ctx->rx_data->size() < 4 || data_ctx->in_data_cb_skip_count > 30) {
             data_ctx->in_data_cb_skip_count = 0;
 
@@ -1317,6 +1341,7 @@ void PicoQuicTransport::on_recv_stream_bytes(DataContext* data_ctx, uint64_t str
         } else {
             data_ctx->in_data_cb_skip_count++;
         }
+        */
     }
 
     if (length > 0) {

@@ -709,6 +709,11 @@ void UDPTransport::fd_reader() {
                     UdpProtocol::ReportMessage hdr;
                     memcpy(&hdr, data, sizeof(hdr));
 
+                    if (hdr.metrics.total_bytes == 0 || hdr.metrics.duration_ms == 0) {
+                        lock.unlock();
+                        continue;
+                    }
+
                     const auto Kbps = static_cast<int>((hdr.metrics.total_bytes * 8) / hdr.metrics.duration_ms);
                     const auto loss_pct = 1.0 - static_cast<double>(hdr.metrics.total_packets) / a_conn_it->second->prev_tx_report_metrics.total_packets;
 
@@ -741,7 +746,7 @@ void UDPTransport::fd_reader() {
                 rLen -= sizeof(hdr);
 
                 if (a_conn_it != addr_conn_contexts.end()) {
-                    if (hdr.report_id != a_conn_it->second->report_id &&
+                    if (hdr.report_id != a_conn_it->second->report.report_id &&
                             (hdr.report_id > a_conn_it->second->report.report_id
                              || hdr.report_id == 0 || hdr.report_id <= 10 /* wrap likely */)) {
                         /* Too noisy, add back only if debugging reports
