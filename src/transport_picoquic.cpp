@@ -1,6 +1,7 @@
 #include "transport_picoquic.h"
 
 #include <picoquic_internal.h>
+#include <autoqlog.h>
 #include <picoquic_utils.h>
 
 #include <arpa/inet.h>
@@ -1438,6 +1439,10 @@ TransportConnId PicoQuicTransport::createClient()
 
     uint64_t current_time = picoquic_current_time();
 
+    if (debug) {
+        picoquic_set_qlog(quic_ctx, ".");
+    }
+
     picoquic_cnx_t* cnx = picoquic_create_cnx(quic_ctx,
                                               picoquic_null_connection_id,
                                               picoquic_null_connection_id,
@@ -1484,7 +1489,6 @@ void PicoQuicTransport::client(const TransportConnId conn_id)
         picoquic_set_callback(conn_ctx->pq_cnx, pq_event_cb, this);
 
         picoquic_enable_keep_alive(conn_ctx->pq_cnx, tconfig.idle_timeout_ms * 500);
-
         ret = picoquic_start_client_cnx(conn_ctx->pq_cnx);
         if (ret < 0) {
             logger->Log(cantina::LogLevel::Error, "Could not activate connection");
