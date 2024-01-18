@@ -1439,9 +1439,11 @@ TransportConnId PicoQuicTransport::createClient()
 
     uint64_t current_time = picoquic_current_time();
 
+    /* TODO: Instead of using debug, change to client/server config of the directory
     if (debug) {
         picoquic_set_qlog(quic_ctx, ".");
     }
+    */
 
     picoquic_cnx_t* cnx = picoquic_create_cnx(quic_ctx,
                                               picoquic_null_connection_id,
