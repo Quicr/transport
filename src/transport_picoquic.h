@@ -98,6 +98,7 @@ class PicoQuicTransport : public ITransport
         uint8_t priority {0};
 
         uint64_t in_data_cb_skip_count {0};                  /// Number of times callback was skipped due to size
+
         std::unique_ptr<safe_queue<bytes_t>> rx_data;        /// Pending objects received from the network
         std::unique_ptr<priority_queue<bytes_t>> tx_data;    /// Pending objects to be written to the network
 
