@@ -1,5 +1,15 @@
 #pragma once
 
+/*
+ * Compiler NOTE:
+ *
+ * __attribute__((__packed__, aligned(1))); is used over "#pragma pack(push, 1)" and "#pragma pack(pop)"
+ *      because only modern compilers support pragma
+ *
+ *  #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__ is used over "__attribute__((scalar_storage_order("big-endian")))"
+ *      and "#pragma scalar_storage_order big-endian" because only modern compilers support scalar_storage_order.
+ */
+
 namespace qtransport {
     namespace UdpProtocol {
         /* ------------------------------------------------------------------------
@@ -16,10 +26,10 @@ namespace qtransport {
             CONNECT = 0,
             CONNECT_OK = 1,
             DISCONNECT = 2,
-            KEEPALIVE = 3,
-            DATA = 4,
-            DATA_DISCARD = 5,
-            REPORT = 6,
+            REPORT = 3,
+            KEEPALIVE = 4,
+
+            DATA = 10,
         };
 
         /**
@@ -67,6 +77,9 @@ namespace qtransport {
          */
         struct KeepaliveMsg : CommonHeader {
             KeepaliveMsg() { type = ProtocolType::KEEPALIVE; }
+
+            uint16_t ticks_ms { 0 };            /// Senders Tick millisecond value from start of report period, reset to zero on new report
+
         } __attribute__((__packed__, aligned(1)));
 
         /**
@@ -74,12 +87,23 @@ namespace qtransport {
          *
          * @details Data message. Bytes following the header is the data
          *
-         * @note Can be either type of DATA or DATA_DISCARD
+         * @note Can be either type of DATA
          */
         struct DataMsg : CommonHeader {
-            DataMsg() { type = ProtocolType::DATA; } // Can be either DATA or DATA_DISCARD type
+            DataMsg() { type = ProtocolType::DATA; }
+
+            struct {
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+                uint8_t discard     : 1;        /// Indicates that data should be discard
+                uint8_t reserved    : 7;        /// Least significant bits reserved
+#else
+                uint8_t reserved    : 7;        /// Least significant bits reserved
+                uint8_t discard     : 1;        /// Indicates that data should be discard
+#endif
+            } flags { 0 };                      /// Data header flags
 
             uint16_t report_id { 0 };           /// Report ID this data applies to
+            uint16_t ticks_ms { 0 };            /// Senders Tick millisecond value from start of report period, reset to zero on new report
         } __attribute__((__packed__, aligned(1)));
 
 
@@ -91,6 +115,7 @@ namespace qtransport {
              uint32_t total_packets { 0 };       /// Total number of packets received
              uint32_t total_bytes { 0 };         /// Total number of data (sans header) bytes received
              uint32_t duration_ms { 0 };         /// Duration in milliseconds of time from first to latest packet received
+             uint16_t recv_ott_ms { 0 };         /// Senders One-way trip time in milliseconds to receiver
 
          } __attribute__((__packed__, aligned(1)));
 

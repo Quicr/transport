@@ -130,6 +130,7 @@ namespace qtransport {
 
             uint64_t last_rx_msg_tick { 0 };            /// Tick value (ms) when last message was received
             uint64_t last_tx_msg_tick { 0 };            /// Tick value (ms) when last message was sent
+            uint16_t last_rx_hdr_tick { 0 };            /// Last received tick from data/keepalive header
 
             /*
              * Received/negotiated config parameters
@@ -140,10 +141,13 @@ namespace qtransport {
             /*
              * Report variables
              */
-            uint16_t report_id {0};                 // Report ID increments on interval. Wrap is okay
-            uint16_t report_interval_ms { 100 };    // Report ID interval in milliseconds
-            uint64_t next_report_tick {0};          // Tick value to start a new report ID
-            UdpProtocol::ReportMessage report;       // Report to be sent back to sender upon received report_id change
+            uint16_t tx_report_id {0};                  // Report ID increments on interval. Wrap is okay
+            uint16_t tx_report_interval_ms { 100 };     // Report ID interval in milliseconds
+            uint64_t tx_report_start_tick { 0 };        // Tick value on report change (new report interval)
+            uint64_t tx_next_report_tick {0};           // Tick value to start a new report ID
+
+            UdpProtocol::ReportMessage report;          // Report to be sent back to sender upon received tx_report_id change
+            uint64_t report_rx_start_tick { 0 };        // Tick value at start of the RX report interval
 
             UdpProtocol::ReportMetrics tx_report_metrics;
             UdpProtocol::ReportMetrics prev_tx_report_metrics; // Last report
@@ -198,12 +202,11 @@ namespace qtransport {
         /**
          * @brief Send UDP protocol keepalive message
          *
-         * @param conn_id       Connection context ID
-         * @param addr          Address to send the message to
+         * @param conn[in,out]      Connection context reference, will be updated
          *
          * @return True if sent, false if not sent/error
          */
-        bool send_keepalive(const TransportConnId conn_id, const Addr& addr);
+        bool send_keepalive(ConnectionContext& conn);
 
         /**
          * @brief Send UDP protocol data message

@@ -1165,7 +1165,12 @@ PicoQuicTransport::on_recv_datagram(DataContext* data_ctx, uint8_t* bytes, size_
     }
 
     std::vector<uint8_t> data(bytes, bytes + length);
-    data_ctx->rx_data->push(std::move(data));
+
+    if (!data_ctx->rx_data->push(std::move(data))) {
+        logger->error << "conn_id: " << data_ctx->conn_id
+                      << " data_ctx_id: " << data_ctx->data_ctx_id
+                      << " RX datagram queue is full" << std::flush;
+    }
 
     if (cbNotifyQueue.size() > 100) {
         logger->info << "on_recv_datagram cbNotifyQueue size"

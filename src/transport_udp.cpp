@@ -298,29 +298,32 @@ bool UDPTransport::send_disconnect(const TransportConnId conn_id, const Addr& ad
     return true;
 }
 
-bool UDPTransport::send_keepalive(const TransportConnId conn_id, const Addr &addr) {
+bool UDPTransport::send_keepalive(ConnectionContext& conn) {
     UdpProtocol::KeepaliveMsg khdr {};
 
-    logger->debug << "conn_id: " << conn_id
+    const auto current_tick = _tick_service->get_ticks(std::chrono::milliseconds(1));
+    khdr.ticks_ms = current_tick - conn.tx_next_report_tick;
+
+    logger->debug << "conn_id: " << conn.id
                   << " send KEEPALIVE" << std::flush;
 
     int numSent = sendto(fd,
                          (uint8_t *)&khdr,
                          sizeof(khdr),
                          0 /*flags*/,
-                         (struct sockaddr *) &addr.addr,
-                         addr.addr_len);
+                         (struct sockaddr *) &conn.addr.addr,
+                         conn.addr.addr_len);
 
 
     if (numSent < 0) {
-        logger->error << "conn_id: " << conn_id
+        logger->error << "conn_id: " << conn.id
                       << " Error sending KEEPALIVE to UDP socket: " << strerror(errno)
                       << std::flush;
 
         return false;
 
     } else if (numSent != sizeof(khdr)) {
-        logger->info << "conn_id: " << conn_id
+        logger->info << "conn_id: " << conn.id
                      << " Failed to send KEEPALIVE message, sent: " << numSent
                      << std::flush;
         return false;
@@ -365,32 +368,34 @@ bool UDPTransport::send_data(ConnectionContext& conn, const ConnData& cd, bool d
     uint8_t data[UDP_MAX_PACKET_SIZE] {0};
 
     if (discard) {
-        dhdr.type = UdpProtocol::ProtocolType::DATA_DISCARD;
+        dhdr.flags.discard = 1;
     }
 
     const auto current_tick = _tick_service->get_ticks(std::chrono::milliseconds(1));
 
-    if (current_tick >= conn.next_report_tick) {
+    if (current_tick >= conn.tx_next_report_tick) {
         // New report ID
         /* Too noisy, uncomment when debugging reports
         logger->debug << "Report change conn_id: " << conn.id
-                      << " previous id: " << conn.report_id
+                      << " previous id: " << conn.tx_report_id
                       << " duration_ms: " << conn.tx_report_metrics.duration_ms
                       << " total_bytes: " << conn.tx_report_metrics.total_bytes
                       << " total_packets: " << conn.tx_report_metrics.total_packets
                       << " curr_tick: " << current_tick
-                      << " prev_report_tick: " << conn.next_report_tick
+                      << " prev_report_tick: " << conn.tx_next_report_tick
                       << std::flush;
         */
 
         conn.prev_tx_report_metrics = conn.tx_report_metrics;
+        conn.tx_report_start_tick = current_tick;
         conn.tx_report_metrics = {};
 
-        conn.report_id++;
-        conn.next_report_tick = current_tick + conn.report_interval_ms;
+        conn.tx_report_id++;
+        conn.tx_next_report_tick = current_tick + conn.tx_report_interval_ms;
     }
 
-    dhdr.report_id = conn.report_id;
+    dhdr.report_id = conn.tx_report_id;
+    dhdr.ticks_ms = current_tick - conn.tx_report_start_tick;
 
     const auto data_len = sizeof(dhdr) + cd.data.size();
     if (data_len > sizeof(data)) {
@@ -487,7 +492,7 @@ void UDPTransport::fd_writer() {
                 // Send keepalive if needed
                 if (conn->last_tx_msg_tick && current_tick - conn->last_tx_msg_tick > conn->ka_interval_ms) {
                     conn->last_tx_msg_tick = current_tick;
-                    send_keepalive(conn_id, conn->addr);
+                    send_keepalive(*conn);
                 }
                 continue;
             }
@@ -498,7 +503,7 @@ void UDPTransport::fd_writer() {
                 // Send keepalive if needed
                 if (conn->last_tx_msg_tick && current_tick - conn->last_tx_msg_tick > conn->ka_interval_ms) {
                     conn->last_tx_msg_tick = current_tick;
-                    send_keepalive(conn_id, conn->addr);
+                    send_keepalive(*conn);
                 }
                 continue; // Data maybe null if queue is polled too fast
             }
@@ -635,7 +640,7 @@ void UDPTransport::fd_reader() {
                         conn.addr = remote_addr;
                         conn.id = last_conn_id;
 
-                        conn.report_interval_ms = tconfig.time_queue_rx_size; // TODO: this temp to set this via UI
+                        conn.tx_report_interval_ms = tconfig.time_queue_rx_size; // TODO: this temp to set this via UI
 
                         conn.last_rx_msg_tick = _tick_service->get_ticks(std::chrono::milliseconds(1));
 
@@ -707,6 +712,11 @@ void UDPTransport::fd_reader() {
             case UdpProtocol::ProtocolType::KEEPALIVE: {
                 if (a_conn_it != addr_conn_contexts.end()) {
                     a_conn_it->second->last_rx_msg_tick = _tick_service->get_ticks(std::chrono::milliseconds(1));
+
+                    UdpProtocol::KeepaliveMsg hdr;
+                    memcpy(&hdr, data, sizeof(hdr));
+
+                    a_conn_it->second->last_rx_hdr_tick = hdr.ticks_ms;
                 }
                 break;
             }
@@ -727,7 +737,7 @@ void UDPTransport::fd_reader() {
 
                     if (loss_pct != 0 && hdr.metrics.total_packets > 20) {
                         logger->info << "Received REPORT conn_id: " << a_conn_it->second->id
-                                     << " report_id: " << hdr.report_id
+                                     << " tx_report_id: " << hdr.report_id
                                      << " duration_ms: " << hdr.metrics.duration_ms
                                      << " (" << a_conn_it->second->prev_tx_report_metrics.duration_ms << ")"
                                      << " total_bytes: " << hdr.metrics.total_bytes
@@ -737,6 +747,7 @@ void UDPTransport::fd_reader() {
                                      << " Kbps: " << Kbps
                                      << " prev_Kbps: " << a_conn_it->second->bytes_per_us * 1'000'000 * 8 / 1024
                                      << " Loss: " << loss_pct << "%"
+                                     << " OTT: " << hdr.metrics.recv_ott_ms << "ms"
                                      << std::flush;
 
                         a_conn_it->second->set_bytes_per_us(Kbps * 0.80);
@@ -759,14 +770,23 @@ void UDPTransport::fd_reader() {
                              || hdr.report_id == 0 || hdr.report_id <= 10 /* wrap likely */)) {
                         /* Too noisy, add back only if debugging reports
                         logger->debug << "conn_id: " << a_conn_it->second->id
-                                     << " New REPORT id: " << hdr.report_id
-                                     << " previous id: " <<  a_conn_it->second->report.report_id
+                                     << " New REPORT id: " << hdr.tx_report_id
+                                     << " previous id: " <<  a_conn_it->second->report.tx_report_id
                                      << std::flush;
                         */
+
+                        int rx_tick = current_tick - (a_conn_it->second->report_rx_start_tick + a_conn_it->second->last_rx_hdr_tick);
+                        if (rx_tick < 0) {
+                            a_conn_it->second->report.metrics.recv_ott_ms = 0;
+                            logger->info << "Network is buffering RX data by " << ~rx_tick << "ms in time" << std::flush;
+                        } else {
+                            a_conn_it->second->report.metrics.recv_ott_ms = rx_tick;
+                        }
 
                         send_report(*a_conn_it->second);
 
                         // Init metrics with this packet/data
+                        a_conn_it->second->report_rx_start_tick = current_tick;
                         a_conn_it->second->report.report_id = hdr.report_id;
                         a_conn_it->second->report.metrics.duration_ms = current_tick - a_conn_it->second->last_rx_msg_tick;
                         a_conn_it->second->report.metrics.total_bytes = rLen;
@@ -780,46 +800,25 @@ void UDPTransport::fd_reader() {
                     }
 
                     a_conn_it->second->last_rx_msg_tick = current_tick;
+                    a_conn_it->second->last_rx_hdr_tick = hdr.ticks_ms;
 
-                    std::vector<uint8_t> buffer(data + sizeof(hdr), data + sizeof(hdr) + rLen);
+                    // Only send data if not set to discard
+                    if (!hdr.flags.discard) {
+                        std::vector<uint8_t> buffer(data + sizeof(hdr), data + sizeof(hdr) + rLen);
 
-                    ConnData cd;
-                    cd.data = buffer;
-                    cd.data_ctx_id = 0; // Currently only implement one data context
-                    cd.conn_id = a_conn_it->second->id;
+                        ConnData cd;
+                        cd.data = buffer;
+                        cd.data_ctx_id = 0; // Currently only implement one data context
+                        cd.conn_id = a_conn_it->second->id;
 
-                    a_conn_it->second->data_contexts[0].rx_data.push(cd);
+                        a_conn_it->second->data_contexts[0].rx_data.push(cd);
 
-                    lock.unlock();
-                    if (a_conn_it->second->data_contexts[0].rx_data.size() < 4) {
-                        delegate.on_recv_notify(cd.conn_id, cd.data_ctx_id);
+                        lock.unlock();
+                        if (a_conn_it->second->data_contexts[0].rx_data.size() < 4) {
+                            delegate.on_recv_notify(cd.conn_id, cd.data_ctx_id);
+                        }
+                        continue;
                     }
-                    continue;
-                }
-                break;
-            }
-            case UdpProtocol::ProtocolType::DATA_DISCARD: {
-                UdpProtocol::DataMsg hdr;
-                memcpy(&hdr, data, sizeof(hdr));
-                rLen -= sizeof(hdr);
-
-                if (a_conn_it != addr_conn_contexts.end()) {
-                    a_conn_it->second->last_rx_msg_tick = _tick_service->get_ticks(std::chrono::milliseconds(1));
-
-                    if (hdr.report_id == 0 || a_conn_it->second->report.report_id != hdr.report_id) {
-
-                        a_conn_it->second->report.report_id = hdr.report_id;
-                        a_conn_it->second->report.metrics.duration_ms = 0;
-                        a_conn_it->second->report.metrics.total_bytes = 0;
-                        a_conn_it->second->report.metrics.total_packets = 0;
-
-                    } else {
-                        a_conn_it->second->report.metrics.duration_ms += current_tick - a_conn_it->second->last_rx_msg_tick;
-                        a_conn_it->second->report.metrics.total_bytes += rLen;
-                        a_conn_it->second->report.metrics.total_packets++;
-                    }
-
-                    a_conn_it->second->last_rx_msg_tick = current_tick;
                 }
                 break;
             }
@@ -999,7 +998,7 @@ TransportConnId UDPTransport::connect_client() {
     conn.addr = serverAddr;
     conn.id = last_conn_id;
 
-    conn.report_interval_ms = tconfig.time_queue_rx_size; // TODO: this temp to set this via UI
+    conn.tx_report_interval_ms = tconfig.time_queue_rx_size; // TODO: this temp to set this via UI
 
     conn.set_bytes_per_us(16000); // Set to 16Mbps connection rate
 
