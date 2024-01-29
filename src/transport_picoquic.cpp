@@ -440,7 +440,6 @@ PicoQuicTransport::start()
         picoquic_logger = std::make_shared<cantina::Logger>("PQIC", logger);
         debug_set_callback(&PicoQuicTransport::PicoQuicLogging, this);
     }
-
     (void)picoquic_config_set_option(&config, picoquic_option_CC_ALGO, "bbr");
     (void)picoquic_config_set_option(&config, picoquic_option_ALPN, QUICR_ALPN);
     (void)picoquic_config_set_option(&config, picoquic_option_CWIN_MIN,
@@ -470,6 +469,7 @@ PicoQuicTransport::start()
     picoquic_set_default_handshake_timeout(quic_ctx, (tconfig.idle_timeout_ms * 1000) / 2);
     picoquic_set_default_tp(quic_ctx, &local_tp_options);
     picoquic_set_default_idle_timeout(quic_ctx, tconfig.idle_timeout_ms);
+    picoquic_set_default_priority(quic_ctx, 1);
 
     logger->info << "Setting idle timeout to " << tconfig.idle_timeout_ms << "ms" << std::flush;
     picoquic_set_default_wifi_shadow_rtt(quic_ctx, tconfig.quic_wifi_shadow_rtt_us);

@@ -141,6 +141,9 @@ namespace qtransport {
             /*
              * Report variables
              */
+            uint16_t tx_report_ott {0};                 // Last received report one-way trip time to receiver (as seen by receiver)
+            uint16_t rx_report_ott {0};                 // Last RX OTT based on received data from receiver
+
             uint16_t tx_report_id {0};                  // Report ID increments on interval. Wrap is okay
             uint16_t tx_report_interval_ms { 100 };     // Report ID interval in milliseconds
             uint64_t tx_report_start_tick { 0 };        // Tick value on report change (new report interval)

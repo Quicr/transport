@@ -734,6 +734,7 @@ void UDPTransport::fd_reader() {
 
                     const auto Kbps = static_cast<int>((hdr.metrics.total_bytes * 8) / hdr.metrics.duration_ms);
                     const auto loss_pct = 1.0 - static_cast<double>(hdr.metrics.total_packets) / a_conn_it->second->prev_tx_report_metrics.total_packets;
+                    a_conn_it->second->tx_report_ott = hdr.metrics.recv_ott_ms;
 
                     if (loss_pct != 0 && hdr.metrics.total_packets > 20) {
                         logger->info << "Received REPORT conn_id: " << a_conn_it->second->id
@@ -747,13 +748,29 @@ void UDPTransport::fd_reader() {
                                      << " Kbps: " << Kbps
                                      << " prev_Kbps: " << a_conn_it->second->bytes_per_us * 1'000'000 * 8 / 1024
                                      << " Loss: " << loss_pct << "%"
-                                     << " OTT: " << hdr.metrics.recv_ott_ms << "ms"
+                                     << " TX-OTT: " << hdr.metrics.recv_ott_ms << "ms"
+                                     << " RX-OTT: " << a_conn_it->second->rx_report_ott << "ms"
                                      << std::flush;
 
                         a_conn_it->second->set_bytes_per_us(Kbps * 0.80);
 
                     } else if (hdr.metrics.total_packets > 20 && loss_pct == 0) {
                         a_conn_it->second->set_bytes_per_us(Kbps * 1.1, true);
+
+                        logger->info << "Received REPORT conn_id: " << a_conn_it->second->id
+                                     << " tx_report_id: " << hdr.report_id
+                                     << " duration_ms: " << hdr.metrics.duration_ms
+                                     << " (" << a_conn_it->second->prev_tx_report_metrics.duration_ms << ")"
+                                     << " total_bytes: " << hdr.metrics.total_bytes
+                                     << " (" << a_conn_it->second->prev_tx_report_metrics.total_bytes << ")"
+                                     << " total_packets: " << hdr.metrics.total_packets
+                                     << " (" << a_conn_it->second->prev_tx_report_metrics.total_packets << ")"
+                                     << " Kbps: " << Kbps
+                                     << " prev_Kbps: " << a_conn_it->second->bytes_per_us * 1'000'000 * 8 / 1024
+                                     << " Loss: " << loss_pct << "%"
+                                     << " TX-OTT: " << hdr.metrics.recv_ott_ms << "ms"
+                                     << " RX-OTT: " << a_conn_it->second->rx_report_ott << "ms"
+                                     << std::flush;
                     }
                 }
                 break;
@@ -767,20 +784,16 @@ void UDPTransport::fd_reader() {
                 if (a_conn_it != addr_conn_contexts.end()) {
                     if (hdr.report_id != a_conn_it->second->report.report_id &&
                             (hdr.report_id > a_conn_it->second->report.report_id
-                             || hdr.report_id == 0 || hdr.report_id <= 10 /* wrap likely */)) {
-                        /* Too noisy, add back only if debugging reports
-                        logger->debug << "conn_id: " << a_conn_it->second->id
-                                     << " New REPORT id: " << hdr.tx_report_id
-                                     << " previous id: " <<  a_conn_it->second->report.tx_report_id
-                                     << std::flush;
-                        */
+                             || hdr.report_id == 0 || a_conn_it->second->report.report_id - hdr.report_id > 1)) {
 
                         int rx_tick = current_tick - (a_conn_it->second->report_rx_start_tick + a_conn_it->second->last_rx_hdr_tick);
                         if (rx_tick < 0) {
-                            a_conn_it->second->report.metrics.recv_ott_ms = 0;
-                            logger->info << "Network is buffering RX data by " << ~rx_tick << "ms in time" << std::flush;
+                            //a_conn_it->second->report.metrics.recv_ott_ms = 0;
+                            logger->info << "conn_id: " << a_conn_it->second->id
+                                         << " Network is buffering RX data by " << ~rx_tick << "ms in time" << std::flush;
                         } else {
                             a_conn_it->second->report.metrics.recv_ott_ms = rx_tick;
+                            a_conn_it->second->rx_report_ott = a_conn_it->second->report.metrics.recv_ott_ms;
                         }
 
                         send_report(*a_conn_it->second);
@@ -791,7 +804,6 @@ void UDPTransport::fd_reader() {
                         a_conn_it->second->report.metrics.duration_ms = current_tick - a_conn_it->second->last_rx_msg_tick;
                         a_conn_it->second->report.metrics.total_bytes = rLen;
                         a_conn_it->second->report.metrics.total_packets = 1;
-
 
                     } else if (hdr.report_id == a_conn_it->second->report.report_id) {
                         a_conn_it->second->report.metrics.duration_ms += current_tick - a_conn_it->second->last_rx_msg_tick;
