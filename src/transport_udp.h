@@ -22,6 +22,7 @@
 
 namespace qtransport {
     constexpr size_t UDP_MAX_PACKET_SIZE = 64000;
+    constexpr size_t UDP_MIN_KBPS = 400;            /// Minimum KBps to go
 
     struct AddrId {
         uint64_t ip_hi;
@@ -98,7 +99,7 @@ namespace qtransport {
         void fd_reader();
         void fd_writer();
 
-        bool stop;
+        std::atomic<bool> stop;
         std::vector<std::thread> running_threads;
 
         struct Addr {
