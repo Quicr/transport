@@ -283,11 +283,9 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
 
             transport->logger->info << std::flush;
 
-            transport->deleteDataContext(conn_id, data_ctx->data_ctx_id);
+            close(conn_id);
 
             if (not transport->_is_server_mode) {
-                transport->setStatus(TransportStatus::Disconnected);
-
                 // TODO: Fix picoquic. Apparently picoquic is not processing return values for this callback
                 return PICOQUIC_NO_ERROR_TERMINATE_PACKET_LOOP;
             }
@@ -684,7 +682,8 @@ PicoQuicTransport::close(const TransportConnId& conn_id)
 
     // Remove pointer references in picoquic for active streams
     for (const auto& [d_id, d_ctx]: conn_it->second.active_data_contexts) {
-        picoquic_add_to_stream(conn_it->second.pq_cnx, d_ctx.current_stream_id, NULL, 0, 1);
+        picoquic_mark_active_stream(conn_it->second.pq_cnx, d_ctx.current_stream_id, 0, NULL);
+        picoquic_reset_stream(conn_it->second.pq_cnx, d_ctx.current_stream_id, 0);
     }
 
     picoquic_close(conn_it->second.pq_cnx, 0);
@@ -877,6 +876,10 @@ void PicoQuicTransport::pq_runner() {
 
 void PicoQuicTransport::deleteDataContext(const TransportConnId& conn_id, DataContextId data_ctx_id)
 {
+    if (data_ctx_id == 0) {
+        return; // use close() instead of deleting default/datagram context
+    }
+
     std::lock_guard<std::mutex> _(_state_mutex);
 
     const auto conn_it = conn_context.find(conn_id);
@@ -887,30 +890,6 @@ void PicoQuicTransport::deleteDataContext(const TransportConnId& conn_id, DataCo
     logger->info << "Delete data context " << data_ctx_id
                  << " in conn_id: " << conn_id
                  << std::flush;
-
-    if (data_ctx_id == 0) {
-        logger->info << "Delete default context for conn_id: " << conn_id << ", closing connection" << std::flush;
-
-        // Only one datagram context is per connection, if it's deleted, then the connection is to be terminated
-        on_connection_status(conn_id, TransportStatus::Disconnected);
-
-        // Remove pointer references in picoquic for active streams
-        for (const auto& [d_id, d_ctx]: conn_it->second.active_data_contexts) {
-            // FIN picoquic_add_to_stream(conn_it->second.pq_cnx, d_ctx.current_stream_id, NULL, 0, 1);
-            picoquic_mark_active_stream(conn_it->second.pq_cnx, d_ctx.current_stream_id, 0, NULL);
-            picoquic_reset_stream(conn_it->second.pq_cnx, d_ctx.current_stream_id, 0);
-        }
-
-        picoquic_close(conn_it->second.pq_cnx, 0);
-
-        conn_context.erase(conn_it);
-
-        if (not _is_server_mode) {
-            setStatus(TransportStatus::Shutdown);
-        }
-
-        return;
-    }
 
     const auto data_ctx_it = conn_it->second.active_data_contexts.find(data_ctx_id);
     if (data_ctx_it == conn_it->second.active_data_contexts.end())
