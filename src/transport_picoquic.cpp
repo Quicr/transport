@@ -402,7 +402,7 @@ int pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode, void
                         close_cnx = picoquic_get_next_cnx(close_cnx);
                     }
 
-                    return 0;
+                    return PICOQUIC_NO_ERROR_TERMINATE_PACKET_LOOP;
                 }
 
                 break;
