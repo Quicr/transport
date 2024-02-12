@@ -22,7 +22,7 @@
 
 namespace qtransport {
     constexpr size_t UDP_MAX_PACKET_SIZE = 64000;
-    constexpr size_t UDP_MIN_KBPS = 400;            /// Minimum KBps to go
+    constexpr size_t UDP_MIN_KBPS = 50;                /// Minimum KB bytes per second 50 = 400Kbps
 
     struct AddrId {
         uint64_t ip_hi;
@@ -164,8 +164,8 @@ namespace qtransport {
 
             double bytes_per_us {6.4};     // Default to 50Mbps
 
-            void set_bytes_per_us(uint32_t Kbps, bool max_of=false) {
-                const auto bpUs = ((Kbps * 1024) / 8) / 1'000'000.0 /* 1 second double value */;
+            void set_bytes_per_us(uint32_t KBps, bool max_of=false) {
+                const auto bpUs = (KBps * 1024) / 1'000'000.0 /* 1 second double value */;
                 if (!max_of || bpUs > bytes_per_us) {
                     bytes_per_us = bpUs;
                 }

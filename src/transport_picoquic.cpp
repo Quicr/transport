@@ -78,9 +78,6 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
         return PICOQUIC_ERROR_UNEXPECTED_ERROR;
     }
 
-    transport->pq_runner();
-
-
     switch (fin_or_event) {
 
         case picoquic_callback_prepare_datagram: {
@@ -122,6 +119,11 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
                 transport->logger->info << "conn_id: " << conn_id << " stream_id: " << stream_id
                                         << " context is null" << std::flush;
                 break;
+            }
+
+            if (picoquic_get_cwin(pq_cnx) < 8000) {        // Congested if less than 8K or near jumbo MTU size
+                auto conn_ctx = transport->getConnContext(conn_id);
+                conn_ctx->metrics.cwin_congested++;
             }
 
             data_ctx->metrics.stream_prepare_send++;
@@ -332,7 +334,6 @@ int pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode, void
     } else {
         transport->pq_runner();
 
-
         switch (cb_mode) {
             case picoquic_packet_loop_ready: {
                 transport->logger->info << "packet_loop_ready, waiting for packets" << std::flush;
@@ -365,22 +366,17 @@ int pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode, void
             case picoquic_packet_loop_time_check: {
                 packet_loop_time_check_arg_t* targ = static_cast<packet_loop_time_check_arg_t*>(callback_arg);
 
-                // TODO: Add config to set this value. This will change the loop select
-                //   wait time to delta value in microseconds. Default is <= 10 seconds
-                if (targ->delta_t > 4000) {
-                    targ->delta_t = 4000;
+                if (targ->delta_t > PQ_LOOP_MAX_DELAY_US) {
+                    targ->delta_t = PQ_LOOP_MAX_DELAY_US;
                 }
 
                 if (!transport->pq_loop_prev_time) {
                     transport->pq_loop_prev_time = targ->current_time;
                 }
 
-                if (targ->current_time - transport->pq_loop_prev_time > 1000000) {
+                if (targ->current_time - transport->pq_loop_prev_time > 150000) {
 
-                    // TODO: Debug only mode for now. Will remove or change based on findings
-                    if (transport->debug) {
-                        transport->check_conns_for_congestion();
-                    }
+                    transport->check_conns_for_congestion();
 
                     transport->pq_loop_prev_time = targ->current_time;
                 }
@@ -970,13 +966,19 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
                 break;
 
             case DataContext::StreamAction::REPLACE_STREAM_USE_RESET: {
+                data_ctx->uses_reset_wait = true;
+
+                std::lock_guard<std::mutex> _(_state_mutex);
+                const auto conn_ctx = getConnContext(data_ctx->conn_id);
+
+                // Keep stream in discard mode if still congested
+                if (conn_ctx->is_congested && data_ctx->tx_reset_wait_discard) {
+                    break;
+                }
+
                 if (data_ctx->stream_tx_object != nullptr) {
                     data_ctx->metrics.tx_buffer_drops++;
                 }
-
-                const auto conn_ctx = getConnContext(data_ctx->conn_id);
-
-                std::lock_guard<std::mutex> _(_state_mutex);
 
                 const auto existing_stream_id = data_ctx->current_stream_id;
 
@@ -992,10 +994,15 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
                 create_stream(*conn_ctx, data_ctx);
                 data_ctx->stream_action = DataContext::StreamAction::NO_ACTION;
 
+                if (!conn_ctx->is_congested) { // Only clear reset wait if not congested
+                    data_ctx->tx_reset_wait_discard = false;                // Allow new object to be sent
+                }
+
                 return;
             }
 
             case DataContext::StreamAction::REPLACE_STREAM_USE_FIN: {
+                data_ctx->uses_reset_wait = true;
                 if (data_ctx->stream_tx_object == nullptr) {
                     logger->info << "Replacing stream using FIN; conn_id: " << data_ctx->conn_id
                                  << " existing_stream: " << data_ctx->current_stream_id << std::flush;
@@ -1009,6 +1016,13 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
                 }
                 return;
             }
+        }
+    }
+
+    if (data_ctx->tx_reset_wait_discard) {      // Drop TX objects till next reset/new stream
+        auto obj = data_ctx->tx_data->pop_front();
+        if (obj.has_value()) {
+            data_ctx->metrics.tx_queue_discards++;
         }
     }
 
@@ -1042,7 +1056,12 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
             }
 
         } else {
-            // queue is empty during pop
+            // Queue is empty
+            picoquic_provide_stream_data_buffer(bytes_ctx,
+                                                0,
+                                                0,
+                                                is_still_active);
+
             return;
         }
     }
@@ -1344,6 +1363,12 @@ void PicoQuicTransport::check_conns_for_congestion()
     for (auto& [conn_id, conn_ctx] : conn_context) {
         int congested_count { 0 };
 
+        // Is CWIN congested
+        if (conn_ctx.metrics.cwin_congested - conn_ctx.metrics.prev_cwin_congested > 0) {
+            congested_count++;
+        }
+        conn_ctx.metrics.prev_cwin_congested = conn_ctx.metrics.cwin_congested;
+
         // Default context first
         if (conn_ctx.default_data_context.metrics.tx_delayed_callback - conn_ctx.default_data_context.metrics.prev_tx_delayed_callback > 1) {
             congested_count++;
@@ -1354,24 +1379,30 @@ void PicoQuicTransport::check_conns_for_congestion()
         }
 
         // All other data flows (streams)
+        uint64_t reset_wait_data_ctx_id {0};       // Positive value indicates the data_ctx_id that can be set to reset_wait
+
         for (auto& [data_ctx_id, data_ctx] : conn_ctx.active_data_contexts) {
             if (data_ctx.metrics.tx_delayed_callback - data_ctx.metrics.prev_tx_delayed_callback > 1) {
                 congested_count++;
             }
+            data_ctx.metrics.prev_tx_delayed_callback = data_ctx.metrics.tx_delayed_callback;
 
-            if (data_ctx.metrics.tx_delayed_callback) {
-                data_ctx.metrics.prev_tx_delayed_callback = data_ctx.metrics.tx_delayed_callback;
+            if (data_ctx.tx_data->size() >= 2) {
+                logger->info << "Stream congested, queue backlog"
+                             << " conn_id: " << data_ctx.conn_id
+                             << " data_ctx_id: " << data_ctx.data_ctx_id
+                             << " tx_data_queue: " << data_ctx.tx_data->size()
+                             << std::flush;
+                congested_count++;
             }
-        }
 
-        if (congested_count && not conn_ctx.is_congested) {
-            conn_ctx.is_congested = true;
-            logger->info << "conn_id: " << conn_id << " has " << congested_count << " streams congested." << std::flush;
+            if (data_ctx.priority >= PQ_REST_WAIT_MIN_PRIORITY
+                && data_ctx.uses_reset_wait
+                && reset_wait_data_ctx_id == 0
+                && !data_ctx.tx_reset_wait_discard) {
 
-        } else if (conn_ctx.is_congested) {
-            // No longer congested
-            conn_ctx.is_congested = false;
-            logger->info << "conn_id: " << conn_id << " c_count: " << congested_count << " is no longer congested." << std::flush;
+                reset_wait_data_ctx_id = data_ctx_id;
+            }
         }
 
         if (conn_ctx.metrics.total_retransmits < conn_ctx.pq_cnx->nb_retransmission_total) {
@@ -1381,7 +1412,39 @@ void PicoQuicTransport::check_conns_for_congestion()
                          << " total: " << conn_ctx.pq_cnx->nb_retransmission_total << std::flush;
 
             conn_ctx.metrics.total_retransmits = conn_ctx.pq_cnx->nb_retransmission_total;
+            congested_count++;
         }
+
+        // Act on congested
+        if (congested_count) {
+            conn_ctx.is_congested = true;
+            logger->info << "conn_id: " << conn_id << " has streams congested."
+                         << " congested_count: " << congested_count
+                         << " retrans: " << conn_ctx.metrics.total_retransmits
+                         << " cwin_congested: " << conn_ctx.metrics.cwin_congested
+                         << std::flush;
+
+            if (reset_wait_data_ctx_id > 0) {
+                logger->info << "conn_id: " << conn_id << " setting reset and wait to data_ctx_id: " << reset_wait_data_ctx_id << std::flush;
+                auto& data_ctx = conn_ctx.active_data_contexts[reset_wait_data_ctx_id];
+                data_ctx.tx_reset_wait_discard = true;
+                data_ctx.metrics.tx_reset_wait++;
+            }
+
+
+        } else if (conn_ctx.is_congested) {
+
+            if (conn_ctx.not_congested_gauge > 3) {
+                // No longer congested
+                conn_ctx.is_congested = false;
+                conn_ctx.not_congested_gauge = 0;
+                logger->info << "conn_id: " << conn_id << " congested_count: " << congested_count << " is no longer congested."
+                             << std::flush;
+            } else {
+                conn_ctx.not_congested_gauge++;
+            }
+        }
+
     }
 }
 
@@ -1538,7 +1601,7 @@ void PicoQuicTransport::check_callback_delta(DataContext* data_ctx, bool tx) {
 
     data_ctx->last_tx_callback_time = std::move(now_time);
 
-    if (delta_ms > 50 && data_ctx->tx_data->size() > 10) {
+    if (delta_ms > 50 && data_ctx->tx_data->size() >= 1) {
         data_ctx->metrics.tx_delayed_callback++;
 
         logger->debug << "conn_id: " << data_ctx->conn_id
@@ -1547,8 +1610,11 @@ void PicoQuicTransport::check_callback_delta(DataContext* data_ctx, bool tx) {
                       << " pri: " << static_cast<int>(data_ctx->priority)
                       << " CB TX delta " << delta_ms << " ms"
                       << " count: " << data_ctx->metrics.tx_delayed_callback
-                      << " tx_queue_size: "
-                      << data_ctx->tx_data->size() << std::flush;
+                      << " tx_queue_size: " << data_ctx->tx_data->size()
+                      << " prepare_send_count: " << data_ctx->metrics.stream_prepare_send
+                      << " tx_reset_wait: " << data_ctx->metrics.tx_reset_wait
+                      << " tx_queue_discards: " << data_ctx->metrics.tx_queue_discards
+                      << std::flush;
     }
 }
 
@@ -1621,6 +1687,8 @@ void PicoQuicTransport::close_stream(const ConnectionContext& conn_ctx, DataCont
 }
 
 void PicoQuicTransport::mark_stream_active(const TransportConnId conn_id, const DataContextId data_ctx_id) {
+    std::lock_guard<std::mutex> _(_state_mutex);
+
     const auto conn_it = conn_context.find(conn_id);
     if (conn_it == conn_context.end()) {
         return;
@@ -1640,6 +1708,8 @@ void PicoQuicTransport::mark_stream_active(const TransportConnId conn_id, const 
 }
 
 void PicoQuicTransport::mark_dgram_ready(const TransportConnId conn_id) {
+    std::lock_guard<std::mutex> _(_state_mutex);
+
     const auto conn_it = conn_context.find(conn_id);
     if (conn_it == conn_context.end()) {
         return;
