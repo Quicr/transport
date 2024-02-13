@@ -1362,9 +1362,10 @@ void PicoQuicTransport::check_conns_for_congestion()
 
     for (auto& [conn_id, conn_ctx] : conn_context) {
         int congested_count { 0 };
+        uint16_t cwin_congested_count = conn_ctx.metrics.cwin_congested - conn_ctx.metrics.prev_cwin_congested;
 
         // Is CWIN congested
-        if (conn_ctx.metrics.cwin_congested - conn_ctx.metrics.prev_cwin_congested > 0) {
+        if (cwin_congested_count > 3) {
             congested_count++;
         }
         conn_ctx.metrics.prev_cwin_congested = conn_ctx.metrics.cwin_congested;
@@ -1408,7 +1409,7 @@ void PicoQuicTransport::check_conns_for_congestion()
             }
         }
 
-        if (conn_ctx.pq_cnx->nb_retransmission_total - conn_ctx.metrics.total_retransmits  > 5) {
+        if (cwin_congested_count && conn_ctx.pq_cnx->nb_retransmission_total - conn_ctx.metrics.total_retransmits  > 2) {
             logger->info << "remote: " << conn_ctx.peer_addr_text << " port: " << conn_ctx.peer_port
                          << " conn_id: " << conn_id << " retransmits increased, delta: "
                          << (conn_ctx.pq_cnx->nb_retransmission_total - conn_ctx.metrics.total_retransmits)
