@@ -1405,7 +1405,7 @@ void PicoQuicTransport::check_conns_for_congestion()
             }
         }
 
-        if (conn_ctx.metrics.total_retransmits < conn_ctx.pq_cnx->nb_retransmission_total) {
+        if (conn_ctx.pq_cnx->nb_retransmission_total - conn_ctx.metrics.total_retransmits  > 5) {
             logger->info << "remote: " << conn_ctx.peer_addr_text << " port: " << conn_ctx.peer_port
                          << " conn_id: " << conn_id << " retransmits increased, delta: "
                          << (conn_ctx.pq_cnx->nb_retransmission_total - conn_ctx.metrics.total_retransmits)
@@ -1425,8 +1425,12 @@ void PicoQuicTransport::check_conns_for_congestion()
                          << std::flush;
 
             if (reset_wait_data_ctx_id > 0) {
-                logger->info << "conn_id: " << conn_id << " setting reset and wait to data_ctx_id: " << reset_wait_data_ctx_id << std::flush;
                 auto& data_ctx = conn_ctx.active_data_contexts[reset_wait_data_ctx_id];
+                logger->info << "conn_id: " << conn_id << " setting reset and wait to "
+                             << " data_ctx_id: " << reset_wait_data_ctx_id
+                             << " priority: " << static_cast<int>(data_ctx.priority)
+                             << std::flush;
+
                 data_ctx.tx_reset_wait_discard = true;
                 data_ctx.metrics.tx_reset_wait++;
             }
