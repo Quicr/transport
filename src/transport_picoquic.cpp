@@ -953,7 +953,7 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
     size_t offset = 0;
     int is_still_active = 0;
 
-    if (data_ctx->current_stream_id == 0) {
+    if (data_ctx->current_stream_id == 0 && !data_ctx->tx_reset_wait_discard) {
         logger->info << "Creating unset stream in conn_id: " << data_ctx->conn_id
                      << std::flush;
         const auto conn_ctx = getConnContext(data_ctx->conn_id);
@@ -1382,12 +1382,15 @@ void PicoQuicTransport::check_conns_for_congestion()
         uint64_t reset_wait_data_ctx_id {0};       // Positive value indicates the data_ctx_id that can be set to reset_wait
 
         for (auto& [data_ctx_id, data_ctx] : conn_ctx.active_data_contexts) {
-            if (data_ctx.metrics.tx_delayed_callback - data_ctx.metrics.prev_tx_delayed_callback > 1) {
+
+            // Don't include control stream or datagram for delayed callbacks check
+            if (!data_ctx.is_default_context && data_ctx.priority >= 2
+                    && data_ctx.metrics.tx_delayed_callback - data_ctx.metrics.prev_tx_delayed_callback > 1) {
                 congested_count++;
             }
             data_ctx.metrics.prev_tx_delayed_callback = data_ctx.metrics.tx_delayed_callback;
 
-            if (data_ctx.tx_data->size() >= 2) {
+            if (data_ctx.tx_data->size() >= 5) {
                 logger->info << "Stream congested, queue backlog"
                              << " conn_id: " << data_ctx.conn_id
                              << " data_ctx_id: " << data_ctx.data_ctx_id
@@ -1433,6 +1436,7 @@ void PicoQuicTransport::check_conns_for_congestion()
 
                 data_ctx.tx_reset_wait_discard = true;
                 data_ctx.metrics.tx_reset_wait++;
+                close_stream(conn_ctx, &data_ctx, true);
             }
 
 
