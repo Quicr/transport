@@ -434,6 +434,11 @@ PicoQuicTransport::start()
         picoquic_logger = std::make_shared<cantina::Logger>("PQIC", logger);
         debug_set_callback(&PicoQuicTransport::PicoQuicLogging, this);
     }
+
+    if (tconfig.use_reset_wait_strategy) {
+        logger->info << "Using Reset and Wait congestion control strategy" << std::flush;
+    }
+
     (void)picoquic_config_set_option(&config, picoquic_option_CC_ALGO, "bbr");
     (void)picoquic_config_set_option(&config, picoquic_option_ALPN, QUICR_ALPN);
     (void)picoquic_config_set_option(&config, picoquic_option_CWIN_MIN,
@@ -1428,7 +1433,7 @@ void PicoQuicTransport::check_conns_for_congestion()
                          << " cwin_congested: " << conn_ctx.metrics.cwin_congested
                          << std::flush;
 
-            if (reset_wait_data_ctx_id > 0) {
+            if (tconfig.use_reset_wait_strategy && reset_wait_data_ctx_id > 0) {
                 auto& data_ctx = conn_ctx.active_data_contexts[reset_wait_data_ctx_id];
                 logger->info << "conn_id: " << conn_id << " setting reset and wait to "
                              << " data_ctx_id: " << reset_wait_data_ctx_id
