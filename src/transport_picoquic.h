@@ -29,6 +29,9 @@
 
 namespace qtransport {
 
+    constexpr int PQ_LOOP_MAX_DELAY_US = 500;           /// The max microseconds that pq_loop will be ran again
+    constexpr int PQ_REST_WAIT_MIN_PRIORITY = 4;        /// Minimum priority value to consider for RESET and WAIT
+
 class PicoQuicTransport : public ITransport
 {
   public:
@@ -37,6 +40,8 @@ class PicoQuicTransport : public ITransport
     struct ConnectionMetrics {
         uint64_t time_checks {0};
         uint64_t total_retransmits {0};
+        uint64_t cwin_congested {0};                    /// Number of times CWIN is low or zero (congested)
+        uint64_t prev_cwin_congested {0};               /// Previous number of times CWIN is congested
 
         auto operator<=>(const ConnectionMetrics&) const = default;
     };
@@ -59,6 +64,7 @@ class PicoQuicTransport : public ITransport
         uint64_t tx_queue_discards {0};                     /// Number of objects discarded due to TTL expiry or clear
         uint64_t tx_delayed_callback {0};                   /// Count of times transmit callbacks were delayed
         uint64_t prev_tx_delayed_callback {0};              /// Previous transmit delayed callback value, set each interval
+        uint64_t tx_reset_wait {0};                         /// Number of times data context performed a reset and wait
         uint64_t stream_objects_sent {0};
         uint64_t stream_bytes_sent {0};
         uint64_t stream_bytes_recv {0};
@@ -82,7 +88,10 @@ class PicoQuicTransport : public ITransport
         bool is_default_context { false };                   /// Indicates if the data context is the default context
         bool is_bidir { false };                             /// Indicates if the stream is bidir (true) or unidir (false)
         bool mark_stream_active { false };                   /// Instructs the stream to be marked active
-        bool mark_dgram_ready {false };                      /// Instructs datagram to be marked ready/active
+        bool mark_dgram_ready { false };                     /// Instructs datagram to be marked ready/active
+
+        bool uses_reset_wait { false };                      /// Indicates if data context can/uses reset wait strategy
+        bool tx_reset_wait_discard { false };                /// Instructs TX objects to be discarded on POP instead
 
         DataContextId data_ctx_id {0};                       /// The ID of this context
         TransportConnId conn_id {0};                         /// The connection ID this context is under
@@ -204,6 +213,7 @@ class PicoQuicTransport : public ITransport
 
         // States
         bool is_congested { false };
+        uint16_t not_congested_gauge { 0 };                  /// Interval gauge count of consecutive not congested checks
 
         // Metrics
         ConnectionMetrics metrics;

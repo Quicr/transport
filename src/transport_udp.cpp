@@ -651,7 +651,7 @@ void UDPTransport::fd_reader() {
                         conn.ka_interval_ms = conn.idle_timeout_ms / 3;
 
                         // TODO: Consider adding BW in connect message to convey what the receiver would like to receive
-                        conn.set_bytes_per_us(50000); // Set to 50Mbps connection rate
+                        conn.set_bytes_per_us(6250); // Set to 50Mbps connection rate
 
                         addr_conn_contexts.emplace(remote_addr.id, conn_it->second); // Add to the addr lookup map
 
@@ -735,11 +735,11 @@ void UDPTransport::fd_reader() {
                         continue;
                     }
 
-                    const auto Kbps = static_cast<int>((hdr.metrics.total_bytes * 8) / hdr.metrics.duration_ms);
+                    const auto KBps = static_cast<int>(hdr.metrics.total_bytes / hdr.metrics.duration_ms);
                     const auto loss_pct = 1.0 - static_cast<double>(hdr.metrics.total_packets) / a_conn_it->second->prev_tx_report_metrics.total_packets;
                     a_conn_it->second->tx_report_ott = hdr.metrics.recv_ott_ms;
 
-                    if (loss_pct != 0 && hdr.metrics.total_packets > 20) {
+                    if (loss_pct >= 0.05 && hdr.metrics.total_packets > 20) {
                         logger->info << "Received REPORT conn_id: " << a_conn_it->second->id
                                      << " tx_report_id: " << hdr.report_id
                                      << " duration_ms: " << hdr.metrics.duration_ms
@@ -748,19 +748,19 @@ void UDPTransport::fd_reader() {
                                      << " (" << a_conn_it->second->prev_tx_report_metrics.total_bytes << ")"
                                      << " total_packets: " << hdr.metrics.total_packets
                                      << " (" << a_conn_it->second->prev_tx_report_metrics.total_packets << ")"
-                                     << " Kbps: " << Kbps
-                                     << " prev_Kbps: " << a_conn_it->second->bytes_per_us * 1'000'000 * 8 / 1024
+                                     << " Kbps: " << KBps * 8
+                                     << " prev_Kbps: " << (a_conn_it->second->bytes_per_us * 1'000'000 / 1024) * 8
                                      << " Loss: " << loss_pct << "%"
                                      << " TX-OTT: " << hdr.metrics.recv_ott_ms << "ms"
                                      << " RX-OTT: " << a_conn_it->second->rx_report_ott << "ms"
                                      << std::flush;
 
-                        if (Kbps > UDP_MIN_KBPS) { // Don't go too low
-                            a_conn_it->second->set_bytes_per_us(Kbps);
+                        if (KBps > UDP_MIN_KBPS) { // Don't go too low
+                            a_conn_it->second->set_bytes_per_us(KBps);
                         }
 
                     } else if (hdr.metrics.total_packets > 10 && loss_pct == 0) {
-                        a_conn_it->second->set_bytes_per_us(Kbps * 1.03, true);
+                        a_conn_it->second->set_bytes_per_us(KBps * 1.03, true);
                     }
                 }
                 break;
@@ -777,11 +777,7 @@ void UDPTransport::fd_reader() {
                              || hdr.report_id == 0 || a_conn_it->second->report.report_id - hdr.report_id > 1)) {
 
                         int rx_tick = current_tick - (a_conn_it->second->report_rx_start_tick + a_conn_it->second->last_rx_hdr_tick);
-                        if (rx_tick < 0) {
-                            //a_conn_it->second->report.metrics.recv_ott_ms = 0;
-                            logger->debug << "conn_id: " << a_conn_it->second->id
-                                         << " Network is buffering RX data by " << ~rx_tick << "ms in time" << std::flush;
-                        } else {
+                        if (rx_tick >= 0) {
                             a_conn_it->second->report.metrics.recv_ott_ms = rx_tick;
                             a_conn_it->second->rx_report_ott = a_conn_it->second->report.metrics.recv_ott_ms;
                         }
@@ -1002,7 +998,7 @@ TransportConnId UDPTransport::connect_client() {
 
     conn.tx_report_interval_ms = tconfig.time_queue_rx_size; // TODO: this temp to set this via UI
 
-    conn.set_bytes_per_us(16000); // Set to 16Mbps connection rate
+    conn.set_bytes_per_us(2000); // Set to 16Mbps connection rate
 
     createDataContext(last_conn_id, false, 10, false);
 
