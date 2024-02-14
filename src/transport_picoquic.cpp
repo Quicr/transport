@@ -1371,6 +1371,11 @@ void PicoQuicTransport::check_conns_for_congestion()
 
         // Is CWIN congested
         if (cwin_congested_count > 5) {
+            logger->debug << "CC: CWIN congested"
+                         << " conn_id: " << conn_id
+                         << " cwin_congested_count: " << cwin_congested_count
+                         << std::flush;
+
             congested_count++;
         }
         conn_ctx.metrics.prev_cwin_congested = conn_ctx.metrics.cwin_congested;
@@ -1385,12 +1390,18 @@ void PicoQuicTransport::check_conns_for_congestion()
             // Don't include control stream in delayed callbacks check. Control stream should be priority 0 or 1
             if (data_ctx.priority >= 2
                     && data_ctx.metrics.tx_delayed_callback - data_ctx.metrics.prev_tx_delayed_callback > 2) {
+                logger->debug << "CC: Stream congested,  callback count greater than 2"
+                             << " conn_id: " << data_ctx.conn_id
+                             << " data_ctx_id: " << data_ctx.data_ctx_id
+                             << " tx_data_queue: " << data_ctx.tx_data->size()
+                             << " congested_callbacks: " << data_ctx.metrics.tx_delayed_callback - data_ctx.metrics.prev_tx_delayed_callback
+                             << std::flush;
                 congested_count++;
             }
             data_ctx.metrics.prev_tx_delayed_callback = data_ctx.metrics.tx_delayed_callback;
 
             if (data_ctx.tx_data->size() >= 10) {
-                logger->info << "Stream congested, queue backlog"
+                logger->debug << "CC: Stream congested, queue backlog"
                              << " conn_id: " << data_ctx.conn_id
                              << " data_ctx_id: " << data_ctx.data_ctx_id
                              << " tx_data_queue: " << data_ctx.tx_data->size()
@@ -1408,7 +1419,7 @@ void PicoQuicTransport::check_conns_for_congestion()
         }
 
         if (cwin_congested_count && conn_ctx.pq_cnx->nb_retransmission_total - conn_ctx.metrics.total_retransmits  > 2) {
-            logger->info << "remote: " << conn_ctx.peer_addr_text << " port: " << conn_ctx.peer_port
+            logger->info << "CC: remote: " << conn_ctx.peer_addr_text << " port: " << conn_ctx.peer_port
                          << " conn_id: " << conn_id << " retransmits increased, delta: "
                          << (conn_ctx.pq_cnx->nb_retransmission_total - conn_ctx.metrics.total_retransmits)
                          << " total: " << conn_ctx.pq_cnx->nb_retransmission_total << std::flush;
@@ -1420,7 +1431,7 @@ void PicoQuicTransport::check_conns_for_congestion()
         // Act on congested
         if (congested_count) {
             conn_ctx.is_congested = true;
-            logger->info << "conn_id: " << conn_id << " has streams congested."
+            logger->info << "CC: conn_id: " << conn_id << " has streams congested."
                          << " congested_count: " << congested_count
                          << " retrans: " << conn_ctx.metrics.total_retransmits
                          << " cwin_congested: " << conn_ctx.metrics.cwin_congested
@@ -1428,7 +1439,7 @@ void PicoQuicTransport::check_conns_for_congestion()
 
             if (tconfig.use_reset_wait_strategy && reset_wait_data_ctx_id > 0) {
                 auto& data_ctx = conn_ctx.active_data_contexts[reset_wait_data_ctx_id];
-                logger->info << "conn_id: " << conn_id << " setting reset and wait to "
+                logger->info << "CC: conn_id: " << conn_id << " setting reset and wait to "
                              << " data_ctx_id: " << reset_wait_data_ctx_id
                              << " priority: " << static_cast<int>(data_ctx.priority)
                              << std::flush;
@@ -1445,7 +1456,7 @@ void PicoQuicTransport::check_conns_for_congestion()
                 // No longer congested
                 conn_ctx.is_congested = false;
                 conn_ctx.not_congested_gauge = 0;
-                logger->info << "conn_id: " << conn_id << " congested_count: " << congested_count << " is no longer congested."
+                logger->info << "CC: conn_id: " << conn_id << " congested_count: " << congested_count << " is no longer congested."
                              << std::flush;
             } else {
                 conn_ctx.not_congested_gauge++;
