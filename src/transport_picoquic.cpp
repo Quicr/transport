@@ -1375,11 +1375,6 @@ void PicoQuicTransport::check_conns_for_congestion()
         }
         conn_ctx.metrics.prev_cwin_congested = conn_ctx.metrics.cwin_congested;
 
-        // Default context first
-//        if (conn_ctx.default_data_context.metrics.tx_delayed_callback - conn_ctx.default_data_context.metrics.prev_tx_delayed_callback > 1) {
-//            congested_count++;
-//        }
-
         if (conn_ctx.default_data_context.metrics.tx_delayed_callback) {
             conn_ctx.default_data_context.metrics.prev_tx_delayed_callback = conn_ctx.default_data_context.metrics.tx_delayed_callback;
         }
@@ -1396,7 +1391,7 @@ void PicoQuicTransport::check_conns_for_congestion()
             }
             data_ctx.metrics.prev_tx_delayed_callback = data_ctx.metrics.tx_delayed_callback;
 
-            if (data_ctx.tx_data->size() >= 5) {
+            if (data_ctx.tx_data->size() >= 10) {
                 logger->info << "Stream congested, queue backlog"
                              << " conn_id: " << data_ctx.conn_id
                              << " data_ctx_id: " << data_ctx.data_ctx_id
