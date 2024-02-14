@@ -1370,7 +1370,7 @@ void PicoQuicTransport::check_conns_for_congestion()
         uint16_t cwin_congested_count = conn_ctx.metrics.cwin_congested - conn_ctx.metrics.prev_cwin_congested;
 
         // Is CWIN congested
-        if (cwin_congested_count > 7) {
+        if (cwin_congested_count > 5) {
             congested_count++;
         }
         conn_ctx.metrics.prev_cwin_congested = conn_ctx.metrics.cwin_congested;
@@ -1615,7 +1615,7 @@ void PicoQuicTransport::check_callback_delta(DataContext* data_ctx, bool tx) {
 
     data_ctx->last_tx_callback_time = std::move(now_time);
 
-    if (delta_ms > 50 && data_ctx->tx_data->size() >= 3) {
+    if (data_ctx->priority > 0 && delta_ms > 50 && data_ctx->tx_data->size() >= 3) {
         data_ctx->metrics.tx_delayed_callback++;
 
         logger->debug << "conn_id: " << data_ctx->conn_id
