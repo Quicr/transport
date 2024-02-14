@@ -121,7 +121,7 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
                 break;
             }
 
-            if (picoquic_get_cwin(pq_cnx) < 8000) {        // Congested if less than 8K or near jumbo MTU size
+            if (picoquic_get_cwin(pq_cnx) < 5000) {        // Congested if less than 8K or near jumbo MTU size
                 auto conn_ctx = transport->getConnContext(conn_id);
                 conn_ctx->metrics.cwin_congested++;
             }
@@ -473,8 +473,8 @@ PicoQuicTransport::start()
 
 
     logger->info << "Setting idle timeout to " << tconfig.idle_timeout_ms << "ms" << std::flush;
-    picoquic_set_default_wifi_shadow_rtt(quic_ctx, tconfig.quic_wifi_shadow_rtt_us);
-    logger->info << "Setting wifi shadow RTT to " << tconfig.quic_wifi_shadow_rtt_us << "us" << std::flush;
+    //picoquic_set_default_wifi_shadow_rtt(quic_ctx, tconfig.quic_wifi_shadow_rtt_us);
+    //logger->info << "Setting wifi shadow RTT to " << tconfig.quic_wifi_shadow_rtt_us << "us" << std::flush;
 
     picoquic_runner_queue.set_limit(2000);
 
@@ -1370,15 +1370,15 @@ void PicoQuicTransport::check_conns_for_congestion()
         uint16_t cwin_congested_count = conn_ctx.metrics.cwin_congested - conn_ctx.metrics.prev_cwin_congested;
 
         // Is CWIN congested
-        if (cwin_congested_count > 3) {
+        if (cwin_congested_count > 7) {
             congested_count++;
         }
         conn_ctx.metrics.prev_cwin_congested = conn_ctx.metrics.cwin_congested;
 
         // Default context first
-        if (conn_ctx.default_data_context.metrics.tx_delayed_callback - conn_ctx.default_data_context.metrics.prev_tx_delayed_callback > 1) {
-            congested_count++;
-        }
+//        if (conn_ctx.default_data_context.metrics.tx_delayed_callback - conn_ctx.default_data_context.metrics.prev_tx_delayed_callback > 1) {
+//            congested_count++;
+//        }
 
         if (conn_ctx.default_data_context.metrics.tx_delayed_callback) {
             conn_ctx.default_data_context.metrics.prev_tx_delayed_callback = conn_ctx.default_data_context.metrics.tx_delayed_callback;
@@ -1391,7 +1391,7 @@ void PicoQuicTransport::check_conns_for_congestion()
 
             // Don't include control stream in delayed callbacks check. Control stream should be priority 0 or 1
             if (data_ctx.priority >= 2
-                    && data_ctx.metrics.tx_delayed_callback - data_ctx.metrics.prev_tx_delayed_callback > 1) {
+                    && data_ctx.metrics.tx_delayed_callback - data_ctx.metrics.prev_tx_delayed_callback > 2) {
                 congested_count++;
             }
             data_ctx.metrics.prev_tx_delayed_callback = data_ctx.metrics.tx_delayed_callback;
@@ -1615,7 +1615,7 @@ void PicoQuicTransport::check_callback_delta(DataContext* data_ctx, bool tx) {
 
     data_ctx->last_tx_callback_time = std::move(now_time);
 
-    if (delta_ms > 50 && data_ctx->tx_data->size() >= 1) {
+    if (delta_ms > 50 && data_ctx->tx_data->size() >= 3) {
         data_ctx->metrics.tx_delayed_callback++;
 
         logger->debug << "conn_id: " << data_ctx->conn_id
