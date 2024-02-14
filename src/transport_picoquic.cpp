@@ -374,7 +374,7 @@ int pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode, void
                     transport->pq_loop_prev_time = targ->current_time;
                 }
 
-                if (targ->current_time - transport->pq_loop_prev_time > 150000) {
+                if (targ->current_time - transport->pq_loop_prev_time > 100000) {
 
                     transport->check_conns_for_congestion();
 
@@ -1375,9 +1375,7 @@ void PicoQuicTransport::check_conns_for_congestion()
         }
         conn_ctx.metrics.prev_cwin_congested = conn_ctx.metrics.cwin_congested;
 
-        if (conn_ctx.default_data_context.metrics.tx_delayed_callback) {
-            conn_ctx.default_data_context.metrics.prev_tx_delayed_callback = conn_ctx.default_data_context.metrics.tx_delayed_callback;
-        }
+        conn_ctx.default_data_context.metrics.prev_tx_delayed_callback = conn_ctx.default_data_context.metrics.tx_delayed_callback;
 
         // All other data flows (streams)
         uint64_t reset_wait_data_ctx_id {0};       // Positive value indicates the data_ctx_id that can be set to reset_wait
