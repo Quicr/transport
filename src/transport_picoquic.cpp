@@ -286,7 +286,7 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
 
             transport->logger->info << std::flush;
 
-            close(conn_id);
+            transport->close(conn_id);
 
             if (not transport->_is_server_mode) {
                 // TODO: Fix picoquic. Apparently picoquic is not processing return values for this callback
@@ -716,6 +716,8 @@ PicoQuicTransport::close(const TransportConnId& conn_id)
     if (not _is_server_mode) {
         setStatus(TransportStatus::Shutdown);
     }
+
+    conn_context.erase(conn_it);
 }
 
 /* ============================================================================
