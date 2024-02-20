@@ -940,13 +940,13 @@ PicoQuicTransport::send_next_datagram(DataContext* data_ctx, uint8_t* bytes_ctx,
     check_callback_delta(data_ctx);
 
     auto out_data = data_ctx->tx_data->front();
-    if (out_data.has_value()) {
+    if (out_data.has_value() && out_data->data.size() > 0) {
         if (max_len >= out_data->data.size()) {
             data_ctx->tx_data->pop();
 
             out_data->trace.push_back({"transport_quic:send_dgram", out_data->trace.front().start_time});
 
-            if (!out_data->trace.empty() && out_data->trace.back().delta > 15000) {
+            if (out_data->trace.back().delta > 15000) {
                 logger->info << "MethodTrace conn_id: " << data_ctx->conn_id
                              << " data_ctx_id: " << data_ctx->data_ctx_id
                              << " priority: " << static_cast<int>(out_data->priority);
@@ -1079,7 +1079,7 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
 
         auto obj = data_ctx->tx_data->pop_front();
 
-        if (obj.has_value()) {
+        if (obj.has_value() && obj->data.size() > 0) {
             data_ctx->metrics.stream_objects_sent++;
 
             obj->trace.push_back({"transport_quic:send_stream", obj->trace.front().start_time});
