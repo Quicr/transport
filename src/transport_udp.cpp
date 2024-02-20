@@ -535,7 +535,8 @@ void UDPTransport::fd_writer() {
 
             if (conn->running_wait_us > 1000) {
                 conn->wait_for_tick = current_tick + conn->running_wait_us / 1000;
-                //conn->running_wait_us %= 1000; // Set running age to remainder value less than a tick
+
+                //TODO(tievens): allow a little microburst; conn->running_wait_us %= 1000; // Set running age to remainder value less than a tick
                 conn->running_wait_us = 0;
             }
         }
