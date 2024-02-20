@@ -409,7 +409,6 @@ bool UDPTransport::send_data(ConnectionContext& conn, const ConnData& cd, bool d
     memcpy(data, &dhdr, sizeof(dhdr));
     memcpy(data + sizeof(dhdr), cd.data.data(), cd.data.size());
 
-
     int numSent = sendto(fd,
                          data,
                          data_len,
@@ -481,13 +480,6 @@ void UDPTransport::fd_writer() {
 
             // Shape flow by only processing data if wait for tick value is less than or equal to current tick
             if (conn->wait_for_tick > current_tick) {
-                /* Noisy - Enable when debugging shaping
-                logger->debug << "SHAPING conn_id: " << conn_id
-                             << " running_age: " << conn->running_wait_us
-                             << " wait_for_tick: " << conn->wait_for_tick
-                             << " current_tick: " << current_tick
-                             << std::flush;
-                */
                 continue;
             }
 
@@ -508,7 +500,26 @@ void UDPTransport::fd_writer() {
                     conn->last_tx_msg_tick = current_tick;
                     send_keepalive(*conn);
                 }
+                logger->debug << "NO VALUE conn_id: " << conn_id
+                              << " running_age: " << conn->running_wait_us
+                              << " wait_for_tick: " << conn->wait_for_tick
+                              << " current_tick: " << current_tick
+                              << std::flush;
                 continue; // Data maybe null if queue is polled too fast
+            }
+
+            cd->trace.push_back({"transport_udp:send_data", cd->trace.front().start_time});
+
+            if (!cd->trace.empty() && cd->trace.back().delta > 15000) {
+
+                logger->info << "MethodTrace conn_id: " << cd->conn_id
+                             << " data_ctx_id: " << cd->data_ctx_id
+                             << " priority: " << static_cast<int>(cd->priority);
+                for (const auto &ti: cd->trace) {
+                    logger->info << " " << ti.method << ": " << ti.delta << " ";
+                }
+
+                logger->info << " total_duration: " << cd->trace.back().delta << std::flush;
             }
 
             if (! send_data(*conn, *cd)) {
@@ -516,24 +527,17 @@ void UDPTransport::fd_writer() {
             }
 
             sent_data = true;
+
             conn->last_tx_msg_tick = current_tick;
 
             // Calculate the wait for tick value
             conn->running_wait_us += static_cast<int>(cd->data.size() / conn->bytes_per_us);
+
             if (conn->running_wait_us > 1000) {
                 conn->wait_for_tick = current_tick + conn->running_wait_us / 1000;
-                conn->running_wait_us %= 1000; // Set running age to remainder value less than a tick
+                //conn->running_wait_us %= 1000; // Set running age to remainder value less than a tick
+                conn->running_wait_us = 0;
             }
-
-            /* Noisy - Enable when debugging shaping
-            logger->debug << "sent conn_id: " << conn_id
-                         << " pri: " << static_cast<int>(cd->priority)
-                         << " data_len: " << cd->data.size()
-                         << " running_age: " << conn->running_wait_us
-                         << " wait_for_tick: " << conn->wait_for_tick
-                         << " current_tick: " << current_tick
-                         << std::flush;
-            */
         }
 
         if (unlock) lock.unlock();
@@ -543,7 +547,7 @@ void UDPTransport::fd_writer() {
 
             if (all_empty_count > 5) {
                 all_empty_count = 1;
-                to.tv_usec = 1000;
+                to.tv_usec = 500;
                 select(0, NULL, NULL, NULL, &to);
             }
         }
@@ -651,7 +655,7 @@ void UDPTransport::fd_reader() {
                         conn.ka_interval_ms = conn.idle_timeout_ms / 3;
 
                         // TODO: Consider adding BW in connect message to convey what the receiver would like to receive
-                        conn.set_bytes_per_us(6250); // Set to 50Mbps connection rate
+                        conn.set_KBps(6250); // Set to 50Mbps connection rate
 
                         addr_conn_contexts.emplace(remote_addr.id, conn_it->second); // Add to the addr lookup map
 
@@ -756,11 +760,11 @@ void UDPTransport::fd_reader() {
                                      << std::flush;
 
                         if (KBps > UDP_MIN_KBPS) { // Don't go too low
-                            a_conn_it->second->set_bytes_per_us(KBps);
+                            a_conn_it->second->set_KBps(KBps);
                         }
 
                     } else if (hdr.metrics.total_packets > 10 && loss_pct == 0) {
-                        a_conn_it->second->set_bytes_per_us(KBps * 1.03, true);
+                        a_conn_it->second->set_KBps(KBps * 1.03, true);
                     }
                 }
                 break;
@@ -804,10 +808,13 @@ void UDPTransport::fd_reader() {
                     if (!hdr.flags.discard) {
                         std::vector<uint8_t> buffer(data + sizeof(hdr), data + sizeof(hdr) + rLen);
 
-                        ConnData cd;
-                        cd.data = buffer;
-                        cd.data_ctx_id = 0; // Currently only implement one data context
-                        cd.conn_id = a_conn_it->second->id;
+                        std::vector<MethodTraceItem> trace;
+                        const auto start_time = std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::system_clock::now());
+
+                        trace.push_back({"transport_udp:recv_data", start_time});
+                        ConnData cd { a_conn_it->second->id, 0, 2,
+                                      std::move(buffer), std::move(trace)};
+                        cd.trace.reserve(10);
 
                         a_conn_it->second->data_contexts[0].rx_data.push(cd);
 
@@ -831,16 +838,21 @@ void UDPTransport::fd_reader() {
 }
 
 TransportError UDPTransport::enqueue(const TransportConnId &conn_id,
-                      const DataContextId &data_ctx_id,
-                      std::vector<uint8_t> &&bytes,
-                      const uint8_t priority,
-                      const uint32_t ttl_ms,
-                      [[maybe_unused]] const EnqueueFlags flags) {
+                                     const DataContextId &data_ctx_id,
+                                     std::vector<uint8_t> &&bytes,
+                                     std::vector<qtransport::MethodTraceItem> &&trace,
+                                     const uint8_t priority,
+                                     const uint32_t ttl_ms,
+                                     [[maybe_unused]] const EnqueueFlags flags) {
     if (bytes.empty()) {
         return TransportError::None;
     }
 
+    trace.push_back({"transport_udp:enqueue", trace.front().start_time});
+
     std::lock_guard<std::mutex> _(_connections_mutex);
+
+    trace.push_back({"transport_udp:enqueue:afterLock", trace.front().start_time});
 
     const auto conn_it = conn_contexts.find(conn_id);
 
@@ -855,13 +867,14 @@ TransportError UDPTransport::enqueue(const TransportConnId &conn_id,
         return TransportError::InvalidDataContextId;
     }
 
-    ConnData cd;
-    cd.data = bytes;
-    cd.conn_id = conn_id;
-    cd.data_ctx_id = data_ctx_id;
-    cd.priority = priority;
+    const auto trace_start_time = trace.front().start_time;
+    ConnData cd { conn_id,
+                  data_ctx_id,
+                  priority,
+                  std::move(bytes),
+                  std::move(trace)};
 
-    data_ctx_it->second.tx_data->push(cd, ttl_ms, priority);
+    data_ctx_it->second.tx_data->push(std::move(cd), ttl_ms, priority);
 
     return TransportError::None;
 }
@@ -888,7 +901,7 @@ std::optional<std::vector<uint8_t>> UDPTransport::dequeue(const TransportConnId 
     }
 
     if (auto cd = data_ctx_it->second.rx_data.pop()) {
-        return cd.value().data;
+        return std::move(cd.value().data);
     }
 
     return std::nullopt;
@@ -998,7 +1011,7 @@ TransportConnId UDPTransport::connect_client() {
 
     conn.tx_report_interval_ms = tconfig.time_queue_rx_size; // TODO: this temp to set this via UI
 
-    conn.set_bytes_per_us(2000); // Set to 16Mbps connection rate
+    conn.set_KBps(2000); // Set to 16Mbps=2000KBps connection rate
 
     createDataContext(last_conn_id, false, 10, false);
 

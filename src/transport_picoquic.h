@@ -108,8 +108,8 @@ class PicoQuicTransport : public ITransport
 
         uint64_t in_data_cb_skip_count {0};                  /// Number of times callback was skipped due to size
 
-        std::unique_ptr<safe_queue<bytes_t>> rx_data;        /// Pending objects received from the network
-        std::unique_ptr<priority_queue<bytes_t>> tx_data;    /// Pending objects to be written to the network
+        std::unique_ptr<safe_queue<ConnData>> rx_data;        /// Pending objects received from the network
+        std::unique_ptr<priority_queue<ConnData>> tx_data;    /// Pending objects to be written to the network
 
         uint8_t* stream_tx_object {nullptr};                 /// Current object that is being sent as a byte stream
         size_t stream_tx_object_size {0};                    /// Size of the tx object
@@ -284,6 +284,7 @@ class PicoQuicTransport : public ITransport
     TransportError enqueue(const TransportConnId& conn_id,
                            const DataContextId& data_ctx_id,
                            std::vector<uint8_t>&& bytes,
+                           std::vector<qtransport::MethodTraceItem> &&trace,
                            const uint8_t priority,
                            const uint32_t ttl_ms,
                            const EnqueueFlags flags) override;
