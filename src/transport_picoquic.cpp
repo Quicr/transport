@@ -121,7 +121,8 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
                 break;
             }
 
-            if (picoquic_get_cwin(pq_cnx) < 8000) {        // Congested if less than 8K or near jumbo MTU size
+            if (picoquic_get_cwin(pq_cnx) < 5000) {        // Congested if less than 8K or near jumbo MTU size
+                // TODO: Add lock
                 auto conn_ctx = transport->getConnContext(conn_id);
                 conn_ctx->metrics.cwin_congested++;
             }
@@ -374,7 +375,7 @@ int pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode, void
                     transport->pq_loop_prev_time = targ->current_time;
                 }
 
-                if (targ->current_time - transport->pq_loop_prev_time > 150000) {
+                if (targ->current_time - transport->pq_loop_prev_time > 100000) {
 
                     transport->check_conns_for_congestion();
 
@@ -473,8 +474,8 @@ PicoQuicTransport::start()
 
 
     logger->info << "Setting idle timeout to " << tconfig.idle_timeout_ms << "ms" << std::flush;
-    picoquic_set_default_wifi_shadow_rtt(quic_ctx, tconfig.quic_wifi_shadow_rtt_us);
-    logger->info << "Setting wifi shadow RTT to " << tconfig.quic_wifi_shadow_rtt_us << "us" << std::flush;
+    //picoquic_set_default_wifi_shadow_rtt(quic_ctx, tconfig.quic_wifi_shadow_rtt_us);
+    //logger->info << "Setting wifi shadow RTT to " << tconfig.quic_wifi_shadow_rtt_us << "us" << std::flush;
 
     picoquic_runner_queue.set_limit(2000);
 
@@ -524,6 +525,7 @@ TransportError
 PicoQuicTransport::enqueue(const TransportConnId& conn_id,
                            const DataContextId& data_ctx_id,
                            std::vector<uint8_t>&& bytes,
+                           std::vector<qtransport::MethodTraceItem> &&trace,
                            const uint8_t priority,
                            const uint32_t ttl_ms,
                            const EnqueueFlags flags)
@@ -535,7 +537,11 @@ PicoQuicTransport::enqueue(const TransportConnId& conn_id,
         return TransportError::None;
     }
 
+    trace.push_back({"transport_quic:enqueue", trace.front().start_time});
+
     std::lock_guard<std::mutex> _(_state_mutex);
+
+    trace.push_back({"transport_quic:enqueue:afterLock", trace.front().start_time});
 
     const auto conn_ctx_it = conn_context.find(conn_id);
     if (conn_ctx_it == conn_context.end()) {
@@ -549,7 +555,13 @@ PicoQuicTransport::enqueue(const TransportConnId& conn_id,
             conn_ctx_it->second.default_data_context.tx_data->clear();
         }
 
-        conn_ctx_it->second.default_data_context.tx_data->push(bytes, ttl_ms, priority);
+        ConnData cd { conn_id,
+                      data_ctx_id,
+                      priority,
+                      std::move(bytes),
+                      std::move(trace)};
+
+        conn_ctx_it->second.default_data_context.tx_data->push(std::move(cd), ttl_ms, priority);
 
         if (!conn_ctx_it->second.default_data_context.mark_dgram_ready) {
             conn_ctx_it->second.default_data_context.mark_dgram_ready = true;
@@ -581,7 +593,13 @@ PicoQuicTransport::enqueue(const TransportConnId& conn_id,
             data_ctx_it->second.tx_data->clear();
         }
 
-        data_ctx_it->second.tx_data->push(bytes, ttl_ms, priority);
+        ConnData cd { conn_id,
+                      data_ctx_id,
+                      priority,
+                      std::move(bytes),
+                      std::move(trace)};
+
+        data_ctx_it->second.tx_data->push(std::move(cd), ttl_ms, priority);
 
         if (! data_ctx_it->second.mark_stream_active) {
             data_ctx_it->second.mark_stream_active = true;
@@ -606,7 +624,10 @@ PicoQuicTransport::dequeue(const TransportConnId& conn_id, const DataContextId& 
     }
 
     if (!data_ctx_id) { // Default data context
-        return std::move(conn_ctx_it->second.default_data_context.rx_data->pop());
+        if (auto cd = conn_ctx_it->second.default_data_context.rx_data->pop()) {
+            return std::move(cd->data);
+        }
+        return std::nullopt;
     }
 
     const auto data_ctx_it = conn_ctx_it->second.active_data_contexts.find(data_ctx_id);
@@ -614,7 +635,10 @@ PicoQuicTransport::dequeue(const TransportConnId& conn_id, const DataContextId& 
         return std::nullopt;
     }
 
-    return std::move(data_ctx_it->second.rx_data->pop());
+    if (auto cd = data_ctx_it->second.rx_data->pop()) {
+        return std::move(cd->data);
+    }
+    return std::nullopt;
 }
 
 DataContextId
@@ -653,8 +677,8 @@ PicoQuicTransport::createDataContext(const TransportConnId conn_id,
 
         data_ctx_it->second.priority = priority;
 
-        data_ctx_it->second.rx_data = std::make_unique<safe_queue<bytes_t>>(tconfig.time_queue_rx_size);
-        data_ctx_it->second.tx_data = std::make_unique<priority_queue<bytes_t>>(tconfig.time_queue_max_duration,
+        data_ctx_it->second.rx_data = std::make_unique<safe_queue<ConnData>>(tconfig.time_queue_rx_size);
+        data_ctx_it->second.tx_data = std::make_unique<priority_queue<ConnData>>(tconfig.time_queue_max_duration,
                                                                                 tconfig.time_queue_bucket_interval,
                                                                                 _tick_service,
                                                                                 tconfig.time_queue_init_queue_size);
@@ -766,9 +790,9 @@ PicoQuicTransport::ConnectionContext& PicoQuicTransport::createConnContext(picoq
         conn_ctx.default_data_context.is_default_context = true;
         conn_ctx.default_data_context.conn_id = conn_ctx.conn_id;
         conn_ctx.default_data_context.priority = 1;
-        conn_ctx.default_data_context.rx_data = std::make_unique<safe_queue<bytes_t>>(tconfig.time_queue_rx_size);
+        conn_ctx.default_data_context.rx_data = std::make_unique<safe_queue<ConnData>>(tconfig.time_queue_rx_size);
 
-        conn_ctx.default_data_context.tx_data = std::make_unique<priority_queue<bytes_t>>(
+        conn_ctx.default_data_context.tx_data = std::make_unique<priority_queue<ConnData>>(
           tconfig.time_queue_max_duration, tconfig.time_queue_bucket_interval, _tick_service,
           tconfig.time_queue_init_queue_size);
     }
@@ -841,8 +865,8 @@ PicoQuicTransport::DataContext* PicoQuicTransport::createDataContextBiDirRecv(Tr
 
         data_ctx_it->second.priority = 10; // TODO: Need to get priority from remote
 
-        data_ctx_it->second.rx_data = std::make_unique<safe_queue<bytes_t>>(tconfig.time_queue_rx_size);
-        data_ctx_it->second.tx_data = std::make_unique<priority_queue<bytes_t>>(tconfig.time_queue_max_duration,
+        data_ctx_it->second.rx_data = std::make_unique<safe_queue<ConnData>>(tconfig.time_queue_rx_size);
+        data_ctx_it->second.tx_data = std::make_unique<priority_queue<ConnData>>(tconfig.time_queue_max_duration,
                                                                                 tconfig.time_queue_bucket_interval,
                                                                                 _tick_service,
                                                                                 tconfig.time_queue_init_queue_size);
@@ -915,21 +939,34 @@ PicoQuicTransport::send_next_datagram(DataContext* data_ctx, uint8_t* bytes_ctx,
 
     check_callback_delta(data_ctx);
 
-    const auto& out_data = data_ctx->tx_data->front();
+    auto out_data = data_ctx->tx_data->front();
     if (out_data.has_value()) {
-        if (max_len >= out_data->size()) {
+        if (max_len >= out_data->data.size()) {
             data_ctx->tx_data->pop();
+
+            out_data->trace.push_back({"transport_quic:send_dgram", out_data->trace.front().start_time});
+
+            if (!out_data->trace.empty() && out_data->trace.back().delta > 15000) {
+                logger->info << "MethodTrace conn_id: " << data_ctx->conn_id
+                             << " data_ctx_id: " << data_ctx->data_ctx_id
+                             << " priority: " << static_cast<int>(out_data->priority);
+                for (const auto &ti: out_data->trace) {
+                    logger->info << " " << ti.method << ": " << ti.delta << " ";
+                }
+
+                logger->info << " total_duration: " << out_data->trace.back().delta << std::flush;
+            }
 
             data_ctx->metrics.dgram_sent++;
 
             uint8_t* buf = NULL;
 
             buf = picoquic_provide_datagram_buffer_ex(bytes_ctx,
-                                                      out_data->size(),
+                                                      out_data->data.size(),
                                                       data_ctx->tx_data->empty() ? picoquic_datagram_not_active : picoquic_datagram_active_any_path);
 
             if (buf != NULL) {
-                std::memcpy(buf, out_data->data(), out_data->size());
+                std::memcpy(buf, out_data->data.data(), out_data->data.size());
             }
         }
         else {
@@ -1044,19 +1081,33 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
 
         if (obj.has_value()) {
             data_ctx->metrics.stream_objects_sent++;
+
+            obj->trace.push_back({"transport_quic:send_stream", obj->trace.front().start_time});
+
+            if (!obj->trace.empty() && obj->trace.back().delta > 15000) {
+                logger->info << "MethodTrace conn_id: " << data_ctx->conn_id
+                             << " data_ctx_id: " << data_ctx->data_ctx_id
+                             << " priority: " << static_cast<int>(obj->priority);
+                for (const auto &ti: obj->trace) {
+                    logger->info << " " << ti.method << ": " << ti.delta << " ";
+                }
+
+                logger->info << " total_duration: " << obj->trace.back().delta << std::flush;
+            }
+
             max_len -= 4; // Subtract out the length header that will be added
 
-            data_ctx->stream_tx_object = new uint8_t[obj->size()];
-            data_ctx->stream_tx_object_size = obj->size();
-            std::memcpy(data_ctx->stream_tx_object, obj->data(), obj->size());
+            data_ctx->stream_tx_object = new uint8_t[obj->data.size()];
+            data_ctx->stream_tx_object_size = obj->data.size();
+            std::memcpy(data_ctx->stream_tx_object, obj->data.data(), obj->data.size());
 
-            if (obj->size() > max_len) {
+            if (obj->data.size() > max_len) {
                 data_ctx->stream_tx_object_offset = max_len;
                 data_len = max_len;
                 is_still_active = 1;
 
             } else {
-                data_len = obj->size();
+                data_len = obj->data.size();
                 data_ctx->stream_tx_object_offset = 0;
             }
 
@@ -1171,7 +1222,13 @@ PicoQuicTransport::on_recv_datagram(DataContext* data_ctx, uint8_t* bytes, size_
 
     std::vector<uint8_t> data(bytes, bytes + length);
 
-    if (!data_ctx->rx_data->push(std::move(data))) {
+    std::vector<MethodTraceItem> trace;
+    const auto start_time = std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::system_clock::now());
+
+    trace.push_back({"transport_quic:recv_dgram", start_time});
+
+    ConnData cd { data_ctx->conn_id, data_ctx->data_ctx_id, data_ctx->priority, std::move(data), std::move(trace)};
+    if (!data_ctx->rx_data->push(std::move(cd))) {
         logger->error << "conn_id: " << data_ctx->conn_id
                       << " data_ctx_id: " << data_ctx->data_ctx_id
                       << " RX datagram queue is full" << std::flush;
@@ -1268,7 +1325,15 @@ void PicoQuicTransport::on_recv_stream_bytes(DataContext* data_ctx, uint64_t str
             object_complete = true;
 
             std::vector<uint8_t> data(bytes_p, bytes_p + rx_buf.object_size);
-            data_ctx->rx_data->push(std::move(data));
+
+            std::vector<MethodTraceItem> trace;
+            const auto start_time = std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::system_clock::now());
+
+            trace.push_back({"transport_quic:recv_stream", start_time});
+
+            ConnData cd { data_ctx->conn_id, data_ctx->data_ctx_id, data_ctx->priority, std::move(data), std::move(trace)};
+
+            data_ctx->rx_data->push(std::move(cd));
 
             bytes_p += rx_buf.object_size;
             length -= rx_buf.object_size;
@@ -1308,7 +1373,15 @@ void PicoQuicTransport::on_recv_stream_bytes(DataContext* data_ctx, uint64_t str
         if (object_complete) {
             std::vector<uint8_t> data(rx_buf.object,
                                       rx_buf.object + rx_buf.object_size);
-            data_ctx->rx_data->push(std::move(data));
+
+            std::vector<MethodTraceItem> trace;
+            const auto start_time = std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::system_clock::now());
+
+            trace.push_back({"transport_quic:recv_stream", start_time});
+
+            ConnData cd { data_ctx->conn_id, data_ctx->data_ctx_id, data_ctx->priority, std::move(data), std::move(trace)};
+
+            data_ctx->rx_data->push(std::move(cd));
 
             rx_buf.reset_buffer();
         }
@@ -1370,19 +1443,17 @@ void PicoQuicTransport::check_conns_for_congestion()
         uint16_t cwin_congested_count = conn_ctx.metrics.cwin_congested - conn_ctx.metrics.prev_cwin_congested;
 
         // Is CWIN congested
-        if (cwin_congested_count > 3) {
+        if (cwin_congested_count > 5) {
+            logger->info << "CC: CWIN congested"
+                         << " conn_id: " << conn_id
+                         << " cwin_congested_count: " << cwin_congested_count
+                         << std::flush;
+
             congested_count++;
         }
         conn_ctx.metrics.prev_cwin_congested = conn_ctx.metrics.cwin_congested;
 
-        // Default context first
-        if (conn_ctx.default_data_context.metrics.tx_delayed_callback - conn_ctx.default_data_context.metrics.prev_tx_delayed_callback > 1) {
-            congested_count++;
-        }
-
-        if (conn_ctx.default_data_context.metrics.tx_delayed_callback) {
-            conn_ctx.default_data_context.metrics.prev_tx_delayed_callback = conn_ctx.default_data_context.metrics.tx_delayed_callback;
-        }
+        conn_ctx.default_data_context.metrics.prev_tx_delayed_callback = conn_ctx.default_data_context.metrics.tx_delayed_callback;
 
         // All other data flows (streams)
         uint64_t reset_wait_data_ctx_id {0};       // Positive value indicates the data_ctx_id that can be set to reset_wait
@@ -1391,13 +1462,19 @@ void PicoQuicTransport::check_conns_for_congestion()
 
             // Don't include control stream in delayed callbacks check. Control stream should be priority 0 or 1
             if (data_ctx.priority >= 2
-                    && data_ctx.metrics.tx_delayed_callback - data_ctx.metrics.prev_tx_delayed_callback > 1) {
+                    && data_ctx.metrics.tx_delayed_callback - data_ctx.metrics.prev_tx_delayed_callback > 2) {
+                logger->info << "CC: Stream congested,  callback count greater than 2"
+                             << " conn_id: " << data_ctx.conn_id
+                             << " data_ctx_id: " << data_ctx.data_ctx_id
+                             << " tx_data_queue: " << data_ctx.tx_data->size()
+                             << " congested_callbacks: " << data_ctx.metrics.tx_delayed_callback - data_ctx.metrics.prev_tx_delayed_callback
+                             << std::flush;
                 congested_count++;
             }
             data_ctx.metrics.prev_tx_delayed_callback = data_ctx.metrics.tx_delayed_callback;
 
-            if (data_ctx.tx_data->size() >= 5) {
-                logger->info << "Stream congested, queue backlog"
+            if (data_ctx.tx_data->size() >= 10) {
+                logger->info << "CC: Stream congested, queue backlog"
                              << " conn_id: " << data_ctx.conn_id
                              << " data_ctx_id: " << data_ctx.data_ctx_id
                              << " tx_data_queue: " << data_ctx.tx_data->size()
@@ -1415,7 +1492,7 @@ void PicoQuicTransport::check_conns_for_congestion()
         }
 
         if (cwin_congested_count && conn_ctx.pq_cnx->nb_retransmission_total - conn_ctx.metrics.total_retransmits  > 2) {
-            logger->info << "remote: " << conn_ctx.peer_addr_text << " port: " << conn_ctx.peer_port
+            logger->info << "CC: remote: " << conn_ctx.peer_addr_text << " port: " << conn_ctx.peer_port
                          << " conn_id: " << conn_id << " retransmits increased, delta: "
                          << (conn_ctx.pq_cnx->nb_retransmission_total - conn_ctx.metrics.total_retransmits)
                          << " total: " << conn_ctx.pq_cnx->nb_retransmission_total << std::flush;
@@ -1427,7 +1504,7 @@ void PicoQuicTransport::check_conns_for_congestion()
         // Act on congested
         if (congested_count) {
             conn_ctx.is_congested = true;
-            logger->info << "conn_id: " << conn_id << " has streams congested."
+            logger->info << "CC: conn_id: " << conn_id << " has streams congested."
                          << " congested_count: " << congested_count
                          << " retrans: " << conn_ctx.metrics.total_retransmits
                          << " cwin_congested: " << conn_ctx.metrics.cwin_congested
@@ -1435,7 +1512,7 @@ void PicoQuicTransport::check_conns_for_congestion()
 
             if (tconfig.use_reset_wait_strategy && reset_wait_data_ctx_id > 0) {
                 auto& data_ctx = conn_ctx.active_data_contexts[reset_wait_data_ctx_id];
-                logger->info << "conn_id: " << conn_id << " setting reset and wait to "
+                logger->info << "CC: conn_id: " << conn_id << " setting reset and wait to "
                              << " data_ctx_id: " << reset_wait_data_ctx_id
                              << " priority: " << static_cast<int>(data_ctx.priority)
                              << std::flush;
@@ -1452,7 +1529,7 @@ void PicoQuicTransport::check_conns_for_congestion()
                 // No longer congested
                 conn_ctx.is_congested = false;
                 conn_ctx.not_congested_gauge = 0;
-                logger->info << "conn_id: " << conn_id << " congested_count: " << congested_count << " is no longer congested."
+                logger->info << "CC: conn_id: " << conn_id << " congested_count: " << congested_count << " is no longer congested."
                              << std::flush;
             } else {
                 conn_ctx.not_congested_gauge++;
@@ -1615,10 +1692,10 @@ void PicoQuicTransport::check_callback_delta(DataContext* data_ctx, bool tx) {
 
     data_ctx->last_tx_callback_time = std::move(now_time);
 
-    if (delta_ms > 50 && data_ctx->tx_data->size() >= 1) {
+    if (data_ctx->priority > 0 && delta_ms > 50 && data_ctx->tx_data->size() >= 3) {
         data_ctx->metrics.tx_delayed_callback++;
 
-        logger->debug << "conn_id: " << data_ctx->conn_id
+        logger->info << "conn_id: " << data_ctx->conn_id
                       << " data_ctx_id: " << data_ctx->data_ctx_id
                       << " stream_id: " << data_ctx->current_stream_id
                       << " pri: " << static_cast<int>(data_ctx->priority)
@@ -1712,7 +1789,11 @@ void PicoQuicTransport::mark_stream_active(const TransportConnId conn_id, const 
     if (data_ctx_it == conn_it->second.active_data_contexts.end()) {
         return;
     }
-    
+
+    if (data_ctx_it->second.current_stream_id == 0) {
+        return;
+    }
+
     picoquic_mark_active_stream(conn_it->second.pq_cnx,
                                 data_ctx_it->second.current_stream_id,
                                 1,

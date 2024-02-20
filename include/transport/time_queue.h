@@ -62,7 +62,7 @@ namespace qtransport {
         threaded_tick_service() { _tick_thread = std::thread(&threaded_tick_service::tick_loop, this); }
 
         threaded_tick_service(const threaded_tick_service& other)
-          : _ticks{ other._ticks.load() }
+          : _ticks{ other._ticks }
           , _stop{ other._stop.load() }
         {
             _tick_thread = std::thread(&threaded_tick_service::tick_loop, this);
@@ -77,7 +77,7 @@ namespace qtransport {
 
         threaded_tick_service& operator=(const threaded_tick_service& other)
         {
-            _ticks = other._ticks.load();
+            _ticks = other._ticks;
             _stop = other._stop.load();
             _tick_thread = std::thread(&threaded_tick_service::tick_loop, this);
             return *this;
@@ -104,7 +104,7 @@ namespace qtransport {
 
       private:
         /// The current ticks since the tick_service began.
-        std::atomic<uint64_t> _ticks{ 0 };
+        uint64_t _ticks{ 0 };
 
         /// Flag to stop tick_service thread.
         std::atomic<bool> _stop{ false };
@@ -291,7 +291,7 @@ namespace qtransport {
                     _queue_index++;
                     continue;
                 }
-                return bucket.at(value_index);
+                return std::move(bucket.at(value_index));
             }
 
             clear();

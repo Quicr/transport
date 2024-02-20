@@ -22,7 +22,7 @@
 
 namespace qtransport {
     constexpr size_t UDP_MAX_PACKET_SIZE = 64000;
-    constexpr size_t UDP_MIN_KBPS = 50;                /// Minimum KB bytes per second 50 = 400Kbps
+    constexpr size_t UDP_MIN_KBPS = 62;                /// Minimum KB bytes per second 62 = 500Kbps
 
     struct AddrId {
         uint64_t ip_hi;
@@ -42,13 +42,6 @@ namespace qtransport {
         bool operator<(const AddrId &o) const {
             return std::tie(ip_hi, ip_lo, port) < std::tie(o.ip_hi, o.ip_lo, o.port);
         }
-    };
-
-    struct ConnData {
-        TransportConnId conn_id;
-        DataContextId data_ctx_id;
-        uint8_t priority;
-        std::vector<uint8_t> data;
     };
 
     class UDPTransport : public ITransport {
@@ -79,6 +72,7 @@ namespace qtransport {
         TransportError enqueue(const TransportConnId &conn_id,
                                const DataContextId &data_ctx_id,
                                std::vector<uint8_t> &&bytes,
+                               std::vector<qtransport::MethodTraceItem> &&trace,
                                const uint8_t priority,
                                const uint32_t ttl_ms,
                                const EnqueueFlags flags) override;
@@ -164,7 +158,7 @@ namespace qtransport {
 
             double bytes_per_us {6.4};     // Default to 50Mbps
 
-            void set_bytes_per_us(uint32_t KBps, bool max_of=false) {
+            void set_KBps(uint32_t KBps, bool max_of= false) {
                 const auto bpUs = (KBps * 1024) / 1'000'000.0 /* 1 second double value */;
                 if (!max_of || bpUs > bytes_per_us) {
                     bytes_per_us = bpUs;
@@ -248,7 +242,6 @@ namespace qtransport {
 
         TransportDelegate &delegate;
         std::mutex _connections_mutex;                         /// Mutex for connections map changes
-
 
         TransportConnId last_conn_id{0};
         std::map<TransportConnId, std::shared_ptr<ConnectionContext>> conn_contexts;
