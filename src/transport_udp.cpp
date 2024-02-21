@@ -810,7 +810,7 @@ void UDPTransport::fd_reader() {
                         std::vector<uint8_t> buffer(data + sizeof(hdr), data + sizeof(hdr) + rLen);
 
                         std::vector<MethodTraceItem> trace;
-                        const auto start_time = std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::system_clock::now());
+                        const auto start_time = std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::steady_clock::now());
 
                         trace.push_back({"transport_udp:recv_data", start_time});
                         ConnData cd { a_conn_it->second->id, 0, 2,

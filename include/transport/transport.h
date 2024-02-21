@@ -86,7 +86,7 @@ struct TransportConfig
   const bool use_reset_wait_strategy { true };          /// Use Reset and wait strategy for congestion control
 };
 
-using time_stamp_us = std::chrono::time_point<std::chrono::system_clock, std::chrono::microseconds>;
+using time_stamp_us = std::chrono::time_point<std::chrono::steady_clock, std::chrono::microseconds>;
 
 struct MethodTraceItem {
     const std::string method;                   /// Name of the method
@@ -95,14 +95,14 @@ struct MethodTraceItem {
 
     MethodTraceItem() :
         method("root"),
-        start_time(std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::system_clock::now())),
+        start_time(std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::steady_clock::now())),
         delta(0) {
     }
 
     MethodTraceItem(const std::string method, const time_stamp_us start_time) :
             method(method),
             start_time(start_time) {
-        delta = (std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::system_clock::now()) -
+        delta = (std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::steady_clock::now()) -
                  start_time).count();
     }
 };

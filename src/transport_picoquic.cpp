@@ -942,7 +942,17 @@ PicoQuicTransport::send_next_datagram(DataContext* data_ctx, uint8_t* bytes_ctx,
     check_callback_delta(data_ctx);
 
     auto out_data = data_ctx->tx_data->front();
-    if (out_data.has_value() && out_data->data.size() > 0) {
+    if (out_data.has_value()) {
+        if (out_data->data.size() == 0) {
+            logger->error << "conn_id: " << data_ctx->conn_id
+                          << " data_ctx_id: " << data_ctx->data_ctx_id
+                          << " priority: " << static_cast<int>(data_ctx->priority)
+                          << " has ZERO data size"
+                          << std::flush;
+
+            data_ctx->tx_data->pop();
+            return;
+        }
         if (max_len >= out_data->data.size()) {
             data_ctx->tx_data->pop();
 
@@ -1068,6 +1078,8 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
         if (obj.has_value()) {
             data_ctx->metrics.tx_queue_discards++;
         }
+
+        return;
     }
 
     if (data_ctx->stream_tx_object == nullptr) {
@@ -1082,6 +1094,16 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
         auto obj = data_ctx->tx_data->pop_front();
 
         if (obj.has_value() && obj->data.size() > 0) {
+            if (obj->data.size() == 0) {
+                logger->error << "conn_id: " << data_ctx->conn_id
+                              << " data_ctx_id: " << data_ctx->data_ctx_id
+                              << " priority: " << static_cast<int>(data_ctx->priority)
+                              << " stream has ZERO data size"
+                              << std::flush;
+                return;
+            }
+
+
             data_ctx->metrics.stream_objects_sent++;
 
             obj->trace.push_back({"transport_quic:send_stream", obj->trace.front().start_time});
@@ -1225,7 +1247,7 @@ PicoQuicTransport::on_recv_datagram(DataContext* data_ctx, uint8_t* bytes, size_
     std::vector<uint8_t> data(bytes, bytes + length);
 
     std::vector<MethodTraceItem> trace;
-    const auto start_time = std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::system_clock::now());
+    const auto start_time = std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::steady_clock::now());
 
     trace.push_back({"transport_quic:recv_dgram", start_time});
 
@@ -1329,7 +1351,7 @@ void PicoQuicTransport::on_recv_stream_bytes(DataContext* data_ctx, uint64_t str
             std::vector<uint8_t> data(bytes_p, bytes_p + rx_buf.object_size);
 
             std::vector<MethodTraceItem> trace;
-            const auto start_time = std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::system_clock::now());
+            const auto start_time = std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::steady_clock::now());
 
             trace.push_back({"transport_quic:recv_stream", start_time});
 
@@ -1377,7 +1399,7 @@ void PicoQuicTransport::on_recv_stream_bytes(DataContext* data_ctx, uint64_t str
                                       rx_buf.object + rx_buf.object_size);
 
             std::vector<MethodTraceItem> trace;
-            const auto start_time = std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::system_clock::now());
+            const auto start_time = std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::steady_clock::now());
 
             trace.push_back({"transport_quic:recv_stream", start_time});
 
