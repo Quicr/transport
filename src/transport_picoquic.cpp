@@ -601,7 +601,7 @@ PicoQuicTransport::enqueue(const TransportConnId& conn_id,
 
         data_ctx_it->second.tx_data->push(std::move(cd), ttl_ms, priority);
 
-        if (! data_ctx_it->second.mark_stream_active) {
+        if (! data_ctx_it->second.mark_stream_active || data_ctx_it->second.tx_reset_wait_discard) {
             data_ctx_it->second.mark_stream_active = true;
 
             picoquic_runner_queue.push([=]() {
