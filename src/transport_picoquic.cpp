@@ -1484,6 +1484,11 @@ void PicoQuicTransport::check_conns_for_congestion()
 
         for (auto& [data_ctx_id, data_ctx] : conn_ctx.active_data_contexts) {
 
+            // Skip context that is in reset and wait
+            if (data_ctx.tx_reset_wait_discard) {
+                continue;
+            }
+
             // Don't include control stream in delayed callbacks check. Control stream should be priority 0 or 1
             if (data_ctx.priority >= 2
                     && data_ctx.metrics.tx_delayed_callback - data_ctx.metrics.prev_tx_delayed_callback > 2) {
