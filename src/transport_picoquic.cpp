@@ -601,7 +601,7 @@ PicoQuicTransport::enqueue(const TransportConnId& conn_id,
 
         data_ctx_it->second.tx_data->push(std::move(cd), ttl_ms, priority);
 
-        if (! data_ctx_it->second.mark_stream_active || data_ctx_it->second.tx_reset_wait_discard) {
+        if (! data_ctx_it->second.mark_stream_active) {
             data_ctx_it->second.mark_stream_active = true;
 
             picoquic_runner_queue.push([=]() {
@@ -1078,6 +1078,8 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
         if (obj.has_value()) {
             data_ctx->metrics.tx_queue_discards++;
         }
+
+        data_ctx->mark_stream_active = false;
 
         return;
     }
