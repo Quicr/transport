@@ -121,7 +121,7 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
                 break;
             }
 
-            if (picoquic_get_cwin(pq_cnx) < 5000) {        // Congested if less than 8K or near jumbo MTU size
+            if (picoquic_get_cwin(pq_cnx) < 7000) {        // Congested if less than 8K or near jumbo MTU size
                 // TODO: Add lock
                 auto conn_ctx = transport->getConnContext(conn_id);
                 conn_ctx->metrics.cwin_congested++;
@@ -1007,69 +1007,71 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
     size_t offset = 0;
     int is_still_active = 0;
 
-    if (data_ctx->current_stream_id == 0 && !data_ctx->tx_reset_wait_discard) {
-        logger->info << "Creating unset stream in conn_id: " << data_ctx->conn_id
-                     << std::flush;
-        const auto conn_ctx = getConnContext(data_ctx->conn_id);
-        create_stream(*conn_ctx, data_ctx);
+    switch (data_ctx->stream_action) {
+        case DataContext::StreamAction::NO_ACTION:
+            [[fallthrough]];
+        default:
+            if (data_ctx->current_stream_id == 0) {
+                logger->info << "Creating unset stream in conn_id: " << data_ctx->conn_id
+                             << std::flush;
+                const auto conn_ctx = getConnContext(data_ctx->conn_id);
+                create_stream(*conn_ctx, data_ctx);
 
-    } else {
-        switch (data_ctx->stream_action) {
-            case DataContext::StreamAction::NO_ACTION:
-            default:
+                return;
+            }
+            break;
+
+        case DataContext::StreamAction::REPLACE_STREAM_USE_RESET: {
+            data_ctx->uses_reset_wait = true;
+
+            std::lock_guard<std::mutex> _(_state_mutex);
+            const auto conn_ctx = getConnContext(data_ctx->conn_id);
+
+            // Keep stream in discard mode if still congested
+            if (conn_ctx->is_congested && data_ctx->tx_reset_wait_discard) {
                 break;
+            }
 
-            case DataContext::StreamAction::REPLACE_STREAM_USE_RESET: {
-                data_ctx->uses_reset_wait = true;
+            if (data_ctx->stream_tx_object != nullptr) {
+                data_ctx->metrics.tx_buffer_drops++;
+            }
+
+            const auto existing_stream_id = data_ctx->current_stream_id;
+
+            close_stream(*conn_ctx, data_ctx, true);
+
+            logger->info << "Replacing stream using RESET; conn_id: " << data_ctx->conn_id
+                         << " data_ctx_id: " << data_ctx->data_ctx_id
+                         << " existing_stream: " << existing_stream_id
+                         << " write buf drops: " << data_ctx->metrics.tx_buffer_drops
+                         << " tx_queue_discards: " << data_ctx->metrics.tx_queue_discards
+                         << std::flush;
+
+            create_stream(*conn_ctx, data_ctx);
+            data_ctx->stream_action = DataContext::StreamAction::NO_ACTION;
+
+            if (!conn_ctx->is_congested) { // Only clear reset wait if not congested
+                data_ctx->tx_reset_wait_discard = false;                // Allow new object to be sent
+            }
+
+            return;
+        }
+
+        case DataContext::StreamAction::REPLACE_STREAM_USE_FIN: {
+            data_ctx->uses_reset_wait = true;
+            if (data_ctx->stream_tx_object == nullptr) {
+                logger->info << "Replacing stream using FIN; conn_id: " << data_ctx->conn_id
+                             << " existing_stream: " << data_ctx->current_stream_id << std::flush;
 
                 std::lock_guard<std::mutex> _(_state_mutex);
+
                 const auto conn_ctx = getConnContext(data_ctx->conn_id);
-
-                // Keep stream in discard mode if still congested
-                if (conn_ctx->is_congested && data_ctx->tx_reset_wait_discard) {
-                    break;
-                }
-
-                if (data_ctx->stream_tx_object != nullptr) {
-                    data_ctx->metrics.tx_buffer_drops++;
-                }
-
-                const auto existing_stream_id = data_ctx->current_stream_id;
-
-                close_stream(*conn_ctx, data_ctx, true);
-
-                logger->info << "Replacing stream using RESET; conn_id: " << data_ctx->conn_id
-                             << " data_ctx_id: " << data_ctx->data_ctx_id
-                             << " existing_stream: " << existing_stream_id
-                             << " write buf drops: " << data_ctx->metrics.tx_buffer_drops
-                             << " tx_queue_discards: " << data_ctx->metrics.tx_queue_discards
-                             << std::flush;
-
                 create_stream(*conn_ctx, data_ctx);
+
                 data_ctx->stream_action = DataContext::StreamAction::NO_ACTION;
-
-                if (!conn_ctx->is_congested) { // Only clear reset wait if not congested
-                    data_ctx->tx_reset_wait_discard = false;                // Allow new object to be sent
-                }
-
-                return;
             }
 
-            case DataContext::StreamAction::REPLACE_STREAM_USE_FIN: {
-                data_ctx->uses_reset_wait = true;
-                if (data_ctx->stream_tx_object == nullptr) {
-                    logger->info << "Replacing stream using FIN; conn_id: " << data_ctx->conn_id
-                                 << " existing_stream: " << data_ctx->current_stream_id << std::flush;
-
-                    std::lock_guard<std::mutex> _(_state_mutex);
-
-                    const auto conn_ctx = getConnContext(data_ctx->conn_id);
-                    create_stream(*conn_ctx, data_ctx);
-
-                    data_ctx->stream_action = DataContext::StreamAction::NO_ACTION;
-                }
-                return;
-            }
+            return;
         }
     }
 
@@ -1078,8 +1080,6 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
         if (obj.has_value()) {
             data_ctx->metrics.tx_queue_discards++;
         }
-
-        data_ctx->mark_stream_active = false;
 
         return;
     }
@@ -1095,7 +1095,7 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
 
         auto obj = data_ctx->tx_data->pop_front();
 
-        if (obj.has_value() && obj->data.size() > 0) {
+        if (obj.has_value()) {
             if (obj->data.size() == 0) {
                 logger->error << "conn_id: " << data_ctx->conn_id
                               << " data_ctx_id: " << data_ctx->data_ctx_id
@@ -1550,13 +1550,18 @@ void PicoQuicTransport::check_conns_for_congestion()
 
                 data_ctx.tx_reset_wait_discard = true;
                 data_ctx.metrics.tx_reset_wait++;
-                close_stream(conn_ctx, &data_ctx, true);
+
+                /*
+                 * TODO(tievens) Submit an issue with picoquic to add an API to flush the stream of any
+                 *      data stuck in retransmission or waiting for acks
+                 */
+                //close_stream(conn_ctx, &data_ctx, true);
             }
 
 
         } else if (conn_ctx.is_congested) {
 
-            if (conn_ctx.not_congested_gauge > 3) {
+            if (conn_ctx.not_congested_gauge > 4) {
                 // No longer congested
                 conn_ctx.is_congested = false;
                 conn_ctx.not_congested_gauge = 0;
@@ -1776,6 +1781,14 @@ void PicoQuicTransport::create_stream(ConnectionContext& conn_ctx, DataContext *
      */
     picoquic_set_stream_priority(conn_ctx.pq_cnx, data_ctx->current_stream_id, (data_ctx->priority << 1));
     picoquic_mark_active_stream(conn_ctx.pq_cnx, data_ctx->current_stream_id, 1, data_ctx);
+
+    data_ctx->mark_stream_active = true;
+
+    picoquic_runner_queue.push([=, conn_id = conn_ctx.conn_id, data_ctx_id = data_ctx->data_ctx_id]() {
+        mark_stream_active(conn_id, data_ctx_id);
+    });
+
+
 }
 
 void PicoQuicTransport::close_stream(const ConnectionContext& conn_ctx, DataContext* data_ctx, const bool send_reset)
@@ -1821,6 +1834,8 @@ void PicoQuicTransport::mark_stream_active(const TransportConnId conn_id, const 
         return;
     }
 
+    data_ctx_it->second.mark_stream_active = false;
+
     if (data_ctx_it->second.current_stream_id == 0) {
         return;
     }
@@ -1829,8 +1844,6 @@ void PicoQuicTransport::mark_stream_active(const TransportConnId conn_id, const 
                                 data_ctx_it->second.current_stream_id,
                                 1,
                                 &data_ctx_it->second);
-
-    data_ctx_it->second.mark_stream_active = false;
 }
 
 void PicoQuicTransport::mark_dgram_ready(const TransportConnId conn_id) {
