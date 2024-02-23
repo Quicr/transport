@@ -1470,12 +1470,12 @@ void PicoQuicTransport::check_conns_for_congestion()
 
         // Is CWIN congested
         if (cwin_congested_count > 5) {
-            logger->info << "CC: CWIN congested"
+            logger->info << "CC: CWIN congested (not actionable)"
                          << " conn_id: " << conn_id
                          << " cwin_congested_count: " << cwin_congested_count
                          << std::flush;
 
-            congested_count++;
+            //congested_count++; /* TODO(tievens): DO NOT react to this right now, causing issue with low latency wired networks */
         }
         conn_ctx.metrics.prev_cwin_congested = conn_ctx.metrics.cwin_congested;
 
@@ -1493,8 +1493,8 @@ void PicoQuicTransport::check_conns_for_congestion()
 
             // Don't include control stream in delayed callbacks check. Control stream should be priority 0 or 1
             if (data_ctx.priority >= 2
-                    && data_ctx.metrics.tx_delayed_callback - data_ctx.metrics.prev_tx_delayed_callback > 2) {
-                logger->info << "CC: Stream congested,  callback count greater than 2"
+                    && data_ctx.metrics.tx_delayed_callback - data_ctx.metrics.prev_tx_delayed_callback > 1) {
+                logger->info << "CC: Stream congested,  callback count greater than 1"
                              << " conn_id: " << data_ctx.conn_id
                              << " data_ctx_id: " << data_ctx.data_ctx_id
                              << " tx_data_queue: " << data_ctx.tx_data->size()
