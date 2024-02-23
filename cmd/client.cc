@@ -137,7 +137,7 @@ main()
             auto data = bytes(data_buf, data_buf + sizeof(data_buf));
 
             std::vector<MethodTraceItem> trace;
-            const auto start_time = std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::system_clock::now());
+            const auto start_time = std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::steady_clock::now());
 
             trace.push_back({"client:publish", start_time});
 
@@ -153,7 +153,7 @@ main()
             }
             else {
                 std::vector<MethodTraceItem> trace;
-                const auto start_time = std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::system_clock::now());
+                const auto start_time = std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::steady_clock::now());
 
                 trace.push_back({"client:publish", start_time});
                 client->enqueue(conn_id, server.proto == TransportProtocol::UDP ? 1 : data_ctx_id, std::move(data), std::move(trace));
