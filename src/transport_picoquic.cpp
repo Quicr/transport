@@ -1054,7 +1054,7 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
                 data_ctx->tx_reset_wait_discard = false;                // Allow new object to be sent
             }
 
-            return;
+            return; // New stream requires PQ to callback again using that stream
         }
 
         case DataContext::StreamAction::REPLACE_STREAM_USE_FIN: {
@@ -1071,7 +1071,7 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
                 data_ctx->stream_action = DataContext::StreamAction::NO_ACTION;
             }
 
-            return;
+            break; // Continue with this object since this is a FIN
         }
     }
 
