@@ -267,7 +267,7 @@ namespace qtransport {
         {
             if (auto obj = front()) {
                 pop();
-                return obj;
+                return std::move(*obj);
             }
 
             return std::nullopt;
@@ -291,7 +291,7 @@ namespace qtransport {
                     _queue_index++;
                     continue;
                 }
-                return std::move(bucket.at(value_index));
+                return bucket.at(value_index);
             }
 
             clear();
