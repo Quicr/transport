@@ -78,9 +78,7 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
         return PICOQUIC_ERROR_UNEXPECTED_ERROR;
     }
 
-
-    if (picoquic_get_cwin(pq_cnx) < 8000) {        // Congested if less than 8K or near jumbo MTU size
-        // TODO: May need to lock due to get connection and metric update
+    if (transport->status() == TransportStatus::Ready && picoquic_get_cwin(pq_cnx) < 8000) {        // Congested if less than 8K or near jumbo MTU size
         auto conn_ctx = transport->getConnContext(conn_id);
         conn_ctx->metrics.cwin_congested++;
     }
@@ -1749,14 +1747,18 @@ void PicoQuicTransport::shutdown()
 }
 
 void PicoQuicTransport::check_callback_delta(DataContext* data_ctx, bool tx) {
-    auto now_time = std::chrono::steady_clock::now();
-
     if (!tx) return;
 
-    const auto delta_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                            now_time - data_ctx->last_tx_callback_time).count();
+    const auto current_tick = _tick_service->get_ticks(std::chrono::milliseconds(1));
 
-    data_ctx->last_tx_callback_time = std::move(now_time);
+    if (data_ctx->last_tx_tick == 0) {
+        data_ctx->last_tx_tick = current_tick;
+        return;
+    }
+
+    const auto delta_ms = current_tick - data_ctx->last_tx_tick;
+    data_ctx->last_tx_tick = current_tick;
+
 
     if (data_ctx->priority > 0 && delta_ms > 50 && data_ctx->tx_data->size() >= 3) {
         data_ctx->metrics.tx_delayed_callback++;

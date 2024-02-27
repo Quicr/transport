@@ -141,8 +141,8 @@ class PicoQuicTransport : public ITransport
         };
         std::map<uint64_t, StreamRxBuffer> stream_rx_buffer;        /// Map of stream receive buffers, key is stream_id
 
-        // The last time TX callback was run
-        std::chrono::time_point<std::chrono::steady_clock> last_tx_callback_time { std::chrono::steady_clock::now() };
+        // The last ticks when TX callback was run
+        uint64_t last_tx_tick { 0 };
 
         DataContextMetrics metrics;
 
