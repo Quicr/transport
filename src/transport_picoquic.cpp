@@ -1777,7 +1777,7 @@ void PicoQuicTransport::check_callback_delta(DataContext* data_ctx, bool tx) {
 
         picoquic_path_quality_t path_quality;
 
-        if (const auto conn_it = getConnContext(data_ctx->conn_id) {
+        if (const auto conn_it = getConnContext(data_ctx->conn_id)) {
             picoquic_get_path_quality(conn_it->pq_cnx, conn_it->pq_cnx->path[0]->unique_path_id, &path_quality);
         }
 
