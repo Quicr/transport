@@ -1496,13 +1496,13 @@ void PicoQuicTransport::check_conns_for_congestion()
         int congested_count { 0 };
         uint16_t cwin_congested_count = conn_ctx.metrics.cwin_congested - conn_ctx.metrics.prev_cwin_congested;
 
-        // Is CWIN congested
-        if (cwin_congested_count > 5) {
-            const auto rtt_us = picoquic_get_rtt(conn_ctx.pq_cnx);
-            picoquic_path_quality_t path_quality;
-            picoquic_get_path_quality(conn_ctx.pq_cnx, conn_ctx.pq_cnx->path[0]->unique_path_id, &path_quality);
+        picoquic_path_quality_t path_quality;
+        picoquic_get_path_quality(conn_ctx.pq_cnx, conn_ctx.pq_cnx->path[0]->unique_path_id, &path_quality);
 
-            logger->info << "CC: CWIN congested (not actionable)"
+        // Is CWIN congested
+        if (cwin_congested_count > 5 || path_quality.cwin < PQ_CC_LOW_CWIN * 2) {
+
+            logger->info << "CC: CWIN congested (fyi only)"
                          << " conn_id: " << conn_id
                          << " cwin_congested_count: " << cwin_congested_count
                          << " rate Kbps: " << path_quality.pacing_rate * 8 / 1000
@@ -1775,6 +1775,12 @@ void PicoQuicTransport::check_callback_delta(DataContext* data_ctx, bool tx) {
     if (data_ctx->priority > 0 && delta_ms > 50 && data_ctx->tx_data->size() >= 3) {
         data_ctx->metrics.tx_delayed_callback++;
 
+        picoquic_path_quality_t path_quality;
+
+        if (const auto conn_it = getConnContext(data_ctx->conn_id) {
+            picoquic_get_path_quality(conn_it->pq_cnx, conn_it->pq_cnx->path[0]->unique_path_id, &path_quality);
+        }
+
         logger->info << "conn_id: " << data_ctx->conn_id
                       << " data_ctx_id: " << data_ctx->data_ctx_id
                       << " stream_id: " << data_ctx->current_stream_id
@@ -1786,6 +1792,14 @@ void PicoQuicTransport::check_callback_delta(DataContext* data_ctx, bool tx) {
                       << " stream_cb_count: " << data_ctx->metrics.stream_prepare_send
                       << " tx_reset_wait: " << data_ctx->metrics.tx_reset_wait
                       << " tx_queue_discards: " << data_ctx->metrics.tx_queue_discards
+                      << " rate Kbps: " << path_quality.pacing_rate * 8 / 1000
+                      << " cwin_bytes: " << path_quality.cwin
+                      << " rtt_us: " << path_quality.rtt
+                      << " rtt_max: " << path_quality.rtt_max
+                      << " rtt_sample: " << path_quality.rtt_sample
+                      << " lost_pkts: " << path_quality.lost
+                      << " bytes_in_transit: " << path_quality.bytes_in_transit
+                      << " recv_rate_Kbps: " << path_quality.receive_rate_estimate * 8 / 1000
                       << std::flush;
     }
 }
