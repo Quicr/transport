@@ -78,6 +78,13 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
         return PICOQUIC_ERROR_UNEXPECTED_ERROR;
     }
 
+
+    if (picoquic_get_cwin(pq_cnx) < 8000) {        // Congested if less than 8K or near jumbo MTU size
+        // TODO: May need to lock due to get connection and metric update
+        auto conn_ctx = transport->getConnContext(conn_id);
+        conn_ctx->metrics.cwin_congested++;
+    }
+
     switch (fin_or_event) {
 
         case picoquic_callback_prepare_datagram: {
@@ -119,12 +126,6 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
                 transport->logger->info << "conn_id: " << conn_id << " stream_id: " << stream_id
                                         << " context is null" << std::flush;
                 break;
-            }
-
-            if (picoquic_get_cwin(pq_cnx) < 7000) {        // Congested if less than 8K or near jumbo MTU size
-                // TODO: Add lock
-                auto conn_ctx = transport->getConnContext(conn_id);
-                conn_ctx->metrics.cwin_congested++;
             }
 
             data_ctx->metrics.stream_prepare_send++;
@@ -243,11 +244,21 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
         case picoquic_callback_pacing_changed: {
             const auto cwin_bytes = picoquic_get_cwin(pq_cnx);
             const auto rtt_us = picoquic_get_rtt(pq_cnx);
+            picoquic_path_quality_t path_quality;
+            picoquic_get_path_quality(pq_cnx, pq_cnx->path[0]->unique_path_id, &path_quality);
 
             transport->logger->info << "Pacing rate changed; conn_id: " << conn_id
-                                    << " rate bps: " << stream_id * 8
+                                    << " rate Kbps: " << stream_id * 8 / 1000
                                     << " cwin_bytes: " << cwin_bytes
                                     << " rtt_us: " << rtt_us
+                                    << " rate Kbps: " << path_quality.pacing_rate * 8 / 1000
+                                    << " cwin_bytes: " << path_quality.cwin
+                                    << " rtt_us: " << path_quality.rtt
+                                    << " rtt_max: " << path_quality.rtt_max
+                                    << " rtt_sample: " << path_quality.rtt_sample
+                                    << " lost_pkts: " << path_quality.lost
+                                    << " bytes_in_transit: " << path_quality.bytes_in_transit
+                                    << " recv_rate_Kbps: " << path_quality.receive_rate_estimate * 8 / 1000
                                     << std::flush;
             break;
         }
@@ -982,6 +993,13 @@ PicoQuicTransport::send_next_datagram(DataContext* data_ctx, uint8_t* bytes_ctx,
             }
         }
         else {
+            picoquic_runner_queue.push([=]() {
+                mark_dgram_ready(data_ctx->conn_id);
+            });
+
+            /* TODO(tievens): picoquic_prepare_stream_and_datagrams() appears to ignore the
+             *     below unless data was sent/provided
+             */
             picoquic_provide_datagram_buffer_ex(bytes_ctx, 0, picoquic_datagram_active_any_path);
         }
     }
@@ -1226,8 +1244,8 @@ PicoQuicTransport::on_new_connection(const TransportConnId conn_id)
                  << " conn_id: " << conn_id
                  << std::flush;
 
-    picoquic_subscribe_pacing_rate_updates(conn_ctx->pq_cnx, tconfig.pacing_decrease_threshold_Bps,
-                                           tconfig.pacing_increase_threshold_Bps);
+//    picoquic_subscribe_pacing_rate_updates(conn_ctx->pq_cnx, tconfig.pacing_decrease_threshold_Bps,
+//                                           tconfig.pacing_increase_threshold_Bps);
 
     TransportRemote remote{ .host_or_ip = conn_ctx->peer_addr_text,
                             .port = conn_ctx->peer_port,
@@ -1470,9 +1488,21 @@ void PicoQuicTransport::check_conns_for_congestion()
 
         // Is CWIN congested
         if (cwin_congested_count > 5) {
+            const auto rtt_us = picoquic_get_rtt(conn_ctx.pq_cnx);
+            picoquic_path_quality_t path_quality;
+            picoquic_get_path_quality(conn_ctx.pq_cnx, conn_ctx.pq_cnx->path[0]->unique_path_id, &path_quality);
+
             logger->info << "CC: CWIN congested (not actionable)"
                          << " conn_id: " << conn_id
                          << " cwin_congested_count: " << cwin_congested_count
+                         << " rate Kbps: " << path_quality.pacing_rate * 8 / 1000
+                         << " cwin_bytes: " << path_quality.cwin
+                         << " rtt_us: " << path_quality.rtt
+                         << " rtt_max: " << path_quality.rtt_max
+                         << " rtt_sample: " << path_quality.rtt_sample
+                         << " lost_pkts: " << path_quality.lost
+                         << " bytes_in_transit: " << path_quality.bytes_in_transit
+                         << " recv_rate_Kbps: " << path_quality.receive_rate_estimate * 8 / 1000
                          << std::flush;
 
             //congested_count++; /* TODO(tievens): DO NOT react to this right now, causing issue with low latency wired networks */
@@ -1639,8 +1669,8 @@ TransportConnId PicoQuicTransport::createClient()
     // Using default TP
     picoquic_set_transport_parameters(cnx, &local_tp_options);
 
-    picoquic_subscribe_pacing_rate_updates(cnx, tconfig.pacing_decrease_threshold_Bps,
-                                           tconfig.pacing_increase_threshold_Bps);
+//    picoquic_subscribe_pacing_rate_updates(cnx, tconfig.pacing_decrease_threshold_Bps,
+//                                           tconfig.pacing_increase_threshold_Bps);
 
     auto &_ = createConnContext(cnx);
 
@@ -1738,7 +1768,8 @@ void PicoQuicTransport::check_callback_delta(DataContext* data_ctx, bool tx) {
                       << " CB TX delta " << delta_ms << " ms"
                       << " count: " << data_ctx->metrics.tx_delayed_callback
                       << " tx_queue_size: " << data_ctx->tx_data->size()
-                      << " prepare_send_count: " << data_ctx->metrics.stream_prepare_send
+                      << " dgram_cb_count: " << data_ctx->metrics.dgram_prepare_send
+                      << " stream_cb_count: " << data_ctx->metrics.stream_prepare_send
                       << " tx_reset_wait: " << data_ctx->metrics.tx_reset_wait
                       << " tx_queue_discards: " << data_ctx->metrics.tx_queue_discards
                       << std::flush;

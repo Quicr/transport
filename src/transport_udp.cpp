@@ -740,7 +740,9 @@ void UDPTransport::fd_reader() {
                         continue;
                     }
 
-                    const auto KBps = static_cast<int>(hdr.metrics.total_bytes / hdr.metrics.duration_ms);
+                    const auto send_KBps = static_cast<int>(a_conn_it->second->prev_tx_report_metrics.total_bytes / a_conn_it->second->prev_tx_report_metrics.duration_ms);
+                    const auto ack_KBps = static_cast<int>(hdr.metrics.total_bytes / hdr.metrics.duration_ms);
+                    const auto prev_KBps = (a_conn_it->second->bytes_per_us * 1'000'000 / 1024);
                     const auto loss_pct = 1.0 - static_cast<double>(hdr.metrics.total_packets) / a_conn_it->second->prev_tx_report_metrics.total_packets;
                     a_conn_it->second->tx_report_ott = hdr.metrics.recv_ott_ms;
 
@@ -753,19 +755,19 @@ void UDPTransport::fd_reader() {
                                      << " (" << a_conn_it->second->prev_tx_report_metrics.total_bytes << ")"
                                      << " total_packets: " << hdr.metrics.total_packets
                                      << " (" << a_conn_it->second->prev_tx_report_metrics.total_packets << ")"
-                                     << " Kbps: " << KBps * 8
-                                     << " prev_Kbps: " << (a_conn_it->second->bytes_per_us * 1'000'000 / 1024) * 8
+                                     << " send/ack Kbps: " << send_KBps * 8 << " / " << ack_KBps * 8
+                                     << " prev_Kbps: " << prev_KBps * 8
                                      << " Loss: " << loss_pct << "%"
                                      << " TX-OTT: " << hdr.metrics.recv_ott_ms << "ms"
                                      << " RX-OTT: " << a_conn_it->second->rx_report_ott << "ms"
                                      << std::flush;
 
-                        if (KBps > UDP_MIN_KBPS) { // Don't go too low
-                            a_conn_it->second->set_KBps(KBps);
+                        if (ack_KBps > UDP_MIN_KBPS) { // Don't go too low
+                            a_conn_it->second->set_KBps(ack_KBps);
                         }
 
                     } else if (hdr.metrics.total_packets > 10 && loss_pct == 0) {
-                        a_conn_it->second->set_KBps(KBps * 1.03, true);
+                        a_conn_it->second->set_KBps(ack_KBps * 1.03, true);
                     }
                 }
                 break;
