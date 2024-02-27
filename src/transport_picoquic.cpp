@@ -78,15 +78,18 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
         return PICOQUIC_ERROR_UNEXPECTED_ERROR;
     }
 
-    if (transport->status() == TransportStatus::Ready && picoquic_get_cwin(pq_cnx) < 8000) {        // Congested if less than 8K or near jumbo MTU size
-        auto conn_ctx = transport->getConnContext(conn_id);
-        conn_ctx->metrics.cwin_congested++;
-    }
-
     switch (fin_or_event) {
 
         case picoquic_callback_prepare_datagram: {
             // length is the max allowed data length
+            if (picoquic_get_cwin(pq_cnx) < 8000) {        // Congested if less than 8K or near jumbo MTU size
+                if (auto conn_ctx = transport->getConnContext(conn_id)) {
+                    conn_ctx->metrics.cwin_congested++;
+                } else {
+                    break;
+                }
+            }
+
             data_ctx = transport->getDefaultDataContext(conn_id);
             data_ctx->metrics.dgram_prepare_send++;
             transport->send_next_datagram(data_ctx, bytes, length);
@@ -119,6 +122,12 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
         }
 
         case picoquic_callback_prepare_to_send: {
+            if (auto conn_ctx = transport->getConnContext(conn_id)) {
+                conn_ctx->metrics.cwin_congested++;
+            } else {
+                break;
+            }
+
             if (data_ctx == NULL) {
                 // picoquic calls this again even after reset/fin, here we ignore it
                 transport->logger->info << "conn_id: " << conn_id << " stream_id: " << stream_id
