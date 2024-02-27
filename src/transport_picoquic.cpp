@@ -1521,7 +1521,7 @@ void PicoQuicTransport::check_conns_for_congestion()
         picoquic_get_path_quality(conn_ctx.pq_cnx, conn_ctx.pq_cnx->path[0]->unique_path_id, &path_quality);
 
         // Is CWIN congested
-        if (cwin_congested_count > 5 || path_quality.cwin < PQ_CC_LOW_CWIN) {
+        if (cwin_congested_count > 5 || (path_quality.cwin < PQ_CC_LOW_CWIN && path_quality.bytes_in_transit > 1)) {
 
             logger->info << "CC: CWIN congested (fyi only)"
                          << " conn_id: " << conn_id
