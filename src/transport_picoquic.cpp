@@ -82,7 +82,7 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
 
         case picoquic_callback_prepare_datagram: {
             // length is the max allowed data length
-            if (picoquic_get_cwin(pq_cnx) < 8000) {        // Congested if less than 8K or near jumbo MTU size
+            if (picoquic_get_cwin(pq_cnx) < PQ_CC_LOW_CWIN) {        // Congested if less than 8K or near jumbo MTU size
                 if (auto conn_ctx = transport->getConnContext(conn_id)) {
                     conn_ctx->metrics.cwin_congested++;
                 } else {
@@ -122,10 +122,13 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
         }
 
         case picoquic_callback_prepare_to_send: {
-            if (auto conn_ctx = transport->getConnContext(conn_id)) {
-                conn_ctx->metrics.cwin_congested++;
-            } else {
-                break;
+            if (picoquic_get_cwin(pq_cnx) < PQ_CC_LOW_CWIN) {
+                // Congested if less than 8K or near jumbo MTU size
+                if (auto conn_ctx = transport->getConnContext(conn_id)) {
+                    conn_ctx->metrics.cwin_congested++;
+                } else {
+                    break;
+                }
             }
 
             if (data_ctx == NULL) {
