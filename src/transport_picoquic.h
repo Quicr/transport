@@ -31,6 +31,7 @@ namespace qtransport {
 
     constexpr int PQ_LOOP_MAX_DELAY_US = 500;           /// The max microseconds that pq_loop will be ran again
     constexpr int PQ_REST_WAIT_MIN_PRIORITY = 4;        /// Minimum priority value to consider for RESET and WAIT
+    constexpr int PQ_CC_LOW_CWIN = 4000;                /// Bytes less than this value are considered a low/congested CWIN
 
 class PicoQuicTransport : public ITransport
 {
@@ -141,8 +142,8 @@ class PicoQuicTransport : public ITransport
         };
         std::map<uint64_t, StreamRxBuffer> stream_rx_buffer;        /// Map of stream receive buffers, key is stream_id
 
-        // The last time TX callback was run
-        std::chrono::time_point<std::chrono::steady_clock> last_tx_callback_time { std::chrono::steady_clock::now() };
+        // The last ticks when TX callback was run
+        uint64_t last_tx_tick { 0 };
 
         DataContextMetrics metrics;
 
