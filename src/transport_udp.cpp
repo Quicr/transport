@@ -466,7 +466,12 @@ int err = 0;
     s_log << "client_connect: Unable to set send buffer size: "
           << strerror(errno);
     logger->Log(cantina::LogLevel::Critical, s_log.str());
+#if not defined(PLATFORM_ESP)    
     throw std::runtime_error(s_log.str());
+ #else
+    abort();
+#endif       
+
   }
 
   err =
@@ -475,7 +480,12 @@ int err = 0;
     s_log << "client_connect: Unable to set receive buffer size: "
           << strerror(errno);
     logger->Log(cantina::LogLevel::Critical, s_log.str());
+#if not defined(PLATFORM_ESP)    
     throw std::runtime_error(s_log.str());
+ #else
+    abort();
+#endif       
+
   }
 #endif
 
@@ -485,9 +495,11 @@ int err = 0;
     s_log << "client_connect: Unable to set receive timeout: "
           << strerror(errno);
     logger->Log(cantina::LogLevel::Critical, s_log.str());
-#if not defined(PLATFORM_ESP)
+#if not defined(PLATFORM_ESP)    
     throw std::runtime_error(s_log.str());
-#endif
+ #else
+    abort();
+#endif       
   }
 
 
@@ -499,9 +511,11 @@ int err = 0;
   if (err) {
     s_log << "client_connect: Unable to bind to socket: " << strerror(errno);
     logger->Log(cantina::LogLevel::Critical, s_log.str());
-#if not defined(PLATFORM_ESP)
+#if not defined(PLATFORM_ESP)    
     throw std::runtime_error(s_log.str());
-#endif
+ #else
+    abort();
+#endif       
   }
 
   std::string sPort = std::to_string(htons(serverInfo.port));
@@ -516,9 +530,11 @@ int err = 0;
     s_log << "client_connect: Unable to resolve remote ip address: "
           << strerror(errno);
     logger->Log(cantina::LogLevel::Critical, s_log.str());
-#if not defined(PLATFORM_ESP)
+#if not defined(PLATFORM_ESP)    
     throw std::runtime_error(s_log.str());
-#endif
+ #else
+    abort();
+#endif       
   }
 
   struct addrinfo *item = nullptr, *found_addr = nullptr;
@@ -532,9 +548,11 @@ int err = 0;
 
   if (found_addr == nullptr) {
     logger->critical << "client_connect: No IP address found" << std::flush;
-#if not defined(PLATFORM_ESP)
-    throw std::runtime_error("client_connect: No IP address found");
-#endif
+#if not defined(PLATFORM_ESP)    
+    throw std::runtime_error(s_log.str());
+ #else
+    abort();
+#endif       
   }
 
   struct sockaddr_in* ipv4 = (struct sockaddr_in*)&serverAddr.addr;
@@ -595,7 +613,11 @@ UDPTransport::connect_server()
   if (fd < 0) {
     s_log << "connect_server: Unable to create socket: " << strerror(errno);
     logger->Log(cantina::LogLevel::Critical, s_log.str());
+#if not defined(PLATFORM_ESP)    
     throw std::runtime_error(s_log.str());
+ #else
+    abort();
+#endif       
   }
 
   // set for re-use
@@ -605,7 +627,12 @@ UDPTransport::connect_server()
   if (err != 0) {
     s_log << "connect_server: setsockopt error: " << strerror(errno);
     logger->Log(cantina::LogLevel::Critical, s_log.str());
+#if not defined(PLATFORM_ESP)    
     throw std::runtime_error(s_log.str());
+ #else
+    abort();
+#endif       
+
   }
 
   // TODO: Add config for this value
@@ -618,7 +645,12 @@ UDPTransport::connect_server()
     s_log << "client_connect: Unable to set send buffer size: "
           << strerror(errno);
     logger->Log(cantina::LogLevel::Critical, s_log.str());
+#if not defined(PLATFORM_ESP)    
     throw std::runtime_error(s_log.str());
+ #else
+    abort();
+#endif       
+
   }
 
   err =
@@ -627,7 +659,12 @@ UDPTransport::connect_server()
     s_log << "client_connect: Unable to set receive buffer size: "
           << strerror(errno);
     logger->Log(cantina::LogLevel::Critical, s_log.str());
+#if not defined(PLATFORM_ESP)    
     throw std::runtime_error(s_log.str());
+ #else
+    abort();
+#endif       
+
   }
 
   err =
@@ -636,7 +673,12 @@ UDPTransport::connect_server()
     s_log << "client_connect: Unable to set receive timeout: "
           << strerror(errno);
     logger->Log(cantina::LogLevel::Critical, s_log.str());
+#if not defined(PLATFORM_ESP)    
     throw std::runtime_error(s_log.str());
+ #else
+    abort();
+#endif       
+
   }
 
 
@@ -650,7 +692,12 @@ UDPTransport::connect_server()
   if (err < 0) {
     s_log << "connect_server: unable to bind to socket: " << strerror(errno);
     logger->Log(cantina::LogLevel::Critical, s_log.str());
+#if not defined(PLATFORM_ESP)    
     throw std::runtime_error(s_log.str());
+ #else
+    abort();
+#endif       
+
   }
 
   logger->info << "connect_server: port: " << serverInfo.port << " fd: " << fd
