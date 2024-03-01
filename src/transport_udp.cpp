@@ -378,22 +378,13 @@ bool UDPTransport::send_data(ConnectionContext& conn, const ConnData& cd, bool d
 
     if (current_tick >= conn.tx_next_report_tick) {
         // New report ID
-        /* Too noisy, uncomment when debugging reports
-        logger->debug << "Report change conn_id: " << conn.id
-                      << " previous id: " << conn.tx_report_id
-                      << " duration_ms: " << conn.tx_report_metrics.duration_ms
-                      << " total_bytes: " << conn.tx_report_metrics.total_bytes
-                      << " total_packets: " << conn.tx_report_metrics.total_packets
-                      << " curr_tick: " << current_tick
-                      << " prev_report_tick: " << conn.tx_next_report_tick
-                      << std::flush;
-        */
+        auto& prev_report = conn.tx_prev_reports[(conn.tx_report_id % conn.tx_prev_reports.size())];
+        prev_report.report_id = conn.tx_report_id++;
+        prev_report.metrics = conn.tx_report_metrics;
 
-        conn.prev_tx_report_metrics = conn.tx_report_metrics;
         conn.tx_report_start_tick = current_tick;
         conn.tx_report_metrics = {};
 
-        conn.tx_report_id++;
         conn.tx_next_report_tick = current_tick + conn.tx_report_interval_ms;
     }
 
@@ -500,17 +491,12 @@ void UDPTransport::fd_writer() {
                     conn->last_tx_msg_tick = current_tick;
                     send_keepalive(*conn);
                 }
-                logger->debug << "NO VALUE conn_id: " << conn_id
-                              << " running_age: " << conn->running_wait_us
-                              << " wait_for_tick: " << conn->wait_for_tick
-                              << " current_tick: " << current_tick
-                              << std::flush;
-                continue; // Data maybe null if queue is polled too fast
+                continue; // Data maybe null if time queue has a delay in pop
             }
 
             cd->trace.push_back({"transport_udp:send_data", cd->trace.front().start_time});
 
-            if (!cd->trace.empty() && cd->trace.back().delta > 15000) {
+            if (!cd->trace.empty() && cd->trace.back().delta > 60000) {
 
                 logger->info << "MethodTrace conn_id: " << cd->conn_id
                              << " data_ctx_id: " << cd->data_ctx_id
@@ -536,7 +522,7 @@ void UDPTransport::fd_writer() {
             if (conn->running_wait_us > 1000) {
                 conn->wait_for_tick = current_tick + conn->running_wait_us / 1000;
 
-                //TODO(tievens): allow a little microburst; conn->running_wait_us %= 1000; // Set running age to remainder value less than a tick
+                //conn->running_wait_us %= 1000; // Set running age to remainder value less than a tick
                 conn->running_wait_us = 0;
             }
         }
@@ -548,7 +534,7 @@ void UDPTransport::fd_writer() {
 
             if (all_empty_count > 5) {
                 all_empty_count = 1;
-                to.tv_usec = 500;
+                to.tv_usec = 250;
                 select(0, NULL, NULL, NULL, &to);
             }
         }
@@ -740,21 +726,33 @@ void UDPTransport::fd_reader() {
                         continue;
                     }
 
-                    const auto send_KBps = static_cast<int>(a_conn_it->second->prev_tx_report_metrics.total_bytes / a_conn_it->second->prev_tx_report_metrics.duration_ms);
-                    const auto ack_KBps = static_cast<int>(hdr.metrics.total_bytes / hdr.metrics.duration_ms);
+                    const auto& prev_report = a_conn_it->second->tx_prev_reports[(hdr.report_id % a_conn_it->second->tx_prev_reports.size())];
+                    if (prev_report.report_id != hdr.report_id) {
+                        logger->warning << "Received report id: " << hdr.report_id
+                                        << " is not previous id: " << prev_report.report_id
+                                        << " sizeof array: " << sizeof(a_conn_it->second->tx_prev_reports)
+                                        << " prev_index: " << (hdr.report_id % a_conn_it->second->tx_prev_reports.size())
+                                        << std::flush;
+                        lock.unlock();
+                        continue;
+                    }
+
+                    const auto send_KBps = static_cast<int>(prev_report.metrics.total_bytes / prev_report.metrics.duration_ms);
+                    //const auto ack_KBps = static_cast<int>(hdr.metrics.total_bytes / hdr.metrics.duration_ms);
+                    const auto ack_KBps = static_cast<int>(hdr.metrics.total_bytes / std::max(prev_report.metrics.duration_ms, hdr.metrics.duration_ms));
                     const auto prev_KBps = (a_conn_it->second->bytes_per_us * 1'000'000 / 1024);
-                    const auto loss_pct = 1.0 - static_cast<double>(hdr.metrics.total_packets) / a_conn_it->second->prev_tx_report_metrics.total_packets;
+                    const auto loss_pct = 1.0 - static_cast<double>(hdr.metrics.total_packets) / prev_report.metrics.total_packets;
                     a_conn_it->second->tx_report_ott = hdr.metrics.recv_ott_ms;
 
-                    if (loss_pct >= 0.05 && hdr.metrics.total_packets > 20) {
-                        logger->info << "Received REPORT conn_id: " << a_conn_it->second->id
+                    if (loss_pct >= 0.01 && hdr.metrics.total_packets > 15) {
+                        logger->info << "Received REPORT (decrease) conn_id: " << a_conn_it->second->id
                                      << " tx_report_id: " << hdr.report_id
                                      << " duration_ms: " << hdr.metrics.duration_ms
-                                     << " (" << a_conn_it->second->prev_tx_report_metrics.duration_ms << ")"
+                                     << " (" << prev_report.metrics.duration_ms << ")"
                                      << " total_bytes: " << hdr.metrics.total_bytes
-                                     << " (" << a_conn_it->second->prev_tx_report_metrics.total_bytes << ")"
+                                     << " (" << prev_report.metrics.total_bytes << ")"
                                      << " total_packets: " << hdr.metrics.total_packets
-                                     << " (" << a_conn_it->second->prev_tx_report_metrics.total_packets << ")"
+                                     << " (" << prev_report.metrics.total_packets << ")"
                                      << " send/ack Kbps: " << send_KBps * 8 << " / " << ack_KBps * 8
                                      << " prev_Kbps: " << prev_KBps * 8
                                      << " Loss: " << loss_pct << "%"
@@ -762,12 +760,33 @@ void UDPTransport::fd_reader() {
                                      << " RX-OTT: " << a_conn_it->second->rx_report_ott << "ms"
                                      << std::flush;
 
-                        if (ack_KBps > UDP_MIN_KBPS) { // Don't go too low
-                            a_conn_it->second->set_KBps(ack_KBps);
-                        }
+                        a_conn_it->second->tx_zero_loss_count = 0;
+                        a_conn_it->second->set_KBps(ack_KBps * .90);
 
-                    } else if (hdr.metrics.total_packets > 10 && loss_pct == 0) {
-                        a_conn_it->second->set_KBps(ack_KBps * 1.03, true);
+                    } else if (hdr.metrics.total_packets > 15 && loss_pct == 0) {
+                        a_conn_it->second->tx_zero_loss_count++;
+
+                        // Only increase bandwidth if there is no loss for a little while
+                        if (a_conn_it->second->tx_zero_loss_count > 5
+                            && a_conn_it->second->set_KBps(ack_KBps * 1.05, true)) {
+
+                            logger->info << "Received REPORT (increase) conn_id: " << a_conn_it->second->id
+                                         << " prev_report_id: " << a_conn_it->second->tx_report_id - 1
+                                         << " tx_report_id: " << hdr.report_id
+                                         << " duration_ms: " << hdr.metrics.duration_ms
+                                         << " (" << prev_report.metrics.duration_ms << ")"
+                                         << " total_bytes: " << hdr.metrics.total_bytes
+                                         << " (" << prev_report.metrics.total_bytes << ")"
+                                         << " total_packets: " << hdr.metrics.total_packets
+                                         << " (" << prev_report.metrics.total_packets << ")"
+                                         << " send/ack Kbps: " << send_KBps * 8 << " / " << ack_KBps * 8
+                                         << " prev_Kbps: " << prev_KBps * 8
+                                         << " Loss: " << loss_pct << "%"
+                                         << " TX-OTT: " << hdr.metrics.recv_ott_ms << "ms"
+                                         << " RX-OTT: " << a_conn_it->second->rx_report_ott << "ms"
+                                         << std::flush;
+                            a_conn_it->second->tx_zero_loss_count = 3;
+                        }
                     }
                 }
                 break;
@@ -846,6 +865,7 @@ TransportError UDPTransport::enqueue(const TransportConnId &conn_id,
                                      std::vector<qtransport::MethodTraceItem> &&trace,
                                      const uint8_t priority,
                                      const uint32_t ttl_ms,
+                                     const uint32_t delay_ms,
                                      [[maybe_unused]] const EnqueueFlags flags) {
     if (bytes.empty()) {
         return TransportError::None;
@@ -877,7 +897,7 @@ TransportError UDPTransport::enqueue(const TransportConnId &conn_id,
                   std::move(bytes),
                   std::move(trace)};
 
-    data_ctx_it->second.tx_data->push(std::move(cd), ttl_ms, priority);
+    data_ctx_it->second.tx_data->push(std::move(cd), ttl_ms, priority, delay_ms);
 
     return TransportError::None;
 }

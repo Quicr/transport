@@ -3,11 +3,9 @@
 #include <algorithm>
 #include <chrono>
 #include <forward_list>
-#include <iostream>
 #include <numeric>
 #include <optional>
-#include <thread>
-#include <type_traits>
+#include <array>
 
 #include "time_queue.h"
 
@@ -27,7 +25,6 @@ namespace qtransport {
     template<typename DataType, uint8_t PMAX = 32>
     class priority_queue
     {
-
         using timeType = std::chrono::milliseconds;
         using timeQueue = time_queue<DataType, timeType>;
 
@@ -84,21 +81,14 @@ namespace qtransport {
          * @param value     The value to push onto the queue.
          * @param ttl       The time to live of the value in milliseconds.
          * @param priority  The priority of the value (range is 0 - PMAX)
+         * @param delay_ttl Delay POP by this ttl value in milliseconds
          */
-        void push(DataType& value, uint32_t ttl, uint8_t priority = 0)
+        void push(DataType& value, uint32_t ttl, uint8_t priority = 0, uint32_t delay_ttl=0)
         {
             std::lock_guard<std::mutex> _(_mutex);
 
-            if (priority >= PMAX) {
-                throw InvalidPriorityException("Priority not within range");
-            }
-
-            if (!_queue[priority]) {
-                _queue[priority] = std::make_unique<timeQueue>(_duration_ms, _interval_ms, _tick_service, _initial_queue_size);
-            }
-
-            auto& queue = _queue[priority];
-            queue->push(value, ttl);
+            auto& queue = get_queue_by_priority(priority);
+            queue->push(value, ttl, delay_ttl);
         }
 
         /**
@@ -107,22 +97,14 @@ namespace qtransport {
          * @param value     The value to push onto the queue.
          * @param ttl       The time to live of the value in milliseconds.
          * @param priority  The priority of the value (range is 0 - PMAX)
+         * @param delay_ttl Delay POP by this ttl value in milliseconds
          */
-        void push(DataType&& value, uint32_t ttl, uint8_t priority = 0) {
+        void push(DataType&& value, uint32_t ttl, uint8_t priority = 0, uint32_t delay_ttl=0) {
             std::lock_guard<std::mutex> _(_mutex);
 
-            if (priority >= PMAX) {
-                throw InvalidPriorityException("Priority not within range");
-            }
-
-            if (!_queue[priority]) {
-                _queue[priority] = std::make_unique<timeQueue>(_duration_ms, _interval_ms, _tick_service, _initial_queue_size);
-            }
-
-            auto& queue = _queue[priority];
-            queue->push(std::move(value), ttl);
+            auto& queue = get_queue_by_priority(priority);
+            queue->push(std::move(value), ttl, delay_ttl);
         }
-
 
         /**
          * @brief Get the first object from queue
@@ -210,13 +192,32 @@ namespace qtransport {
         }
 
       private:
+        /**
+         * @brief Get queue by priority
+         *
+         * @param priority  The priority queue value (range is 0 - PMAX)
+         *
+         * @return Unique pointer to queue for the given priority
+         */
+        std::unique_ptr<timeQueue>& get_queue_by_priority(const uint8_t priority)
+        {
+            if (priority >= PMAX) {
+                throw InvalidPriorityException("Priority not within range");
+            }
+
+            if (!_queue[priority]) {
+                _queue[priority] = std::make_unique<timeQueue>(_duration_ms, _interval_ms, _tick_service, _initial_queue_size);
+            }
+
+            return _queue[priority];
+        }
+
         std::mutex _mutex;
         size_t _initial_queue_size;
         size_t _duration_ms;
         size_t _interval_ms;
 
         std::array<std::unique_ptr<timeQueue>, PMAX> _queue;
-
         std::shared_ptr<tick_service> _tick_service;
     };
 }; // end of namespace qtransport

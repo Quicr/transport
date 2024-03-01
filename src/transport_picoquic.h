@@ -288,6 +288,7 @@ class PicoQuicTransport : public ITransport
                            std::vector<qtransport::MethodTraceItem> &&trace,
                            const uint8_t priority,
                            const uint32_t ttl_ms,
+                           const uint32_t delay_ms,
                            const EnqueueFlags flags) override;
 
     std::optional<std::vector<uint8_t>> dequeue(

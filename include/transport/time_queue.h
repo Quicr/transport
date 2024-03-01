@@ -23,6 +23,7 @@
 
 #include <algorithm>
 #include <array>
+#include <iostream>
 #include <atomic>
 #include <chrono>
 #include <memory>
@@ -153,16 +154,18 @@ namespace qtransport {
 
         struct queue_value_type
         {
-            queue_value_type(bucket_type& bucket, index_type value_index, tick_type expiry_tick)
+            queue_value_type(bucket_type& bucket, index_type value_index, tick_type expiry_tick, tick_type wait_for_tick)
               : _bucket{ bucket }
               , _value_index{ value_index }
               , _expiry_tick(expiry_tick)
+              , _wait_for_tick(wait_for_tick)
             {
             }
 
             bucket_type& _bucket;
             index_type _value_index;
             tick_type _expiry_tick;
+            tick_type _wait_for_tick;
         };
 
         using queue_type = std::vector<queue_value_type>;
@@ -227,22 +230,32 @@ namespace qtransport {
         /**
          * @brief Pushes a new value onto the queue with a time-to-live.
          *
-         * @param value The value to push onto the queue.
-         * @param ttl   Time to live for an object using the unit of Duration_t
+         * @param value         The value to push onto the queue.
+         * @param ttl           Time to live for an object using the unit of Duration_t
+         * @param delay_ttl     Pop wait Time to live for an object using the unit of Duration_t
+         *                      This will cause pop to be delayed by this TTL value
          *
          * @throws std::invalid_argument If ttl is greater than duration.
          */
-        void push(const T& value, size_t ttl) { internal_push(value, ttl); }
+        void push(const T& value, size_t ttl, size_t delay_ttl=0)
+        {
+            internal_push(value, ttl, delay_ttl);
+        }
 
         /**
          * @brief Pushes a new value onto the queue with a time-to-live.
          *
-         * @param value The value to push onto the queue.
-         * @param ttl   Time to live for an object using the unit of Duration_t
+         * @param value      The value to push onto the queue.
+         * @param ttl        Time to live for an object using the unit of Duration_t
+         * @param delay_ttl  Pop wait Time to live for an object using the unit of Duration_t
+         *                   This will cause pop to be delayed by this TTL value
          *
          * @throws std::invalid_argument If ttl is greater than duration.
          */
-        void push(T&& value, size_t ttl) { internal_push(std::move(value), ttl); }
+        void push(T&& value, size_t ttl, size_t delay_ttl=0)
+        {
+            internal_push(std::move(value), ttl, delay_ttl);
+        }
 
         /**
          * @brief Pop (increment) front
@@ -285,12 +298,17 @@ namespace qtransport {
                 return std::nullopt;
 
             while (_queue_index < _queue.size()) {
-                auto& [bucket, value_index, expiry_tick] = _queue.at(_queue_index);
+                auto& [bucket, value_index, expiry_tick, pop_wait_ttl] = _queue.at(_queue_index);
 
                 if (value_index >= bucket.size() || ticks > expiry_tick) {
                     _queue_index++;
                     continue;
                 }
+
+                if (pop_wait_ttl > ticks) {
+                    return std::nullopt;
+                }
+
                 return bucket.at(value_index);
             }
 
@@ -351,13 +369,15 @@ namespace qtransport {
          * @details Internal definition of push. Pushes value into specified
          *          bucket, and then emplaces the location info into the queue.
          *
-         * @param value The value to push onto the queue.
-         * @param ttl   Time to live for an object using the unit of Duration_t
+         * @param value         The value to push onto the queue.
+         * @param ttl           Time to live for an object using the unit of Duration_t
+         * @param delay_ttl     Pop wait Time to live for an object using the unit of Duration_t
+         *                      This will cause pop to be delayed by this TTL value
          *
          * @throws std::invalid_argument If ttl is greater than duration.
          */
         template<typename Value>
-        inline void internal_push(Value value, size_t ttl)
+        inline void internal_push(Value value, size_t ttl, size_t delay_ttl)
         {
             if (ttl > _duration) {
                 throw std::invalid_argument("TTL is greater than max duration");
@@ -376,7 +396,7 @@ namespace qtransport {
             bucket_type& bucket = _buckets[future_index];
 
             bucket.push_back(value);
-            _queue.emplace_back(bucket, bucket.size() - 1, expiry_tick);
+            _queue.emplace_back(bucket, bucket.size() - 1, expiry_tick, ticks + delay_ttl);
         }
 
       private:

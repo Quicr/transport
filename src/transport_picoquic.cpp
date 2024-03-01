@@ -549,6 +549,7 @@ PicoQuicTransport::enqueue(const TransportConnId& conn_id,
                            std::vector<qtransport::MethodTraceItem> &&trace,
                            const uint8_t priority,
                            const uint32_t ttl_ms,
+                           const uint32_t delay_ms,
                            const EnqueueFlags flags)
 {
     if (bytes.empty()) {
@@ -582,7 +583,7 @@ PicoQuicTransport::enqueue(const TransportConnId& conn_id,
                       std::move(bytes),
                       std::move(trace)};
 
-        conn_ctx_it->second.default_data_context.tx_data->push(std::move(cd), ttl_ms, priority);
+        conn_ctx_it->second.default_data_context.tx_data->push(std::move(cd), ttl_ms, priority, delay_ms);
 
         if (!conn_ctx_it->second.default_data_context.mark_dgram_ready) {
             conn_ctx_it->second.default_data_context.mark_dgram_ready = true;
@@ -620,7 +621,7 @@ PicoQuicTransport::enqueue(const TransportConnId& conn_id,
                       std::move(bytes),
                       std::move(trace)};
 
-        data_ctx_it->second.tx_data->push(std::move(cd), ttl_ms, priority);
+        data_ctx_it->second.tx_data->push(std::move(cd), ttl_ms, priority, delay_ms);
 
         if (! data_ctx_it->second.mark_stream_active) {
             data_ctx_it->second.mark_stream_active = true;
@@ -979,7 +980,7 @@ PicoQuicTransport::send_next_datagram(DataContext* data_ctx, uint8_t* bytes_ctx,
 
             out_data->trace.push_back({"transport_quic:send_dgram", out_data->trace.front().start_time});
 
-            if (out_data->trace.back().delta > 15000) {
+            if (out_data->trace.back().delta > 60000) {
                 logger->info << "MethodTrace conn_id: " << data_ctx->conn_id
                              << " data_ctx_id: " << data_ctx->data_ctx_id
                              << " priority: " << static_cast<int>(out_data->priority);
