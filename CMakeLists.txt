@@ -47,7 +47,7 @@ target_link_libraries(quicr-transport
 if (NOT PLATFORM_ESP_IDF)
   target_link_libraries(quicr-transport
           PUBLIC
-          picoquic-core)
+          picoquic-core picoquic-log)
 endif()          
 
 if (PLATFORM_ESP_IDF)

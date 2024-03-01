@@ -42,6 +42,9 @@ namespace qtransport {
         };
 
       public:
+        ~priority_queue() {
+        }
+
         /**
          * Construct a priority queue
          * @param tick_service Shared pointer to tick_service service
@@ -99,6 +102,29 @@ namespace qtransport {
         }
 
         /**
+         * @brief Pushes a new value onto the queue with a time to live and priority
+         *
+         * @param value     The value to push onto the queue.
+         * @param ttl       The time to live of the value in milliseconds.
+         * @param priority  The priority of the value (range is 0 - PMAX)
+         */
+        void push(DataType&& value, uint32_t ttl, uint8_t priority = 0) {
+            std::lock_guard<std::mutex> _(_mutex);
+
+            if (priority >= PMAX) {
+                throw InvalidPriorityException("Priority not within range");
+            }
+
+            if (!_queue[priority]) {
+                _queue[priority] = std::make_unique<timeQueue>(_duration_ms, _interval_ms, _tick_service, _initial_queue_size);
+            }
+
+            auto& queue = _queue[priority];
+            queue->push(std::move(value), ttl);
+        }
+
+
+        /**
          * @brief Get the first object from queue
          *
          * @return std::nullopt if queue is empty, otherwise reference to object
@@ -108,11 +134,11 @@ namespace qtransport {
             std::lock_guard<std::mutex> _(_mutex);
 
             for (auto& tqueue : _queue) {
-                if (!tqueue)
+                if (!tqueue || tqueue->empty())
                     continue;
 
                 if (auto obj = tqueue->front())
-                    return obj;
+                    return *obj;
             }
 
             return std::nullopt;
@@ -128,11 +154,11 @@ namespace qtransport {
             std::lock_guard<std::mutex> _(_mutex);
 
             for (auto& tqueue : _queue) {
-                if (!tqueue)
+                if (!tqueue || tqueue->empty())
                     continue;
 
                 if (auto obj = tqueue->pop_front())
-                    return obj;
+                    return std::move(*obj);
             }
 
             return std::nullopt;
@@ -154,13 +180,13 @@ namespace qtransport {
         /**
          * @brief Clear queue
          */
-        void clear() {
+         void clear()
+        {
             std::lock_guard<std::mutex> _(_mutex);
 
-            for (auto& tqueue: _queue) {
-                if (tqueue && !tqueue->empty()) {
+            for (auto& tqueue : _queue) {
+                if (tqueue && !tqueue->empty())
                     tqueue->clear();
-                }
             }
         }
 

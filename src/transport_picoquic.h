@@ -29,6 +29,10 @@
 
 namespace qtransport {
 
+    constexpr int PQ_LOOP_MAX_DELAY_US = 500;           /// The max microseconds that pq_loop will be ran again
+    constexpr int PQ_REST_WAIT_MIN_PRIORITY = 4;        /// Minimum priority value to consider for RESET and WAIT
+    constexpr int PQ_CC_LOW_CWIN = 4000;                /// Bytes less than this value are considered a low/congested CWIN
+
 class PicoQuicTransport : public ITransport
 {
   public:
@@ -37,6 +41,8 @@ class PicoQuicTransport : public ITransport
     struct ConnectionMetrics {
         uint64_t time_checks {0};
         uint64_t total_retransmits {0};
+        uint64_t cwin_congested {0};                    /// Number of times CWIN is low or zero (congested)
+        uint64_t prev_cwin_congested {0};               /// Previous number of times CWIN is congested
 
         auto operator<=>(const ConnectionMetrics&) const = default;
     };
@@ -59,6 +65,7 @@ class PicoQuicTransport : public ITransport
         uint64_t tx_queue_discards {0};                     /// Number of objects discarded due to TTL expiry or clear
         uint64_t tx_delayed_callback {0};                   /// Count of times transmit callbacks were delayed
         uint64_t prev_tx_delayed_callback {0};              /// Previous transmit delayed callback value, set each interval
+        uint64_t tx_reset_wait {0};                         /// Number of times data context performed a reset and wait
         uint64_t stream_objects_sent {0};
         uint64_t stream_bytes_sent {0};
         uint64_t stream_bytes_recv {0};
@@ -82,7 +89,10 @@ class PicoQuicTransport : public ITransport
         bool is_default_context { false };                   /// Indicates if the data context is the default context
         bool is_bidir { false };                             /// Indicates if the stream is bidir (true) or unidir (false)
         bool mark_stream_active { false };                   /// Instructs the stream to be marked active
-        bool mark_dgram_ready {false };                      /// Instructs datagram to be marked ready/active
+        bool mark_dgram_ready { false };                     /// Instructs datagram to be marked ready/active
+
+        bool uses_reset_wait { false };                      /// Indicates if data context can/uses reset wait strategy
+        bool tx_reset_wait_discard { false };                /// Instructs TX objects to be discarded on POP instead
 
         DataContextId data_ctx_id {0};                       /// The ID of this context
         TransportConnId conn_id {0};                         /// The connection ID this context is under
@@ -98,8 +108,9 @@ class PicoQuicTransport : public ITransport
         uint8_t priority {0};
 
         uint64_t in_data_cb_skip_count {0};                  /// Number of times callback was skipped due to size
-        std::unique_ptr<safe_queue<bytes_t>> rx_data;        /// Pending objects received from the network
-        std::unique_ptr<priority_queue<bytes_t>> tx_data;    /// Pending objects to be written to the network
+
+        std::unique_ptr<safe_queue<ConnData>> rx_data;        /// Pending objects received from the network
+        std::unique_ptr<priority_queue<ConnData>> tx_data;    /// Pending objects to be written to the network
 
         uint8_t* stream_tx_object {nullptr};                 /// Current object that is being sent as a byte stream
         size_t stream_tx_object_size {0};                    /// Size of the tx object
@@ -131,8 +142,8 @@ class PicoQuicTransport : public ITransport
         };
         std::map<uint64_t, StreamRxBuffer> stream_rx_buffer;        /// Map of stream receive buffers, key is stream_id
 
-        // The last time TX callback was run
-        std::chrono::time_point<std::chrono::steady_clock> last_tx_callback_time { std::chrono::steady_clock::now() };
+        // The last ticks when TX callback was run
+        uint64_t last_tx_tick { 0 };
 
         DataContextMetrics metrics;
 
@@ -203,6 +214,7 @@ class PicoQuicTransport : public ITransport
 
         // States
         bool is_congested { false };
+        uint16_t not_congested_gauge { 0 };                  /// Interval gauge count of consecutive not congested checks
 
         // Metrics
         ConnectionMetrics metrics;
@@ -273,6 +285,7 @@ class PicoQuicTransport : public ITransport
     TransportError enqueue(const TransportConnId& conn_id,
                            const DataContextId& data_ctx_id,
                            std::vector<uint8_t>&& bytes,
+                           std::vector<qtransport::MethodTraceItem> &&trace,
                            const uint8_t priority,
                            const uint32_t ttl_ms,
                            const EnqueueFlags flags) override;

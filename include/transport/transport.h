@@ -5,6 +5,7 @@
 #include <optional>
 #include <queue>
 #include <vector>
+#include <chrono>
 #include <sys/socket.h>
 
 #include <cantina/logger.h>
@@ -73,7 +74,7 @@ struct TransportConfig
   const uint32_t time_queue_init_queue_size {1000};     /// Initial queue size to reserve upfront
   const uint32_t time_queue_max_duration {1000};        /// Max duration for the time queue in milliseconds
   const uint32_t time_queue_bucket_interval {1};        /// The bucket interval in milliseconds
-  const uint32_t time_queue_size_rx { 1000 };           /// Receive queue size
+  const uint32_t time_queue_rx_size {1000};             /// Receive queue size
   bool debug {false};                                   /// Enable debug logging/processing
   const uint64_t quic_cwin_minimum { 131072 };          /// QUIC congestion control minimum size (default is 128k)
   const uint32_t quic_wifi_shadow_rtt_us { 20000 };     /// QUIC wifi shadow RTT in microseconds
@@ -82,6 +83,36 @@ struct TransportConfig
   const uint64_t pacing_increase_threshold_Bps { 16000 };   /// QUIC pacing rate increase threshold for notification in Bps
 
   const uint64_t idle_timeout_ms { 30000 };             /// Idle timeout for transport connection(s) in milliseconds
+  const bool use_reset_wait_strategy { true };          /// Use Reset and wait strategy for congestion control
+};
+
+using time_stamp_us = std::chrono::time_point<std::chrono::steady_clock, std::chrono::microseconds>;
+
+struct MethodTraceItem {
+    const std::string method;                   /// Name of the method
+    const time_stamp_us start_time;             /// Original start time of the call
+    uint32_t delta;                             /// Delta is calculated based on start_time and now time of constructor
+
+    MethodTraceItem() :
+        method("root"),
+        start_time(std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::steady_clock::now())),
+        delta(0) {
+    }
+
+    MethodTraceItem(const std::string method, const time_stamp_us start_time) :
+            method(method),
+            start_time(start_time) {
+        delta = (std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::steady_clock::now()) -
+                 start_time).count();
+    }
+};
+
+struct ConnData {
+    TransportConnId conn_id;
+    DataContextId data_ctx_id;
+    uint8_t priority;
+    std::vector<uint8_t> data;
+    std::vector<MethodTraceItem> trace;
 };
 
 /**
@@ -288,7 +319,7 @@ public:
    * @param[in] bytes		Data to send/write
    * @param[in] priority    Priority of the object, range should be 0 - 255
    * @param[in] ttl_ms      The age the object should exist in queue in milliseconds
-   *
+   * @param[in] trace       Method time trace vector
    * @param[in] flags       Flags for stream and queue handling on enqueue of object
    *
    * @returns TransportError is returned indicating status of the operation
@@ -296,6 +327,7 @@ public:
   virtual TransportError enqueue(const TransportConnId& context_id,
                                  const DataContextId& data_ctx_id,
                                  std::vector<uint8_t>&& bytes,
+                                 std::vector<qtransport::MethodTraceItem> &&trace = { MethodTraceItem{} },
                                  const uint8_t priority = 1,
                                  const uint32_t ttl_ms=350,
                                  const EnqueueFlags flags={false, false, false}) = 0;

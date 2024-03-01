@@ -31,6 +31,7 @@
 #include <thread>
 #include <type_traits>
 #include <vector>
+#include <sys/select.h>
 
 namespace qtransport {
 
@@ -61,7 +62,7 @@ namespace qtransport {
         threaded_tick_service() { _tick_thread = std::thread(&threaded_tick_service::tick_loop, this); }
 
         threaded_tick_service(const threaded_tick_service& other)
-          : _ticks{ other._ticks.load() }
+          : _ticks{ other._ticks }
           , _stop{ other._stop.load() }
         {
             _tick_thread = std::thread(&threaded_tick_service::tick_loop, this);
@@ -76,7 +77,7 @@ namespace qtransport {
 
         threaded_tick_service& operator=(const threaded_tick_service& other)
         {
-            _ticks = other._ticks.load();
+            _ticks = other._ticks;
             _stop = other._stop.load();
             _tick_thread = std::thread(&threaded_tick_service::tick_loop, this);
             return *this;
@@ -95,7 +96,7 @@ namespace qtransport {
 
             timeval sleep_time = {.tv_sec = 0, .tv_usec = interval_us};
             while (!_stop) {
-                select(1, NULL, NULL, NULL, &sleep_time);
+                select(0, NULL, NULL, NULL, &sleep_time);
                 sleep_time.tv_usec = interval_us;
                 ++_ticks;
             }
@@ -103,7 +104,7 @@ namespace qtransport {
 
       private:
         /// The current ticks since the tick_service began.
-        std::atomic<uint64_t> _ticks{ 0 };
+        uint64_t _ticks{ 0 };
 
         /// Flag to stop tick_service thread.
         std::atomic<bool> _stop{ false };
@@ -266,7 +267,7 @@ namespace qtransport {
         {
             if (auto obj = front()) {
                 pop();
-                return obj;
+                return std::move(*obj);
             }
 
             return std::nullopt;
@@ -314,9 +315,7 @@ namespace qtransport {
             }
         }
 
-      private:
-
-
+    private:
         /**
          * @brief Based on current time, adjust and move the bucket index with time
          *        (sliding window)

@@ -16,7 +16,7 @@ ITransport::make_client_transport(const TransportRemote& server,
 
   switch (server.proto) {
     case TransportProtocol::UDP:
-      return std::make_shared<UDPTransport>(server, delegate, false, logger);
+      return std::make_shared<UDPTransport>(server, tcfg, delegate, false, logger);
 #if not defined(PLATFORM_ESP)
     case TransportProtocol::QUIC:
       return std::make_shared<PicoQuicTransport>(server,
@@ -43,7 +43,8 @@ ITransport::make_server_transport(const TransportRemote& server,
 {
   switch (server.proto) {
     case TransportProtocol::UDP:
-      return std::make_shared<UDPTransport>(server, delegate, true, logger);
+      return std::make_shared<UDPTransport>(server, tcfg, delegate, true, logger);
+      
 #if not defined(PLATFORM_ESP)
     case TransportProtocol::QUIC:
       return std::make_shared<PicoQuicTransport>(server,
