@@ -463,7 +463,7 @@ void UDPTransport::fd_writer() {
         // Check each connection context for data to send
         for (const auto& [conn_id, conn]: conn_contexts) {
             // NOTE: Currently only implement single data context
-            const auto& data_ctx = conn->data_contexts[0];
+            auto& data_ctx = conn->data_contexts[0];
 
             const auto current_tick = _tick_service->get_ticks(std::chrono::milliseconds (1));
 
@@ -502,6 +502,8 @@ void UDPTransport::fd_writer() {
                 sent_data = true; // Don't treat this as data not sent, which causes a pause
                 continue; // Data maybe null if time queue has a delay in pop
             }
+
+            data_ctx.tx_queue_expired += cd.expired_count;
 
             cd.value.trace.push_back({"transport_udp:send_data", cd.value.trace.front().start_time});
 
@@ -767,6 +769,7 @@ void UDPTransport::fd_reader() {
                                      << " Loss: " << loss_pct << "%"
                                      << " TX-OTT: " << hdr.metrics.recv_ott_ms << "ms"
                                      << " RX-OTT: " << a_conn_it->second->rx_report_ott << "ms"
+                                     << " expired_count: " << a_conn_it->second->data_contexts[0].tx_queue_expired
                                      << std::flush;
 
                         a_conn_it->second->tx_zero_loss_count = 0;
@@ -793,6 +796,7 @@ void UDPTransport::fd_reader() {
                                          << " Loss: " << loss_pct << "%"
                                          << " TX-OTT: " << hdr.metrics.recv_ott_ms << "ms"
                                          << " RX-OTT: " << a_conn_it->second->rx_report_ott << "ms"
+                                         << " expired_count: " << a_conn_it->second->data_contexts[0].tx_queue_expired
                                          << std::flush;
 
                             // Add some data discard packets to measure if increase is okay

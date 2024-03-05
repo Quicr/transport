@@ -964,12 +964,6 @@ PicoQuicTransport::send_next_datagram(DataContext* data_ctx, uint8_t* bytes_ctx,
     check_callback_delta(data_ctx);
 
     auto out_data = data_ctx->tx_data->front();
-    logger->info << "tx_data size: " << data_ctx->tx_data->size()
-                 << " has_value: " << out_data.has_value
-                 << " expired: " << out_data.expired_count
-                 << " data_size: " << out_data.value.data.size()
-                 << " max_len: " << static_cast<int>(max_len)
-                 << std::flush;
     if (out_data.has_value) {
         if (out_data.value.data.size() == 0) {
             logger->error << "conn_id: " << data_ctx->conn_id
@@ -981,6 +975,9 @@ PicoQuicTransport::send_next_datagram(DataContext* data_ctx, uint8_t* bytes_ctx,
             data_ctx->tx_data->pop();
             return;
         }
+
+        data_ctx->metrics.tx_queue_expired += out_data.expired_count;
+
         if (max_len >= out_data.value.data.size()) {
             data_ctx->tx_data->pop();
 
@@ -1814,8 +1811,9 @@ void PicoQuicTransport::check_callback_delta(DataContext* data_ctx, bool tx) {
                       << " stream_id: " << data_ctx->current_stream_id
                       << " pri: " << static_cast<int>(data_ctx->priority)
                       << " CB TX delta " << delta_ms << " ms"
-                      << " count: " << data_ctx->metrics.tx_delayed_callback
+                      << " cb_tx_count: " << data_ctx->metrics.tx_delayed_callback
                       << " tx_queue_size: " << data_ctx->tx_data->size()
+                      << " expired_count: " << data_ctx->metrics.tx_queue_expired
                       << " dgram_cb_count: " << data_ctx->metrics.dgram_prepare_send
                       << " stream_cb_count: " << data_ctx->metrics.stream_prepare_send
                       << " tx_reset_wait: " << data_ctx->metrics.tx_reset_wait
