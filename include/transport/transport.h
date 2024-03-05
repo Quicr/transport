@@ -89,8 +89,8 @@ struct TransportConfig
 using time_stamp_us = std::chrono::time_point<std::chrono::steady_clock, std::chrono::microseconds>;
 
 struct MethodTraceItem {
-    const std::string method;                   /// Name of the method
-    const time_stamp_us start_time;             /// Original start time of the call
+    std::string method;                   /// Name of the method
+    time_stamp_us start_time;             /// Original start time of the call
     uint32_t delta;                             /// Delta is calculated based on start_time and now time of constructor
 
     MethodTraceItem() :

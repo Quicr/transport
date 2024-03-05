@@ -28,7 +28,6 @@
 #include <chrono>
 #include <memory>
 #include <mutex>
-#include <optional>
 #include <thread>
 #include <type_traits>
 #include <vector>
@@ -45,6 +44,13 @@ namespace qtransport {
         using duration_type = std::chrono::microseconds;
 
         virtual tick_type get_ticks(const duration_type& interval) const = 0;
+    };
+
+    template<typename T>
+    struct TimeQueueElement {
+        bool has_value { false };           /// Indicates if value was set/returned in front access
+        uint32_t expired_count { 0 };       /// Number of items expired before on this front access
+        T value;                            /// Value of front object
     };
 
     /**
@@ -274,47 +280,51 @@ namespace qtransport {
         /**
          * @brief Pops (removes) the front of the queue.
          *
-         * @returns The popped value, else nullopt.
+         * @returns TimeQueueElement of the popped value
          */
-        [[nodiscard]] std::optional<T> pop_front()
+        [[nodiscard]] TimeQueueElement<T> pop_front()
         {
-            if (auto obj = front()) {
+            auto obj = std::move(front());
+            if (obj.has_value) {
                 pop();
-                return std::move(*obj);
             }
 
-            return std::nullopt;
+            return std::move(obj);
         }
 
         /**
          * @brief Returns the most valid front of the queue without popping.
-         * @returns The front value of the queue, else nullopt
+         * @returns Element of the front value
          */
-        [[nodiscard]] std::optional<T> front()
+        [[nodiscard]] TimeQueueElement<T> front()
         {
             const tick_type ticks = advance();
+            TimeQueueElement<T> elem;
 
             if (_queue.empty())
-                return std::nullopt;
+                return std::move(elem);
 
             while (_queue_index < _queue.size()) {
                 auto& [bucket, value_index, expiry_tick, pop_wait_ttl] = _queue.at(_queue_index);
 
                 if (value_index >= bucket.size() || ticks > expiry_tick) {
+                    elem.expired_count++;
                     _queue_index++;
                     continue;
                 }
 
                 if (pop_wait_ttl > ticks) {
-                    return std::nullopt;
+                    return std::move(elem);
                 }
 
-                return bucket.at(value_index);
+                elem.has_value = true;
+                elem.value = bucket.at(value_index);
+                return std::move(elem);
             }
 
             clear();
 
-            return std::nullopt;
+            return std::move(elem);
         }
 
         size_t size() const noexcept { return _queue.size() - _queue_index; }

@@ -113,6 +113,7 @@ namespace qtransport {
             DataContextId data_ctx_id{0};
             uint8_t priority {10};
 
+            uint64_t in_data_cb_skip_count {0};                  /// Number of times callback was skipped due to size
             safe_queue<ConnData> rx_data;
             std::unique_ptr<priority_queue<ConnData>> tx_data;
         };
@@ -249,7 +250,8 @@ namespace qtransport {
         TransportConfig tconfig;
 
         TransportDelegate &delegate;
-        std::mutex _connections_mutex;                         /// Mutex for connections map changes
+        std::mutex _writer_mutex;                              /// Mutex for writer
+        std::mutex _reader_mutex;                              /// Mutex for reader
 
         TransportConnId last_conn_id{0};
         std::map<TransportConnId, std::shared_ptr<ConnectionContext>> conn_contexts;

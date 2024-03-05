@@ -137,7 +137,8 @@ void UDPTransport::close(const TransportConnId &conn_id) {
 
     logger->debug << "Close UDP conn_id: " << conn_id << std::flush;
 
-    std::unique_lock<std::mutex> lock(_connections_mutex);
+    std::unique_lock<std::mutex> wlock(_writer_mutex);
+    std::unique_lock<std::mutex> rlock(_reader_mutex);
 
     auto conn_it = conn_contexts.find(conn_id);
     if (conn_it != conn_contexts.end()) {
@@ -145,6 +146,7 @@ void UDPTransport::close(const TransportConnId &conn_id) {
         if (conn_it->second->status == TransportStatus::Ready) {
             send_disconnect(conn_it->second->id, conn_it->second->addr);
         }
+
         addr_conn_contexts.erase(conn_it->second->addr.id);
         conn_contexts.erase(conn_it);
 
@@ -152,7 +154,8 @@ void UDPTransport::close(const TransportConnId &conn_id) {
             stop = true;
         }
 
-        lock.unlock(); // Make sure to not lock when calling delegates
+        wlock.unlock(); // Make sure to not lock when calling delegates
+        rlock.unlock(); // Make sure to not lock when calling delegates
         delegate.on_connection_status(conn_id, TransportStatus::Disconnected);
         return;
     }
@@ -397,6 +400,10 @@ bool UDPTransport::send_data(ConnectionContext& conn, const ConnData& cd, bool d
         return false;
     }
 
+    if (discard) {
+        logger->debug << "Sending discard data size: " << cd.data.size() << std::flush;
+    }
+
     memcpy(data, &dhdr, sizeof(dhdr));
     memcpy(data + sizeof(dhdr), cd.data.data(), cd.data.size());
 
@@ -446,7 +453,7 @@ void UDPTransport::fd_writer() {
 
     bool sent_data = false;
     int all_empty_count = 0;
-    std::unique_lock<std::mutex> lock(_connections_mutex);
+    std::unique_lock<std::mutex> lock(_writer_mutex);
 
     while (not stop) {
         sent_data = false;
@@ -485,30 +492,32 @@ void UDPTransport::fd_writer() {
 
             auto cd = data_ctx.tx_data->pop_front();
 
-            if (!cd.has_value()) {
+            if (!cd.has_value) {
                 // Send keepalive if needed
                 if (conn->last_tx_msg_tick && current_tick - conn->last_tx_msg_tick > conn->ka_interval_ms) {
                     conn->last_tx_msg_tick = current_tick;
                     send_keepalive(*conn);
                 }
+
+                sent_data = true; // Don't treat this as data not sent, which causes a pause
                 continue; // Data maybe null if time queue has a delay in pop
             }
 
-            cd->trace.push_back({"transport_udp:send_data", cd->trace.front().start_time});
+            cd.value.trace.push_back({"transport_udp:send_data", cd.value.trace.front().start_time});
 
-            if (!cd->trace.empty() && cd->trace.back().delta > 60000) {
+            if (!cd.value.trace.empty() && cd.value.trace.back().delta > 60000) {
 
-                logger->info << "MethodTrace conn_id: " << cd->conn_id
-                             << " data_ctx_id: " << cd->data_ctx_id
-                             << " priority: " << static_cast<int>(cd->priority);
-                for (const auto &ti: cd->trace) {
+                logger->info << "MethodTrace conn_id: " << cd.value.conn_id
+                             << " data_ctx_id: " << cd.value.data_ctx_id
+                             << " priority: " << static_cast<int>(cd.value.priority);
+                for (const auto &ti: cd.value.trace) {
                     logger->info << " " << ti.method << ": " << ti.delta << " ";
                 }
 
-                logger->info << " total_duration: " << cd->trace.back().delta << std::flush;
+                logger->info << " total_duration: " << cd.value.trace.back().delta << std::flush;
             }
 
-            if (! send_data(*conn, *cd)) {
+            if (! send_data(*conn, cd.value, (cd.value.priority ? false : true))) {
                 continue;
             }
 
@@ -517,13 +526,13 @@ void UDPTransport::fd_writer() {
             conn->last_tx_msg_tick = current_tick;
 
             // Calculate the wait for tick value
-            conn->running_wait_us += static_cast<int>(cd->data.size() / conn->bytes_per_us);
+            conn->running_wait_us += static_cast<int>(cd.value.data.size() / conn->bytes_per_us);
 
             if (conn->running_wait_us > 1000) {
                 conn->wait_for_tick = current_tick + conn->running_wait_us / 1000;
 
-                //conn->running_wait_us %= 1000; // Set running age to remainder value less than a tick
-                conn->running_wait_us = 0;
+                conn->running_wait_us %= 1000; // Set running age to remainder value less than a tick
+                //conn->running_wait_us = 0;
             }
         }
 
@@ -534,7 +543,7 @@ void UDPTransport::fd_writer() {
 
             if (all_empty_count > 5) {
                 all_empty_count = 1;
-                to.tv_usec = 250;
+                to.tv_usec = 300;
                 select(0, NULL, NULL, NULL, &to);
             }
         }
@@ -565,7 +574,7 @@ void UDPTransport::fd_reader() {
     // larger than actual MTU require IP frags
     uint8_t data[dataSize];
 
-    std::unique_lock<std::mutex> lock(_connections_mutex);
+    std::unique_lock<std::mutex> lock(_reader_mutex);
     lock.unlock();      // Will lock later in while loop
 
     while (not stop) {
@@ -739,12 +748,12 @@ void UDPTransport::fd_reader() {
 
                     const auto send_KBps = static_cast<int>(prev_report.metrics.total_bytes / prev_report.metrics.duration_ms);
                     //const auto ack_KBps = static_cast<int>(hdr.metrics.total_bytes / hdr.metrics.duration_ms);
-                    const auto ack_KBps = static_cast<int>(hdr.metrics.total_bytes / std::max(prev_report.metrics.duration_ms, hdr.metrics.duration_ms));
+                    const auto ack_KBps = static_cast<int>(hdr.metrics.total_bytes / hdr.metrics.duration_ms); //std::max(prev_report.metrics.duration_ms, hdr.metrics.duration_ms));
                     const auto prev_KBps = (a_conn_it->second->bytes_per_us * 1'000'000 / 1024);
                     const auto loss_pct = 1.0 - static_cast<double>(hdr.metrics.total_packets) / prev_report.metrics.total_packets;
                     a_conn_it->second->tx_report_ott = hdr.metrics.recv_ott_ms;
 
-                    if (loss_pct >= 0.01 && hdr.metrics.total_packets > 15) {
+                    if (loss_pct >= 0.01 && hdr.metrics.total_packets > 10) {
                         logger->info << "Received REPORT (decrease) conn_id: " << a_conn_it->second->id
                                      << " tx_report_id: " << hdr.report_id
                                      << " duration_ms: " << hdr.metrics.duration_ms
@@ -761,14 +770,14 @@ void UDPTransport::fd_reader() {
                                      << std::flush;
 
                         a_conn_it->second->tx_zero_loss_count = 0;
-                        a_conn_it->second->set_KBps(ack_KBps * .90);
+                        a_conn_it->second->set_KBps(ack_KBps * .95);
 
-                    } else if (hdr.metrics.total_packets > 15 && loss_pct == 0) {
+                    } else if (hdr.metrics.total_packets > 10 && loss_pct == 0) {
                         a_conn_it->second->tx_zero_loss_count++;
 
                         // Only increase bandwidth if there is no loss for a little while
                         if (a_conn_it->second->tx_zero_loss_count > 5
-                            && a_conn_it->second->set_KBps(ack_KBps * 1.05, true)) {
+                            && a_conn_it->second->set_KBps(ack_KBps * 1.03, true)) {
 
                             logger->info << "Received REPORT (increase) conn_id: " << a_conn_it->second->id
                                          << " prev_report_id: " << a_conn_it->second->tx_report_id - 1
@@ -785,7 +794,24 @@ void UDPTransport::fd_reader() {
                                          << " TX-OTT: " << hdr.metrics.recv_ott_ms << "ms"
                                          << " RX-OTT: " << a_conn_it->second->rx_report_ott << "ms"
                                          << std::flush;
-                            a_conn_it->second->tx_zero_loss_count = 3;
+
+                            // Add some data discard packets to measure if increase is okay
+                            std::vector<MethodTraceItem> trace;
+                            const auto start_time = std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::steady_clock::now());
+
+                            trace.push_back({"transport_udp:recv_data", start_time});
+                            std::vector<uint8_t> discard_data(100);
+
+                            // Number of objects to send is a burst of 5ms of date based on new rate spread over 100 byte objects
+                            const auto send_count = (a_conn_it->second->bytes_per_us * 1000) * 5 / 100;
+
+                            for (int i=0; i < send_count; i++) {
+                                ConnData cd { a_conn_it->second->id, 0, 0,
+                                              discard_data, trace};
+                                a_conn_it->second->data_contexts[0].tx_data->push(cd, 6, 0, 0);
+                            }
+
+                            a_conn_it->second->tx_zero_loss_count = 2;
                         }
                     }
                 }
@@ -841,8 +867,12 @@ void UDPTransport::fd_reader() {
                         a_conn_it->second->data_contexts[0].rx_data.push(cd);
 
                         lock.unlock();
-                        if (a_conn_it->second->data_contexts[0].rx_data.size() < 4) {
+                        if ( a_conn_it->second->data_contexts[0].rx_data.size() < 10
+                            || a_conn_it->second->data_contexts[0].in_data_cb_skip_count > 20) {
+
                             delegate.on_recv_notify(cd.conn_id, cd.data_ctx_id);
+                        } else {
+                            a_conn_it->second->data_contexts[0].in_data_cb_skip_count++;
                         }
                         continue;
                     }
@@ -873,7 +903,7 @@ TransportError UDPTransport::enqueue(const TransportConnId &conn_id,
 
     trace.push_back({"transport_udp:enqueue", trace.front().start_time});
 
-    std::lock_guard<std::mutex> _(_connections_mutex);
+    std::lock_guard<std::mutex> _(_writer_mutex);
 
     trace.push_back({"transport_udp:enqueue:afterLock", trace.front().start_time});
 
@@ -905,7 +935,7 @@ TransportError UDPTransport::enqueue(const TransportConnId &conn_id,
 std::optional<std::vector<uint8_t>> UDPTransport::dequeue(const TransportConnId &conn_id,
                                                           const DataContextId &data_ctx_id) {
 
-    std::lock_guard<std::mutex> _(_connections_mutex);
+    std::lock_guard<std::mutex> _(_reader_mutex);
 
     const auto conn_it = conn_contexts.find(conn_id);
     if (conn_it == conn_contexts.end()) {
@@ -924,6 +954,19 @@ std::optional<std::vector<uint8_t>> UDPTransport::dequeue(const TransportConnId 
     }
 
     if (auto cd = data_ctx_it->second.rx_data.pop()) {
+        cd->trace.push_back({"transport_udp:dequeue", cd->trace.front().start_time});
+
+        if (!cd->trace.empty() && cd->trace.back().delta > 1500) {
+            logger->info << "MethodTrace conn_id: " << cd->conn_id
+                         << " data_ctx_id: " << cd->data_ctx_id
+                         << " priority: " << static_cast<int>(cd->priority);
+            for (const auto &ti: cd->trace) {
+                logger->info << " " << ti.method << ": " << ti.delta << " ";
+            }
+
+            logger->info << " total_duration: " << cd->trace.back().delta << std::flush;
+        }
+
         return std::move(cd.value().data);
     }
 
@@ -940,7 +983,7 @@ TransportConnId UDPTransport::connect_client() {
         throw std::runtime_error("socket() failed");
     }
 
-    size_t snd_rcv_max = UDP_MAX_PACKET_SIZE;   // TODO: Add config for value
+    size_t snd_rcv_max = UDP_MAX_PACKET_SIZE * 16;   // TODO: Add config for value
     timeval rcv_timeout{.tv_sec = 0, .tv_usec = 1000};
 
     int err =
@@ -952,7 +995,7 @@ TransportConnId UDPTransport::connect_client() {
         throw std::runtime_error(s_log.str());
     }
 
-    snd_rcv_max = 1000000; // TODO: Add config for value
+    snd_rcv_max = UDP_MAX_PACKET_SIZE * 16; // TODO: Add config for value
     err =
             setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &snd_rcv_max, sizeof(snd_rcv_max));
     if (err != 0) {
@@ -1023,7 +1066,7 @@ TransportConnId UDPTransport::connect_client() {
 
     ++last_conn_id;
 
-    std::lock_guard<std::mutex> _(_connections_mutex);  // just for safety in case a close is called at the same time
+    std::lock_guard<std::mutex> _(_writer_mutex);  // just for safety in case a close is called at the same time
 
     const auto& [conn_it, is_new] = conn_contexts.emplace(last_conn_id,
                                                     std::make_shared<ConnectionContext>());
@@ -1074,7 +1117,7 @@ TransportConnId UDPTransport::connect_server() {
 
     // TODO: Add config for this value
     size_t snd_rcv_max = 2000000;
-    timeval rcv_timeout{.tv_sec = 0, .tv_usec = 10000};
+    timeval rcv_timeout{.tv_sec = 0, .tv_usec = 1000};
 
     err =
             setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &snd_rcv_max, sizeof(snd_rcv_max));

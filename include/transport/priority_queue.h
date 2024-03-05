@@ -109,9 +109,9 @@ namespace qtransport {
         /**
          * @brief Get the first object from queue
          *
-         * @return std::nullopt if queue is empty, otherwise reference to object
+         * @return TimeQueueElement<DataType> value from time queue
          */
-        std::optional<DataType> front()
+        TimeQueueElement<DataType> front()
         {
             std::lock_guard<std::mutex> _(_mutex);
 
@@ -119,19 +119,18 @@ namespace qtransport {
                 if (!tqueue || tqueue->empty())
                     continue;
 
-                if (auto obj = tqueue->front())
-                    return *obj;
+                return std::move(tqueue->front());
             }
 
-            return std::nullopt;
+            return {};
         }
 
         /**
          * @brief Get and remove the first object from queue
          *
-         * @return std::nullopt if queue is empty, otherwise reference to object
+         * @return TimeQueueElement<DataType> from time queue
          */
-        std::optional<DataType> pop_front()
+        TimeQueueElement<DataType> pop_front()
         {
             std::lock_guard<std::mutex> _(_mutex);
 
@@ -139,11 +138,10 @@ namespace qtransport {
                 if (!tqueue || tqueue->empty())
                     continue;
 
-                if (auto obj = tqueue->pop_front())
-                    return std::move(*obj);
+                return std::move(tqueue->pop_front());
             }
 
-            return std::nullopt;
+            return {};
         }
 
         /**
