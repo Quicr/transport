@@ -98,7 +98,7 @@ int main() {
   cantina::LoggerPointer logger = std::make_shared<cantina::Logger>("ECHO");
   Delegate d(logger);
   TransportRemote serverIp =
-      TransportRemote{"127.0.0.1", 1234, TransportProtocol::QUIC};
+      TransportRemote{"127.0.0.1", 1234, TransportProtocol::UDP};
   TransportConfig tconfig{.tls_cert_filename = "./server-cert.pem",
                           .tls_key_filename = "./server-key.pem",
                           .time_queue_max_duration = 1000,

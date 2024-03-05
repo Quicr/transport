@@ -19,7 +19,31 @@
 
 #include "transport_udp.h"
 
+#if defined(PLATFORM_ESP)
+#include <lwip/netdb.h>
+#include "lwip/err.h"
+#include "lwip/sockets.h"
+#include "lwip/sys.h"
+#include <lwip/netdb.h>
+
+#include "esp_pthread.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#endif
+
 using namespace qtransport;
+
+#if defined (PLATFORM_ESP)
+static esp_pthread_cfg_t create_config(const char *name, int core_id, int stack, int prio)
+{
+    auto cfg = esp_pthread_get_default_config();
+    cfg.thread_name = name;
+    cfg.pin_to_core = core_id;
+    cfg.stack_size = stack;
+    cfg.prio = prio;
+    return cfg;
+}
+#endif
 
 UDPTransport::~UDPTransport() {
     // TODO: Close all streams and connections
@@ -89,10 +113,11 @@ DataContextId UDPTransport::createDataContext(const qtransport::TransportConnId 
         data_ctx_it->second.data_ctx_id = data_ctx_id;
         data_ctx_it->second.priority = priority;
         data_ctx_it->second.rx_data.set_limit(tconfig.time_queue_rx_size);
-        data_ctx_it->second.tx_data = std::make_unique<priority_queue<ConnData>>(tconfig.time_queue_max_duration,
-                                                                                 tconfig.time_queue_bucket_interval,
-                                                                                 _tick_service,
-                                                                                 tconfig.time_queue_init_queue_size);
+        data_ctx_it->second.tx_data 
+            = std::make_unique<priority_queue<ConnData>>(tconfig.time_queue_max_duration,
+                                                        tconfig.time_queue_bucket_interval,
+                                                        _tick_service,
+                                                        tconfig.time_queue_init_queue_size);
     }
 
     return data_ctx_id;
@@ -572,11 +597,16 @@ void UDPTransport::fd_writer() {
  * not called again if there is still pending data to be dequeued for the same
  * StreamId
  */
-void UDPTransport::fd_reader() {
-    logger->Log("Starting transport reader thread");
-
-    const int dataSize = UDP_MAX_PACKET_SIZE; // TODO Add config var to set this value.  Sizes
+void
+UDPTransport::fd_reader() {
+    logger->Log(cantina::LogLevel::Info, "Starting transport reader thread");
+ #if defined(PLATFORM_ESP)
+  // TODO (Suhas): Revisit this once we have basic esp functionality working
+  const int dataSize = 2048;
+#else
+  const int dataSize = UDP_MAX_PACKET_SIZE; // TODO Add config var to set this value.  Sizes
     // larger than actual MTU require IP frags
+#endif
     uint8_t data[dataSize];
 
     std::unique_lock<std::mutex> lock(_connections_mutex);
@@ -638,8 +668,9 @@ void UDPTransport::fd_reader() {
 
                         send_connect_ok(last_conn_id, remote_addr);
 
-                        const auto [conn_it, _] = conn_contexts.emplace(last_conn_id,
-                                                                        std::make_shared<ConnectionContext>());
+                        const auto [conn_it, _] 
+                        = conn_contexts.emplace(last_conn_id,
+                                                std::make_shared<ConnectionContext>());
 
                         auto &conn = *conn_it->second;
 
@@ -910,87 +941,114 @@ std::optional<std::vector<uint8_t>> UDPTransport::dequeue(const TransportConnId 
     return std::nullopt;
 }
 
-TransportConnId UDPTransport::connect_client() {
-    std::stringstream s_log;
+TransportConnId
+UDPTransport::connect_client()
+{
+  std::stringstream s_log;
 
-    clientStatus = TransportStatus::Connecting;
+  clientStatus = TransportStatus::Connecting;
 
-    fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (fd == -1) {
-        throw std::runtime_error("socket() failed");
+  fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+  if (fd == -1) {
+#if defined(PLATFORM_ESP)
+    // TODO: Suhas: Figure out better API than aborting
+    abort();
+#else
+    throw std::runtime_error("socket() failed");
+#endif
+  }
+
+int err = 0;
+#if not defined(PLATFORM_ESP)
+  // TODO: Add config for these values
+  size_t snd_rcv_max = UDP_MAX_PACKET_SIZE;
+  timeval rcv_timeout { .tv_sec = 0, .tv_usec = 10000 };
+
+  err =
+    setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &snd_rcv_max, sizeof(snd_rcv_max));
+  if (err != 0) {
+    s_log << "client_connect: Unable to set send buffer size: "
+          << strerror(errno);
+    logger->Log(cantina::LogLevel::Critical, s_log.str());
+    throw std::runtime_error(s_log.str());
+  }
+
+  snd_rcv_max = 1000000; // TODO: Add config for value
+  err =
+    setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &snd_rcv_max, sizeof(snd_rcv_max));
+  if (err != 0) {
+    s_log << "client_connect: Unable to set receive buffer size: "
+          << strerror(errno);
+    logger->Log(cantina::LogLevel::Critical, s_log.str());
+    throw std::runtime_error(s_log.str());
+  }
+#endif
+
+  err =
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &rcv_timeout, sizeof(rcv_timeout));
+  if (err != 0) {
+    s_log << "client_connect: Unable to set receive timeout: "
+          << strerror(errno);
+    logger->Log(cantina::LogLevel::Critical, s_log.str());
+#if not defined(PLATFORM_ESP)    
+    throw std::runtime_error(s_log.str());
+ #else
+    abort();
+#endif       
+  }
+
+
+  struct sockaddr_in srvAddr;
+  srvAddr.sin_family = AF_INET;
+  srvAddr.sin_addr.s_addr = htonl(INADDR_ANY);
+  srvAddr.sin_port = 0;
+  err = bind(fd, (struct sockaddr*)&srvAddr, sizeof(srvAddr));
+  if (err) {
+    s_log << "client_connect: Unable to bind to socket: " << strerror(errno);
+    logger->Log(cantina::LogLevel::Critical, s_log.str());
+#if not defined(PLATFORM_ESP)    
+    throw std::runtime_error(s_log.str());
+ #else
+    abort();
+#endif       
+  }
+
+  std::string sPort = std::to_string(htons(serverInfo.port));
+  struct addrinfo hints = {}, *address_list = NULL;
+  hints.ai_family = AF_INET;
+  hints.ai_socktype = SOCK_DGRAM;
+  hints.ai_protocol = IPPROTO_UDP;
+  err = getaddrinfo(
+    serverInfo.host_or_ip.c_str(), sPort.c_str(), &hints, &address_list);
+  if (err) {
+    strerror(1);
+    s_log << "client_connect: Unable to resolve remote ip address: "
+          << strerror(errno);
+    logger->Log(cantina::LogLevel::Critical, s_log.str());
+#if not defined(PLATFORM_ESP)    
+    throw std::runtime_error(s_log.str());
+ #else
+    abort();
+#endif       
+  }
+
+  struct addrinfo *item = nullptr, *found_addr = nullptr;
+  for (item = address_list; item != nullptr; item = item->ai_next) {
+    if (item->ai_family == AF_INET && item->ai_socktype == SOCK_DGRAM &&
+        item->ai_protocol == IPPROTO_UDP) {
+      found_addr = item;
+      break;
     }
+  }
 
-    size_t snd_rcv_max = UDP_MAX_PACKET_SIZE;   // TODO: Add config for value
-    timeval rcv_timeout{.tv_sec = 0, .tv_usec = 1000};
-
-    int err =
-            setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &snd_rcv_max, sizeof(snd_rcv_max));
-    if (err != 0) {
-        s_log << "client_connect: Unable to set send buffer size: "
-              << strerror(errno);
-        logger->Log(cantina::LogLevel::Critical, s_log.str());
-        throw std::runtime_error(s_log.str());
-    }
-
-    snd_rcv_max = 1000000; // TODO: Add config for value
-    err =
-            setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &snd_rcv_max, sizeof(snd_rcv_max));
-    if (err != 0) {
-        s_log << "client_connect: Unable to set receive buffer size: "
-              << strerror(errno);
-        logger->Log(cantina::LogLevel::Critical, s_log.str());
-        throw std::runtime_error(s_log.str());
-    }
-
-    err =
-            setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &rcv_timeout, sizeof(rcv_timeout));
-    if (err != 0) {
-        s_log << "client_connect: Unable to set receive timeout: "
-              << strerror(errno);
-        logger->Log(cantina::LogLevel::Critical, s_log.str());
-        throw std::runtime_error(s_log.str());
-    }
-
-
-    struct sockaddr_in srvAddr;
-    srvAddr.sin_family = AF_INET;
-    srvAddr.sin_addr.s_addr = htonl(INADDR_ANY);
-    srvAddr.sin_port = 0;
-    err = bind(fd, (struct sockaddr *) &srvAddr, sizeof(srvAddr));
-    if (err) {
-        s_log << "client_connect: Unable to bind to socket: " << strerror(errno);
-        logger->Log(cantina::LogLevel::Critical, s_log.str());
-        throw std::runtime_error(s_log.str());
-    }
-
-    std::string sPort = std::to_string(htons(serverInfo.port));
-    struct addrinfo hints = {}, *address_list = NULL;
-    hints.ai_family = AF_INET;
-    hints.ai_socktype = SOCK_DGRAM;
-    hints.ai_protocol = IPPROTO_UDP;
-    err = getaddrinfo(
-            serverInfo.host_or_ip.c_str(), sPort.c_str(), &hints, &address_list);
-    if (err) {
-        strerror(1);
-        s_log << "client_connect: Unable to resolve remote ip address: "
-              << strerror(errno);
-        logger->Log(cantina::LogLevel::Critical, s_log.str());
-        throw std::runtime_error(s_log.str());
-    }
-
-    struct addrinfo *item = nullptr, *found_addr = nullptr;
-    for (item = address_list; item != nullptr; item = item->ai_next) {
-        if (item->ai_family == AF_INET && item->ai_socktype == SOCK_DGRAM &&
-            item->ai_protocol == IPPROTO_UDP) {
-            found_addr = item;
-            break;
-        }
-    }
-
-    if (found_addr == nullptr) {
-        logger->critical << "client_connect: No IP address found" << std::flush;
-        throw std::runtime_error("client_connect: No IP address found");
-    }
+  if (found_addr == nullptr) {
+    logger->critical << "client_connect: No IP address found" << std::flush;
+#if not defined(PLATFORM_ESP)    
+    throw std::runtime_error(s_log.str());
+ #else
+    abort();
+#endif       
+  }
 
     struct sockaddr_in *ipv4 = (struct sockaddr_in *) &serverAddr.addr;
     memcpy(ipv4, found_addr->ai_addr, found_addr->ai_addrlen);
@@ -1025,63 +1083,101 @@ TransportConnId UDPTransport::connect_client() {
     // Notify caller that the connection is now ready
     delegate.on_connection_status(last_conn_id, TransportStatus::Ready);
 
-    running_threads.emplace_back(&UDPTransport::fd_reader, this);
 
-    running_threads.emplace_back(&UDPTransport::fd_writer, this);
+#if defined(PLATFORM_ESP)
+    auto cfg = create_config("FDReader", 1, 12 * 1024, 5);
+    auto esp_err = esp_pthread_set_cfg(&cfg);
+    if(esp_err != ESP_OK) {
+        abort();
+    }
+#endif
 
-    return last_conn_id;
+  running_threads.emplace_back(&UDPTransport::fd_reader, this);
+
+#if defined(PLATFORM_ESP)
+  cfg = create_config("FDWriter", 1, 12 * 1024, 5);
+  esp_err = esp_pthread_set_cfg(&cfg);
+  if(esp_err != ESP_OK) {
+   abort();
+  }
+#endif
+  
+  running_threads.emplace_back(&UDPTransport::fd_writer, this);
+
+  return last_conn_id;
 }
 
 TransportConnId UDPTransport::connect_server() {
     std::stringstream s_log;
 
-    fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (fd < 0) {
-        s_log << "connect_server: Unable to create socket: " << strerror(errno);
-        logger->Log(cantina::LogLevel::Critical, s_log.str());
-        throw std::runtime_error(s_log.str());
-    }
+  fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+  if (fd < 0) {
+    s_log << "connect_server: Unable to create socket: " << strerror(errno);
+    logger->Log(cantina::LogLevel::Critical, s_log.str());
+#if not defined(PLATFORM_ESP)    
+    throw std::runtime_error(s_log.str());
+ #else
+    abort();
+#endif       
+  }
 
-    // set for re-use
-    int one = 1;
-    int err =
-            setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (const char *) &one, sizeof(one));
-    if (err != 0) {
-        s_log << "connect_server: setsockopt error: " << strerror(errno);
-        logger->Log(cantina::LogLevel::Critical, s_log.str());
-        throw std::runtime_error(s_log.str());
-    }
+  // set for re-use
+  int one = 1;
+  int err =
+    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (const char*)&one, sizeof(one));
+  if (err != 0) {
+    s_log << "connect_server: setsockopt error: " << strerror(errno);
+    logger->Log(cantina::LogLevel::Critical, s_log.str());
+#if not defined(PLATFORM_ESP)    
+    throw std::runtime_error(s_log.str());
+ #else
+    abort();
+#endif       
 
-    // TODO: Add config for this value
+  }
+
     size_t snd_rcv_max = 2000000;
-    timeval rcv_timeout{.tv_sec = 0, .tv_usec = 10000};
+    timeval rcv_timeout{.tv_sec = 0, .tv_usec = 1000};
 
-    err =
-            setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &snd_rcv_max, sizeof(snd_rcv_max));
-    if (err != 0) {
-        s_log << "client_connect: Unable to set send buffer size: "
-              << strerror(errno);
-        logger->Log(cantina::LogLevel::Critical, s_log.str());
-        throw std::runtime_error(s_log.str());
-    }
+  err =
+    setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &snd_rcv_max, sizeof(snd_rcv_max));
+  if (err != 0) {
+    s_log << "client_connect: Unable to set send buffer size: "
+          << strerror(errno);
+    logger->Log(cantina::LogLevel::Critical, s_log.str());
+#if not defined(PLATFORM_ESP)    
+    throw std::runtime_error(s_log.str());
+ #else
+    abort();
+#endif       
+  }
 
-    err =
-            setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &snd_rcv_max, sizeof(snd_rcv_max));
-    if (err != 0) {
-        s_log << "client_connect: Unable to set receive buffer size: "
-              << strerror(errno);
-        logger->Log(cantina::LogLevel::Critical, s_log.str());
-        throw std::runtime_error(s_log.str());
-    }
+  err =
+    setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &snd_rcv_max, sizeof(snd_rcv_max));
+  if (err != 0) {
+    s_log << "client_connect: Unable to set receive buffer size: "
+          << strerror(errno);
+    logger->Log(cantina::LogLevel::Critical, s_log.str());
+#if not defined(PLATFORM_ESP)    
+    throw std::runtime_error(s_log.str());
+ #else
+    abort();
+#endif       
 
-    err =
-            setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &rcv_timeout, sizeof(rcv_timeout));
-    if (err != 0) {
-        s_log << "client_connect: Unable to set receive timeout: "
-              << strerror(errno);
-        logger->Log(cantina::LogLevel::Critical, s_log.str());
-        throw std::runtime_error(s_log.str());
-    }
+  }
+
+  err =
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &rcv_timeout, sizeof(rcv_timeout));
+  if (err != 0) {
+    s_log << "client_connect: Unable to set receive timeout: "
+          << strerror(errno);
+    logger->Log(cantina::LogLevel::Critical, s_log.str());
+#if not defined(PLATFORM_ESP)    
+    throw std::runtime_error(s_log.str());
+ #else
+    abort();
+#endif       
+  }
 
 
     struct sockaddr_in srv_addr;
@@ -1100,7 +1196,23 @@ TransportConnId UDPTransport::connect_server() {
     logger->info << "connect_server: port: " << serverInfo.port << " fd: " << fd
                  << std::flush;
 
+#if defined(PLATFORM_ESP)
+  cfg = create_config("FDServerReader", 1, 12 * 1024, 5);
+  esp_err = esp_pthread_set_cfg(&cfg);
+  if(esp_err != ESP_OK) {
+   abort();
+  }
+#endif
     running_threads.emplace_back(&UDPTransport::fd_reader, this);
+
+#if defined(PLATFORM_ESP)
+  cfg = create_config("FDServerWriter", 1, 12 * 1024, 5);
+  esp_err = esp_pthread_set_cfg(&cfg);
+  if(esp_err != ESP_OK) {
+   abort();
+  }
+#endif
+
     running_threads.emplace_back(&UDPTransport::fd_writer, this);
 
     return last_conn_id;
