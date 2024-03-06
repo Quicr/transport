@@ -549,7 +549,7 @@ PicoQuicTransport::enqueue(const TransportConnId& conn_id,
                            std::vector<qtransport::MethodTraceItem> &&trace,
                            const uint8_t priority,
                            const uint32_t ttl_ms,
-                           const uint32_t delay_ms,
+                           [[maybe_unused]] const uint32_t delay_ms,
                            const EnqueueFlags flags)
 {
     if (bytes.empty()) {
@@ -621,7 +621,7 @@ PicoQuicTransport::enqueue(const TransportConnId& conn_id,
                       std::move(bytes),
                       std::move(trace)};
 
-        data_ctx_it->second.tx_data->push(std::move(cd), ttl_ms, priority, delay_ms);
+        data_ctx_it->second.tx_data->push(std::move(cd), ttl_ms, priority, 0);
 
         if (! data_ctx_it->second.mark_stream_active) {
             data_ctx_it->second.mark_stream_active = true;
