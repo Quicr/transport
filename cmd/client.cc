@@ -149,6 +149,7 @@ main()
                                 std::move(trace),
                                 1,
                                 350,
+                                0,
                                 encode_flags);
             }
             else {

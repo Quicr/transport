@@ -89,8 +89,8 @@ struct TransportConfig
 using time_stamp_us = std::chrono::time_point<std::chrono::steady_clock, std::chrono::microseconds>;
 
 struct MethodTraceItem {
-    const std::string method;                   /// Name of the method
-    const time_stamp_us start_time;             /// Original start time of the call
+    std::string method;                   /// Name of the method
+    time_stamp_us start_time;             /// Original start time of the call
     uint32_t delta;                             /// Delta is calculated based on start_time and now time of constructor
 
     MethodTraceItem() :
@@ -319,6 +319,7 @@ public:
    * @param[in] bytes		Data to send/write
    * @param[in] priority    Priority of the object, range should be 0 - 255
    * @param[in] ttl_ms      The age the object should exist in queue in milliseconds
+   * @param[in] delay_ms    Delay the pop by millisecond value
    * @param[in] trace       Method time trace vector
    * @param[in] flags       Flags for stream and queue handling on enqueue of object
    *
@@ -330,6 +331,7 @@ public:
                                  std::vector<qtransport::MethodTraceItem> &&trace = { MethodTraceItem{} },
                                  const uint8_t priority = 1,
                                  const uint32_t ttl_ms=350,
+                                 const uint32_t delay_ms=0,
                                  const EnqueueFlags flags={false, false, false}) = 0;
 
   /**

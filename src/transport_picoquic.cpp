@@ -202,7 +202,7 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
         }
 
         case picoquic_callback_stream_reset: {
-            transport->logger->info << "Received RESET stream conn_id: " << conn_id
+            transport->logger->debug << "Received RESET stream conn_id: " << conn_id
                                     << " stream_id: " << stream_id
                                     << std::flush;
 
@@ -224,7 +224,7 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
                 data_ctx->stream_rx_buffer.erase(rx_buf_it);
             }
 
-            transport->logger->info << "Received RESET stream; conn_id: " << data_ctx->conn_id
+            transport->logger->debug << "Received RESET stream; conn_id: " << data_ctx->conn_id
                                     << " data_ctx_id: " << data_ctx->data_ctx_id
                                     << " stream_id: " << stream_id
                                     << " RX buf drops: " << data_ctx->metrics.rx_buffer_drops << std::flush;
@@ -549,6 +549,7 @@ PicoQuicTransport::enqueue(const TransportConnId& conn_id,
                            std::vector<qtransport::MethodTraceItem> &&trace,
                            const uint8_t priority,
                            const uint32_t ttl_ms,
+                           [[maybe_unused]] const uint32_t delay_ms,
                            const EnqueueFlags flags)
 {
     if (bytes.empty()) {
@@ -582,7 +583,7 @@ PicoQuicTransport::enqueue(const TransportConnId& conn_id,
                       std::move(bytes),
                       std::move(trace)};
 
-        conn_ctx_it->second.default_data_context.tx_data->push(std::move(cd), ttl_ms, priority);
+        conn_ctx_it->second.default_data_context.tx_data->push(std::move(cd), ttl_ms, priority, 0);
 
         if (!conn_ctx_it->second.default_data_context.mark_dgram_ready) {
             conn_ctx_it->second.default_data_context.mark_dgram_ready = true;
@@ -620,7 +621,7 @@ PicoQuicTransport::enqueue(const TransportConnId& conn_id,
                       std::move(bytes),
                       std::move(trace)};
 
-        data_ctx_it->second.tx_data->push(std::move(cd), ttl_ms, priority);
+        data_ctx_it->second.tx_data->push(std::move(cd), ttl_ms, priority, 0);
 
         if (! data_ctx_it->second.mark_stream_active) {
             data_ctx_it->second.mark_stream_active = true;
@@ -963,8 +964,8 @@ PicoQuicTransport::send_next_datagram(DataContext* data_ctx, uint8_t* bytes_ctx,
     check_callback_delta(data_ctx);
 
     auto out_data = data_ctx->tx_data->front();
-    if (out_data.has_value()) {
-        if (out_data->data.size() == 0) {
+    if (out_data.has_value) {
+        if (out_data.value.data.size() == 0) {
             logger->error << "conn_id: " << data_ctx->conn_id
                           << " data_ctx_id: " << data_ctx->data_ctx_id
                           << " priority: " << static_cast<int>(data_ctx->priority)
@@ -974,20 +975,23 @@ PicoQuicTransport::send_next_datagram(DataContext* data_ctx, uint8_t* bytes_ctx,
             data_ctx->tx_data->pop();
             return;
         }
-        if (max_len >= out_data->data.size()) {
+
+        data_ctx->metrics.tx_queue_expired += out_data.expired_count;
+
+        if (max_len >= out_data.value.data.size()) {
             data_ctx->tx_data->pop();
 
-            out_data->trace.push_back({"transport_quic:send_dgram", out_data->trace.front().start_time});
+            out_data.value.trace.push_back({"transport_quic:send_dgram", out_data.value.trace.front().start_time});
 
-            if (out_data->trace.back().delta > 15000) {
+            if (out_data.value.trace.back().delta > 60000) {
                 logger->info << "MethodTrace conn_id: " << data_ctx->conn_id
                              << " data_ctx_id: " << data_ctx->data_ctx_id
-                             << " priority: " << static_cast<int>(out_data->priority);
-                for (const auto &ti: out_data->trace) {
+                             << " priority: " << static_cast<int>(out_data.value.priority);
+                for (const auto &ti: out_data.value.trace) {
                     logger->info << " " << ti.method << ": " << ti.delta << " ";
                 }
 
-                logger->info << " total_duration: " << out_data->trace.back().delta << std::flush;
+                logger->info << " total_duration: " << out_data.value.trace.back().delta << std::flush;
             }
 
             data_ctx->metrics.dgram_sent++;
@@ -995,11 +999,11 @@ PicoQuicTransport::send_next_datagram(DataContext* data_ctx, uint8_t* bytes_ctx,
             uint8_t* buf = NULL;
 
             buf = picoquic_provide_datagram_buffer_ex(bytes_ctx,
-                                                      out_data->data.size(),
+                                                      out_data.value.data.size(),
                                                       data_ctx->tx_data->empty() ? picoquic_datagram_not_active : picoquic_datagram_active_any_path);
 
             if (buf != NULL) {
-                std::memcpy(buf, out_data->data.data(), out_data->data.size());
+                std::memcpy(buf, out_data.value.data.data(), out_data.value.data.size());
             }
         }
         else {
@@ -1068,7 +1072,7 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
 
             close_stream(*conn_ctx, data_ctx, true);
 
-            logger->info << "Replacing stream using RESET; conn_id: " << data_ctx->conn_id
+            logger->debug << "Replacing stream using RESET; conn_id: " << data_ctx->conn_id
                          << " data_ctx_id: " << data_ctx->data_ctx_id
                          << " existing_stream: " << existing_stream_id
                          << " write buf drops: " << data_ctx->metrics.tx_buffer_drops
@@ -1106,7 +1110,7 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
 
     if (data_ctx->tx_reset_wait_discard) {      // Drop TX objects till next reset/new stream
         auto obj = data_ctx->tx_data->pop_front();
-        if (obj.has_value()) {
+        if (obj.has_value) {
             data_ctx->metrics.tx_queue_discards++;
 
             picoquic_runner_queue.push([=]() {
@@ -1141,8 +1145,8 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
 
         auto obj = data_ctx->tx_data->pop_front();
 
-        if (obj.has_value()) {
-            if (obj->data.size() == 0) {
+        if (obj.has_value) {
+            if (obj.value.data.size() == 0) {
                 logger->error << "conn_id: " << data_ctx->conn_id
                               << " data_ctx_id: " << data_ctx->data_ctx_id
                               << " priority: " << static_cast<int>(data_ctx->priority)
@@ -1154,32 +1158,32 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
 
             data_ctx->metrics.stream_objects_sent++;
 
-            obj->trace.push_back({"transport_quic:send_stream", obj->trace.front().start_time});
+            obj.value.trace.push_back({"transport_quic:send_stream", obj.value.trace.front().start_time});
 
-            if (!obj->trace.empty() && obj->trace.back().delta > 15000) {
+            if (!obj.value.trace.empty() && obj.value.trace.back().delta > 15000) {
                 logger->info << "MethodTrace conn_id: " << data_ctx->conn_id
                              << " data_ctx_id: " << data_ctx->data_ctx_id
-                             << " priority: " << static_cast<int>(obj->priority);
-                for (const auto &ti: obj->trace) {
+                             << " priority: " << static_cast<int>(obj.value.priority);
+                for (const auto &ti: obj.value.trace) {
                     logger->info << " " << ti.method << ": " << ti.delta << " ";
                 }
 
-                logger->info << " total_duration: " << obj->trace.back().delta << std::flush;
+                logger->info << " total_duration: " << obj.value.trace.back().delta << std::flush;
             }
 
             max_len -= 4; // Subtract out the length header that will be added
 
-            data_ctx->stream_tx_object = new uint8_t[obj->data.size()];
-            data_ctx->stream_tx_object_size = obj->data.size();
-            std::memcpy(data_ctx->stream_tx_object, obj->data.data(), obj->data.size());
+            data_ctx->stream_tx_object = new uint8_t[obj.value.data.size()];
+            data_ctx->stream_tx_object_size = obj.value.data.size();
+            std::memcpy(data_ctx->stream_tx_object, obj.value.data.data(), obj.value.data.size());
 
-            if (obj->data.size() > max_len) {
+            if (obj.value.data.size() > max_len) {
                 data_ctx->stream_tx_object_offset = max_len;
                 data_len = max_len;
                 is_still_active = 1;
 
             } else {
-                data_len = obj->data.size();
+                data_len = obj.value.data.size();
                 data_ctx->stream_tx_object_offset = 0;
             }
 
@@ -1312,7 +1316,7 @@ PicoQuicTransport::on_recv_datagram(DataContext* data_ctx, uint8_t* bytes, size_
     }
 
 
-    if (data_ctx->rx_data->size() < 4 || data_ctx->in_data_cb_skip_count > 30) {
+    if (data_ctx->rx_data->size() < 10 || data_ctx->in_data_cb_skip_count > 20) {
         data_ctx->in_data_cb_skip_count = 0;
 
         if (!cbNotifyQueue.push([=, this]() { delegate.on_recv_notify(data_ctx->conn_id, data_ctx->current_stream_id, true); })) {
@@ -1807,8 +1811,9 @@ void PicoQuicTransport::check_callback_delta(DataContext* data_ctx, bool tx) {
                       << " stream_id: " << data_ctx->current_stream_id
                       << " pri: " << static_cast<int>(data_ctx->priority)
                       << " CB TX delta " << delta_ms << " ms"
-                      << " count: " << data_ctx->metrics.tx_delayed_callback
+                      << " cb_tx_count: " << data_ctx->metrics.tx_delayed_callback
                       << " tx_queue_size: " << data_ctx->tx_data->size()
+                      << " expired_count: " << data_ctx->metrics.tx_queue_expired
                       << " dgram_cb_count: " << data_ctx->metrics.dgram_prepare_send
                       << " stream_cb_count: " << data_ctx->metrics.stream_prepare_send
                       << " tx_reset_wait: " << data_ctx->metrics.tx_reset_wait
@@ -1846,7 +1851,7 @@ void PicoQuicTransport::create_stream(ConnectionContext& conn_ctx, DataContext *
     conn_ctx.last_stream_id = ::get_next_stream_id(conn_ctx.last_stream_id ,
                                                    _is_server_mode, !data_ctx->is_bidir);
 
-    logger->info << "conn_id: " << conn_ctx.conn_id << " data_ctx_id: " << data_ctx->data_ctx_id
+    logger->debug << "conn_id: " << conn_ctx.conn_id << " data_ctx_id: " << data_ctx->data_ctx_id
                  << " create new stream with stream_id: " << conn_ctx.last_stream_id
                  << std::flush;
 
@@ -1877,12 +1882,12 @@ void PicoQuicTransport::close_stream(const ConnectionContext& conn_ctx, DataCont
         return; // stream already closed
     }
 
-    logger->info << "conn_id: " << conn_ctx.conn_id << " data_ctx_id: " << data_ctx->data_ctx_id
+    logger->debug << "conn_id: " << conn_ctx.conn_id << " data_ctx_id: " << data_ctx->data_ctx_id
                  << " closing stream stream_id: " << data_ctx->current_stream_id
                  << std::flush;
 
     if (send_reset) {
-        logger->info << "Reset stream_id: " << data_ctx->current_stream_id << " conn_id: " << conn_ctx.conn_id
+        logger->debug << "Reset stream_id: " << data_ctx->current_stream_id << " conn_id: " << conn_ctx.conn_id
                      << std::flush;
 
         picoquic_set_app_stream_ctx(conn_ctx.pq_cnx, data_ctx->current_stream_id , NULL);

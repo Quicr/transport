@@ -6,6 +6,7 @@
 #include <vector>
 #include <map>
 #include <mutex>
+#include <array>
 #include <queue>
 #include <string>
 #include <thread>
@@ -75,6 +76,7 @@ namespace qtransport {
                                std::vector<qtransport::MethodTraceItem> &&trace,
                                const uint8_t priority,
                                const uint32_t ttl_ms,
+                               const uint32_t delay_ms,
                                const EnqueueFlags flags) override;
 
         std::optional<std::vector<uint8_t>>
@@ -111,6 +113,9 @@ namespace qtransport {
             DataContextId data_ctx_id{0};
             uint8_t priority {10};
 
+            uint64_t in_data_cb_skip_count {0};                  /// Number of times callback was skipped due to size
+            uint64_t tx_queue_expired {0};                       /// Number of objects expired before pop/front
+
             safe_queue<ConnData> rx_data;
             std::unique_ptr<priority_queue<ConnData>> tx_data;
         };
@@ -139,6 +144,8 @@ namespace qtransport {
             uint16_t tx_report_ott {0};                 // Last received report one-way trip time to receiver (as seen by receiver)
             uint16_t rx_report_ott {0};                 // Last RX OTT based on received data from receiver
 
+            uint64_t tx_zero_loss_count {0};              // Consecutive count of reports with ZERO packet loss
+
             uint16_t tx_report_id {0};                  // Report ID increments on interval. Wrap is okay
             uint16_t tx_report_interval_ms { 100 };     // Report ID interval in milliseconds
             uint64_t tx_report_start_tick { 0 };        // Tick value on report change (new report interval)
@@ -148,8 +155,7 @@ namespace qtransport {
             uint64_t report_rx_start_tick { 0 };        // Tick value at start of the RX report interval
 
             UdpProtocol::ReportMetrics tx_report_metrics;
-            UdpProtocol::ReportMetrics prev_tx_report_metrics; // Last report
-
+            std::array<UdpProtocol::ReportMessage, 5> tx_prev_reports;
             /*
              * Shaping variables
              */
@@ -158,11 +164,16 @@ namespace qtransport {
 
             double bytes_per_us {6.4};     // Default to 50Mbps
 
-            void set_KBps(uint32_t KBps, bool max_of= false) {
+            bool set_KBps(uint32_t KBps, bool max_of= false) {
+                if (KBps < UDP_MIN_KBPS) return false;
+
                 const auto bpUs = (KBps * 1024) / 1'000'000.0 /* 1 second double value */;
                 if (!max_of || bpUs > bytes_per_us) {
                     bytes_per_us = bpUs;
+                    return true;
                 }
+
+                return false;
             }
         };
 
@@ -241,7 +252,8 @@ namespace qtransport {
         TransportConfig tconfig;
 
         TransportDelegate &delegate;
-        std::mutex _connections_mutex;                         /// Mutex for connections map changes
+        std::mutex _writer_mutex;                              /// Mutex for writer
+        std::mutex _reader_mutex;                              /// Mutex for reader
 
         TransportConnId last_conn_id{0};
         std::map<TransportConnId, std::shared_ptr<ConnectionContext>> conn_contexts;

@@ -63,6 +63,7 @@ class PicoQuicTransport : public ITransport
         uint64_t rx_buffer_drops {0};                       /// count of receive buffer drops of data due to RESET request
         uint64_t tx_buffer_drops{0};                        /// Count of write buffer drops of data due to RESET request
         uint64_t tx_queue_discards {0};                     /// Number of objects discarded due to TTL expiry or clear
+        uint64_t tx_queue_expired {0};                      /// Number of objects expired before pop/front
         uint64_t tx_delayed_callback {0};                   /// Count of times transmit callbacks were delayed
         uint64_t prev_tx_delayed_callback {0};              /// Previous transmit delayed callback value, set each interval
         uint64_t tx_reset_wait {0};                         /// Number of times data context performed a reset and wait
@@ -288,6 +289,7 @@ class PicoQuicTransport : public ITransport
                            std::vector<qtransport::MethodTraceItem> &&trace,
                            const uint8_t priority,
                            const uint32_t ttl_ms,
+                           const uint32_t delay_ms,
                            const EnqueueFlags flags) override;
 
     std::optional<std::vector<uint8_t>> dequeue(
