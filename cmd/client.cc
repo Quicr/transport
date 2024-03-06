@@ -88,7 +88,7 @@ main()
 {
     char* envVar;
 
-    TransportRemote server = TransportRemote{ "127.0.0.1", 1234, TransportProtocol::QUIC };
+    TransportRemote server = TransportRemote{ "127.0.0.1", 1234, TransportProtocol::UDP };
 
     TransportConfig tconfig{ .tls_cert_filename = NULL,
                              .tls_key_filename = NULL,

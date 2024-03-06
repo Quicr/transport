@@ -9,12 +9,15 @@ project(quicr-transport
 if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
     option(QTRANSPORT_BUILD_TESTS "Build tests for quicr transport" ON)
 else()
-    option(QTRANSPORT_BUILD_TESTS "Build tests for quicr trasnsport" OFF)
+    option(QTRANSPORT_BUILD_TESTS "Build tests for quicr transport" OFF)
 endif()
 
+option(PLATFORM_ESP_IDF "Enabble suppport for esp-idf (Default OFF)" OFF)
 
-find_package(Threads REQUIRED)
-find_package(PkgConfig REQUIRED)
+if (NOT PLATFORM_ESP_IDF)
+  find_package(Threads REQUIRED)
+  find_package(PkgConfig REQUIRED)
+endif()
 
 ###
 ### Dependencies
@@ -24,16 +27,33 @@ add_subdirectory(dependencies)
 ###
 ### Main code
 ###
-add_library(quicr-transport
-        src/transport.cpp
-        src/transport_udp.cpp
-        src/transport_picoquic.cpp
-        )
+
+set (sources 
+    src/transport.cpp
+    src/transport_udp.cpp
+)
+
+if (NOT PLATFORM_ESP_IDF)
+    list(APPEND sources src/transport_picoquic.cpp)
+endif()
+
+add_library(quicr-transport ${sources})
 
 target_link_libraries(quicr-transport
     PUBLIC
-        cantina::logger
-        picoquic-core picoquic-log)
+    cantina::logger
+)
+
+if (NOT PLATFORM_ESP_IDF)
+  target_link_libraries(quicr-transport
+          PUBLIC
+          picoquic-core picoquic-log)
+endif()          
+
+if (PLATFORM_ESP_IDF)
+  add_compile_definitions(${LIB_NAME} PLATFORM_ESP)          
+endif()
+
 target_include_directories(quicr-transport PUBLIC include src )
 set_target_properties(quicr-transport
         PROPERTIES
