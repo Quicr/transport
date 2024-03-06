@@ -202,7 +202,7 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
         }
 
         case picoquic_callback_stream_reset: {
-            transport->logger->info << "Received RESET stream conn_id: " << conn_id
+            transport->logger->debug << "Received RESET stream conn_id: " << conn_id
                                     << " stream_id: " << stream_id
                                     << std::flush;
 
@@ -224,7 +224,7 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
                 data_ctx->stream_rx_buffer.erase(rx_buf_it);
             }
 
-            transport->logger->info << "Received RESET stream; conn_id: " << data_ctx->conn_id
+            transport->logger->debug << "Received RESET stream; conn_id: " << data_ctx->conn_id
                                     << " data_ctx_id: " << data_ctx->data_ctx_id
                                     << " stream_id: " << stream_id
                                     << " RX buf drops: " << data_ctx->metrics.rx_buffer_drops << std::flush;
@@ -1072,7 +1072,7 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
 
             close_stream(*conn_ctx, data_ctx, true);
 
-            logger->info << "Replacing stream using RESET; conn_id: " << data_ctx->conn_id
+            logger->debug << "Replacing stream using RESET; conn_id: " << data_ctx->conn_id
                          << " data_ctx_id: " << data_ctx->data_ctx_id
                          << " existing_stream: " << existing_stream_id
                          << " write buf drops: " << data_ctx->metrics.tx_buffer_drops
@@ -1851,7 +1851,7 @@ void PicoQuicTransport::create_stream(ConnectionContext& conn_ctx, DataContext *
     conn_ctx.last_stream_id = ::get_next_stream_id(conn_ctx.last_stream_id ,
                                                    _is_server_mode, !data_ctx->is_bidir);
 
-    logger->info << "conn_id: " << conn_ctx.conn_id << " data_ctx_id: " << data_ctx->data_ctx_id
+    logger->debug << "conn_id: " << conn_ctx.conn_id << " data_ctx_id: " << data_ctx->data_ctx_id
                  << " create new stream with stream_id: " << conn_ctx.last_stream_id
                  << std::flush;
 
@@ -1882,12 +1882,12 @@ void PicoQuicTransport::close_stream(const ConnectionContext& conn_ctx, DataCont
         return; // stream already closed
     }
 
-    logger->info << "conn_id: " << conn_ctx.conn_id << " data_ctx_id: " << data_ctx->data_ctx_id
+    logger->debug << "conn_id: " << conn_ctx.conn_id << " data_ctx_id: " << data_ctx->data_ctx_id
                  << " closing stream stream_id: " << data_ctx->current_stream_id
                  << std::flush;
 
     if (send_reset) {
-        logger->info << "Reset stream_id: " << data_ctx->current_stream_id << " conn_id: " << conn_ctx.conn_id
+        logger->debug << "Reset stream_id: " << data_ctx->current_stream_id << " conn_id: " << conn_ctx.conn_id
                      << std::flush;
 
         picoquic_set_app_stream_ctx(conn_ctx.pq_cnx, data_ctx->current_stream_id , NULL);
