@@ -143,6 +143,10 @@ void UDPTransport::deleteDataContext(const TransportConnId& conn_id, DataContext
     }
 }
 
+void UDPTransport::setRemoteDataCtxId([[maybe_unused]] const TransportConnId conn_id,
+                                      [[maybe_unused]] const DataContextId data_ctx_id,
+                                      [[maybe_unused]] const DataContextId remote_data_ctx_id) {};
+
 bool UDPTransport::getPeerAddrInfo(const TransportConnId &conn_id,
                                    sockaddr_storage *addr) {
     // Locate the given transport context

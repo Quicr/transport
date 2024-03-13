@@ -82,6 +82,10 @@ namespace qtransport {
         std::optional<std::vector<uint8_t>>
         dequeue(const TransportConnId &conn_id, const DataContextId &data_ctx_id) override;
 
+        void setRemoteDataCtxId(const TransportConnId conn_id,
+                                const DataContextId data_ctx_id,
+                                const DataContextId remote_data_ctx_id) override;
+
     private:
         TransportConnId connect_client();
         TransportConnId connect_server();
