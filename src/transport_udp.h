@@ -113,24 +113,51 @@ namespace qtransport {
             }
         };
 
+        struct DataContextMetrics {
+            uint64_t enqueued_objs {0};
+
+            uint64_t tx_queue_expired {0};                      /// count of objects expired before pop/front
+            uint64_t tx_bytes {0};                              /// count of bytes sent
+            uint64_t tx_objects {0};                            /// count of objects (messages) sent
+
+            uint64_t rx_bytes {0};                              /// count of bytes received
+            uint64_t rx_objects {0};                            /// count of objects received
+
+            constexpr auto operator<=>(const DataContextMetrics&) const = default;
+        };
+
+
         struct DataContext {
             DataContextId data_ctx_id{0};
             uint8_t priority {10};
 
-            uint64_t in_data_cb_skip_count {0};                  /// Number of times callback was skipped due to size
-            uint64_t tx_queue_expired {0};                       /// Number of objects expired before pop/front
+            DataContextId remote_data_ctx_id {0};              /// Remote data context ID to use for this context
+            uintV_t remote_data_ctx_id_V {0};                  /// Remote data context ID as variable length integer
 
-            safe_queue<ConnData> rx_data;
-            std::unique_ptr<priority_queue<ConnData>> tx_data;
+            DataContextMetrics metrics;
+
+            uint64_t in_data_cb_skip_count {0};               /// Number of times callback was skipped due to size
+
+            safe_queue<ConnData> rx_data;                     /// Receive queue
+        };
+
+        struct ConnectionMetrics {
+            uint64_t rx_no_context {0};                 /// count of times RX object data context doesn't exist
+
+            uint64_t tx_no_context {0};                 /// count of times TX object data context doesn't exist
+            uint64_t tx_discard_objects {0};            /// count of discard objects sent
         };
 
         struct ConnectionContext {
             Addr addr;
-            TransportConnId id;                     // This/conn ID
-            DataContextId next_data_ctx_id{1};
+            TransportConnId id {0};                     // This/conn ID
+            DataContextId next_data_ctx_id {0};
             std::map<DataContextId, DataContext> data_contexts;
 
+            ConnectionMetrics metrics;
+
             TransportStatus status { TransportStatus::Disconnected };
+            std::unique_ptr<priority_queue<ConnData>> tx_data;  // TX priority queue
 
             uint64_t last_rx_msg_tick { 0 };            /// Tick value (ms) when last message was received
             uint64_t last_tx_msg_tick { 0 };            /// Tick value (ms) when last message was sent
@@ -148,7 +175,7 @@ namespace qtransport {
             uint16_t tx_report_ott {0};                 // Last received report one-way trip time to receiver (as seen by receiver)
             uint16_t rx_report_ott {0};                 // Last RX OTT based on received data from receiver
 
-            uint64_t tx_zero_loss_count {0};              // Consecutive count of reports with ZERO packet loss
+            uint64_t tx_zero_loss_count {0};            // Consecutive count of reports with ZERO packet loss
 
             uint16_t tx_report_id {0};                  // Report ID increments on interval. Wrap is okay
             uint16_t tx_report_interval_ms { 100 };     // Report ID interval in milliseconds
@@ -160,6 +187,7 @@ namespace qtransport {
 
             UdpProtocol::ReportMetrics tx_report_metrics;
             std::array<UdpProtocol::ReportMessage, 5> tx_prev_reports;
+
             /*
              * Shaping variables
              */
@@ -227,12 +255,13 @@ namespace qtransport {
          * @notes: REQUIRES locking since the connection context will be updated
          *
          * @param conn[in,out]      Connection context reference, will be updated
+         * @param data_ctx[in,out]  Data context reference, will be updated
          * @param cd[in]            Connection data to send
          * @param discard[in]       True if data should be discarded on receive
          *
          * @return True if sent, false if not sent/error
          */
-        bool send_data(ConnectionContext& conn, const ConnData& cd, bool discard=false);
+        bool send_data(ConnectionContext& conn, DataContext& data_ctx, const ConnData& cd, bool discard=false);
 
         /**
          * @brief Send UDP protocol report message

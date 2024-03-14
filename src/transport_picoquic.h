@@ -39,45 +39,43 @@ class PicoQuicTransport : public ITransport
     const char* QUICR_ALPN = "quicr-v1";
 
     struct ConnectionMetrics {
-        uint64_t time_checks {0};
-        uint64_t total_retransmits {0};
+        uint64_t time_checks {0};                       /// count of time checks (event loop time checks)
+        uint64_t tx_retransmits {0};                    /// count of retransmits
         uint64_t cwin_congested {0};                    /// Number of times CWIN is low or zero (congested)
         uint64_t prev_cwin_congested {0};               /// Previous number of times CWIN is congested
 
         uint64_t dgram_invalid_ctx_id {0};              /// count of datagrams that had a data context that was not known
 
-        uint64_t dgram_prepare_send {0};                /// count of picoquic callback for datagram can be sent
-        uint64_t dgram_ack {0};                         /// count of picoquic callback for acked datagrams
-        uint64_t dgram_lost {0};                        /// count of picoquic callback for lost datagrams
-        uint64_t dgram_spurious {0};                    /// count of picoquic callback for late/delayed dgram acks
+        uint64_t tx_dgram_cb {0};                       /// count of picoquic callback for datagram can be sent
+        uint64_t tx_dgram_ack {0};                      /// count of picoquic callback for acked datagrams
+        uint64_t tx_dgram_lost {0};                     /// count of picoquic callback for lost datagrams
+        uint64_t tx_dgram_spurious {0};                 /// count of picoquic callback for late/delayed dgram acks
 
         auto operator<=>(const ConnectionMetrics&) const = default;
     };
 
     struct DataContextMetrics {
-        uint64_t dgram_received {0};
-        uint64_t dgram_sent {0};
-
         uint64_t enqueued_objs {0};
 
-        uint64_t stream_prepare_send {0};
-        uint64_t stream_rx_callbacks {0};
+        uint64_t rx_dgrams {0};                         /// count of datagramms sent
+        uint64_t rx_stream_cb {0};                      /// count of callbacks to receive data
+        uint64_t rx_invalid_drops {0};                  /// count of times receive data could not be processed due to being invalid
+        uint64_t rx_buffer_drops {0};                   /// count of receive buffer drops of data due to RESET request
+        uint64_t rx_stream_bytes {0};                   /// count of stream bytes sent
+        uint64_t rx_stream_objects {0};                 /// count of stream objects sent
 
-        uint64_t rx_invalid_drops {0};                      /// count of times receive data could not be processed due to being invalid
-        uint64_t rx_buffer_drops {0};                       /// count of receive buffer drops of data due to RESET request
-        uint64_t tx_buffer_drops{0};                        /// Count of write buffer drops of data due to RESET request
-        uint64_t tx_queue_discards {0};                     /// Number of objects discarded due to TTL expiry or clear
-        uint64_t tx_queue_expired {0};                      /// Number of objects expired before pop/front
-        uint64_t tx_delayed_callback {0};                   /// Count of times transmit callbacks were delayed
-        uint64_t prev_tx_delayed_callback {0};              /// Previous transmit delayed callback value, set each interval
-        uint64_t tx_reset_wait {0};                         /// Number of times data context performed a reset and wait
-        uint64_t stream_objects_sent {0};
-        uint64_t stream_bytes_sent {0};
-        uint64_t stream_bytes_recv {0};
-        uint64_t stream_objects_recv {0};
+        uint64_t tx_stream_cb {0};                      /// count of stream callbacks to send data
+        uint64_t tx_dgrams {0};                         /// count of datagrams sent
+        uint64_t tx_buffer_drops{0};                    /// Count of write buffer drops of data due to RESET request
+        uint64_t tx_queue_discards {0};                 /// count of objects discarded due to TTL expiry or clear
+        uint64_t tx_queue_expired {0};                  /// count of objects expired before pop/front
+        uint64_t tx_delayed_callback {0};               /// Count of times transmit callbacks were delayed
+        uint64_t prev_tx_delayed_callback {0};          /// Previous transmit delayed callback value, set each interval
+        uint64_t tx_reset_wait {0};                     /// count of times data context performed a reset and wait
+        uint64_t tx_stream_objects {0};                 /// count of stream objects sent
+        uint64_t tx_stream_bytes {0};                   /// count of stream bytes sent
 
         constexpr auto operator<=>(const DataContextMetrics&) const = default;
-
     };
 
 

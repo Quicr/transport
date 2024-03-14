@@ -86,7 +86,7 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
                 transport->send_next_datagram(conn_ctx, bytes, length);
 
                 if (picoquic_get_cwin(pq_cnx) < PQ_CC_LOW_CWIN) {        // Congested if less than 8K or near jumbo MTU size
-                    conn_ctx->metrics.dgram_prepare_send++;
+                    conn_ctx->metrics.tx_dgram_cb++;
                     conn_ctx->metrics.cwin_congested++;
                 }
             }
@@ -97,19 +97,19 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
         case picoquic_callback_datagram_acked:
             //   bytes carries the original packet data
             if (auto conn_ctx = transport->getConnContext(conn_id)) {
-                conn_ctx->metrics.dgram_ack++;
+                conn_ctx->metrics.tx_dgram_ack++;
             }
             break;
 
         case picoquic_callback_datagram_spurious:
             if (auto conn_ctx = transport->getConnContext(conn_id)) {
-                conn_ctx->metrics.dgram_spurious++;
+                conn_ctx->metrics.tx_dgram_spurious++;
             }
             break;
 
         case picoquic_callback_datagram_lost:
             if (auto conn_ctx = transport->getConnContext(conn_id)) {
-                conn_ctx->metrics.dgram_lost++;
+                conn_ctx->metrics.tx_dgram_lost++;
             }
             break;
 
@@ -137,7 +137,7 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
                 break;
             }
 
-            data_ctx->metrics.stream_prepare_send++;
+            data_ctx->metrics.tx_stream_cb++;
             transport->send_stream_bytes(data_ctx, bytes, length);
             break;
         }
@@ -945,7 +945,7 @@ PicoQuicTransport::send_next_datagram(ConnectionContext* conn_ctx, uint8_t* byte
                 logger->info << " total_duration: " << out_data.value.trace.back().delta << std::flush;
             }
 
-            data_ctx_it->second.metrics.dgram_sent++;
+            data_ctx_it->second.metrics.tx_dgrams++;
 
             uint8_t* buf = nullptr;
 
@@ -1105,7 +1105,7 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
             }
 
 
-            data_ctx->metrics.stream_objects_sent++;
+            data_ctx->metrics.tx_stream_objects++;
             data_ctx->data_header.length_V = std::move(to_uintV(obj.value.data.size()));
             data_hdr_size = data_ctx->data_header.size();
 
@@ -1162,7 +1162,7 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
         }
     }
 
-    data_ctx->metrics.stream_bytes_sent += data_len;
+    data_ctx->metrics.tx_stream_bytes += data_len;
 
     if (!is_still_active && !data_ctx->tx_data->empty())
         is_still_active = 1;
@@ -1412,7 +1412,7 @@ void PicoQuicTransport::on_recv_stream_bytes(ConnectionContext* conn_ctx,
             bytes_p += rx_buf.object_size;
             length -= rx_buf.object_size;
 
-            data_ctx->metrics.stream_bytes_recv += rx_buf.object_size;
+            data_ctx->metrics.rx_stream_bytes += rx_buf.object_size;
 
             rx_buf.reset_buffer();
             length = 0; // no more data left to process
@@ -1423,7 +1423,7 @@ void PicoQuicTransport::on_recv_stream_bytes(ConnectionContext* conn_ctx,
 
             rx_buf.object_offset = length;
             std::memcpy(rx_buf.object, bytes_p, length);
-            data_ctx->metrics.stream_bytes_recv += length;
+            data_ctx->metrics.rx_stream_bytes += length;
             length = 0; // no more data left to process
         }
     }
@@ -1439,7 +1439,7 @@ void PicoQuicTransport::on_recv_stream_bytes(ConnectionContext* conn_ctx,
             length -= remaining_len;
         }
 
-        data_ctx->metrics.stream_bytes_recv += remaining_len;
+        data_ctx->metrics.rx_stream_bytes += remaining_len;
 
         std::memcpy(rx_buf.object + rx_buf.object_offset, bytes_p, remaining_len);
         bytes_p += remaining_len;
@@ -1465,7 +1465,7 @@ void PicoQuicTransport::on_recv_stream_bytes(ConnectionContext* conn_ctx,
     }
 
     if (object_complete) {
-        data_ctx->metrics.stream_objects_recv++;
+        data_ctx->metrics.rx_stream_objects++;
 
         if (cbNotifyQueue.size() > 150) {
             logger->warning << "on_recv_stream_bytes "
@@ -1582,13 +1582,13 @@ void PicoQuicTransport::check_conns_for_congestion()
             }
         }
 
-        if (cwin_congested_count && conn_ctx.pq_cnx->nb_retransmission_total - conn_ctx.metrics.total_retransmits  > 2) {
+        if (cwin_congested_count && conn_ctx.pq_cnx->nb_retransmission_total - conn_ctx.metrics.tx_retransmits > 2) {
             logger->info << "CC: remote: " << conn_ctx.peer_addr_text << " port: " << conn_ctx.peer_port
                          << " conn_id: " << conn_id << " retransmits increased, delta: "
-                         << (conn_ctx.pq_cnx->nb_retransmission_total - conn_ctx.metrics.total_retransmits)
+                         << (conn_ctx.pq_cnx->nb_retransmission_total - conn_ctx.metrics.tx_retransmits)
                          << " total: " << conn_ctx.pq_cnx->nb_retransmission_total << std::flush;
 
-            conn_ctx.metrics.total_retransmits = conn_ctx.pq_cnx->nb_retransmission_total;
+            conn_ctx.metrics.tx_retransmits = conn_ctx.pq_cnx->nb_retransmission_total;
             congested_count++;
         }
 
@@ -1597,7 +1597,7 @@ void PicoQuicTransport::check_conns_for_congestion()
             conn_ctx.is_congested = true;
             logger->info << "CC: conn_id: " << conn_id << " has streams congested."
                          << " congested_count: " << congested_count
-                         << " retrans: " << conn_ctx.metrics.total_retransmits
+                         << " retrans: " << conn_ctx.metrics.tx_retransmits
                          << " cwin_congested: " << conn_ctx.metrics.cwin_congested
                          << std::flush;
 
@@ -1809,7 +1809,7 @@ void PicoQuicTransport::check_callback_delta(DataContext* data_ctx, bool tx) {
                       << " cb_tx_count: " << data_ctx->metrics.tx_delayed_callback
                       << " tx_queue_size: " << data_ctx->tx_data->size()
                       << " expired_count: " << data_ctx->metrics.tx_queue_expired
-                      << " stream_cb_count: " << data_ctx->metrics.stream_prepare_send
+                      << " stream_cb_count: " << data_ctx->metrics.tx_stream_cb
                       << " tx_reset_wait: " << data_ctx->metrics.tx_reset_wait
                       << " tx_queue_discards: " << data_ctx->metrics.tx_queue_discards
                       << " rate Kbps: " << path_quality.pacing_rate * 8 / 1000

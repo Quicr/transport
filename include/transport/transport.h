@@ -198,6 +198,10 @@ using uintV_t = std::vector<uint8_t>;
  * @returns uint64_t value of the variable length integer
  */
  inline uint64_t to_uint64(const uintV_t& uintV) {
+     if (uintV.empty()) {
+         return 0;
+     }
+
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
     constexpr std::array<uint8_t, sizeof(uint64_t)> host_order { 0,1,2,3,4,5,6,7 };
 #else

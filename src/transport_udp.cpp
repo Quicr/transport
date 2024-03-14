@@ -86,14 +86,13 @@ TransportStatus UDPTransport::status() const {
     }
 }
 
-/*
- * UDP doesn't support multiple streams for clients.  This will return the same
- * stream ID used for the context
- */
 DataContextId UDPTransport::createDataContext(const qtransport::TransportConnId conn_id,
                                               [[maybe_unused]] bool use_reliable_transport,
                                               uint8_t priority,
                                               [[maybe_unused]] bool bidir) {
+
+    [[maybe_unused]] const std::lock_guard<std::mutex> wl(_writer_mutex);
+    [[maybe_unused]] const std::lock_guard<std::mutex> rl(_reader_mutex);
 
     const auto conn_it = conn_contexts.find(conn_id);
 
@@ -104,19 +103,17 @@ DataContextId UDPTransport::createDataContext(const qtransport::TransportConnId 
 
     auto& conn = *conn_it->second;
 
-    // Currently only a single/datagram stream/flow is implemented.
-    auto data_ctx_id = 0;
+    const auto data_ctx_id = conn.next_data_ctx_id++;
 
     const auto& [data_ctx_it, is_new] = conn.data_contexts.try_emplace(data_ctx_id);
 
     if (is_new) {
+        logger->info << "Creating data context conn_id: " << conn_id
+                     << " data_ctx_id: " << data_ctx_id
+                     << std::flush;
         data_ctx_it->second.data_ctx_id = data_ctx_id;
         data_ctx_it->second.priority = priority;
         data_ctx_it->second.rx_data.set_limit(tconfig.time_queue_rx_size);
-        data_ctx_it->second.tx_data = std::make_unique<priority_queue<ConnData>>(tconfig.time_queue_max_duration,
-                                                                                 tconfig.time_queue_bucket_interval,
-                                                                                 _tick_service,
-                                                                                 tconfig.time_queue_init_queue_size);
     }
 
     return data_ctx_id;
@@ -132,20 +129,35 @@ TransportConnId UDPTransport::start() {
 }
 
 void UDPTransport::deleteDataContext(const TransportConnId& conn_id, DataContextId data_ctx_id) {
+    [[maybe_unused]] const std::lock_guard<std::mutex> wl(_writer_mutex);
+    [[maybe_unused]] const std::lock_guard<std::mutex> rl(_reader_mutex);
 
-    // Do not delete the default datagram context id ZERO
-    if (data_ctx_id > 0) {
-        auto conn_it = conn_contexts.find(conn_id);
-        if (conn_it != conn_contexts.end()) {
-            logger->info << "Delete data context id: " << data_ctx_id << " in conn_id: " << conn_id << std::flush;
-            conn_it->second->data_contexts.erase(data_ctx_id);
-        }
+    auto conn_it = conn_contexts.find(conn_id);
+    if (conn_it != conn_contexts.end()) {
+        logger->info << "Delete data context id: " << data_ctx_id << " in conn_id: " << conn_id << std::flush;
+        conn_it->second->data_contexts.erase(data_ctx_id);
     }
 }
 
-void UDPTransport::setRemoteDataCtxId([[maybe_unused]] const TransportConnId conn_id,
-                                      [[maybe_unused]] const DataContextId data_ctx_id,
-                                      [[maybe_unused]] const DataContextId remote_data_ctx_id) {};
+void UDPTransport::setRemoteDataCtxId(const TransportConnId conn_id,
+                                      const DataContextId data_ctx_id,
+                                      const DataContextId remote_data_ctx_id) {
+
+    const std::lock_guard<std::mutex> _(_writer_mutex);
+
+    auto conn_it = conn_contexts.find(conn_id);
+    if (conn_it != conn_contexts.end()) {
+        const auto data_ctx_it = conn_it->second->data_contexts.find(data_ctx_id);
+        if (data_ctx_it != conn_it->second->data_contexts.end()) {
+            logger->debug << "Setting remote data context id conn_id: " << conn_id
+                          << " data_ctx_id: " << data_ctx_id
+                          << " remote_data_ctx_id: " << remote_data_ctx_id
+                          << std::flush;
+            data_ctx_it->second.remote_data_ctx_id = remote_data_ctx_id;
+            data_ctx_it->second.remote_data_ctx_id_V = std::move(to_uintV(remote_data_ctx_id));
+        }
+    }
+}
 
 bool UDPTransport::getPeerAddrInfo(const TransportConnId &conn_id,
                                    sockaddr_storage *addr) {
@@ -397,7 +409,7 @@ bool UDPTransport::send_report(ConnectionContext& conn) {
 }
 
 
-bool UDPTransport::send_data(ConnectionContext& conn, const ConnData& cd, bool discard) {
+bool UDPTransport::send_data(ConnectionContext& conn, DataContext& data_ctx, const ConnData& cd, bool discard) {
     UdpProtocol::DataMsg dhdr {};
     uint8_t data[UDP_MAX_PACKET_SIZE] {0};
 
@@ -422,18 +434,33 @@ bool UDPTransport::send_data(ConnectionContext& conn, const ConnData& cd, bool d
     dhdr.report_id = conn.tx_report_id;
     dhdr.ticks_ms = current_tick - conn.tx_report_start_tick;
 
-    const auto data_len = sizeof(dhdr) + cd.data.size();
+    auto data_len = sizeof(dhdr) + cd.data.size();
+    data_len += discard ? 1 :  data_ctx.remote_data_ctx_id_V.size();
+
     if (data_len > sizeof(data)) {
         logger->error << "conn_id: " << conn.id << " data_len: " << data_len << " is too large" << std::flush;
         return false;
     }
 
+
+    auto data_p = data;
+    memcpy(data_p, &dhdr, sizeof(dhdr));
+    data_p += sizeof(dhdr);
+
     if (discard) {
+        uint8_t zero = 0;
+        conn.metrics.tx_discard_objects++;
+
         logger->debug << "Sending discard data size: " << cd.data.size() << std::flush;
+        memcpy(data_p, &zero, 1);
+        data_p++;
+
+    } else {
+        memcpy(data_p, data_ctx.remote_data_ctx_id_V.data(), data_ctx.remote_data_ctx_id_V.size());
+        data_p += data_ctx.remote_data_ctx_id_V.size();
     }
 
-    memcpy(data, &dhdr, sizeof(dhdr));
-    memcpy(data + sizeof(dhdr), cd.data.data(), cd.data.size());
+    memcpy(data_p, cd.data.data(), cd.data.size());
 
     int numSent = sendto(fd,
                          data,
@@ -490,9 +517,6 @@ void UDPTransport::fd_writer() {
 
         // Check each connection context for data to send
         for (const auto& [conn_id, conn]: conn_contexts) {
-            // NOTE: Currently only implement single data context
-            auto& data_ctx = conn->data_contexts[0];
-
             const auto current_tick = _tick_service->get_ticks(std::chrono::milliseconds (1));
 
             // Check if idle
@@ -509,7 +533,7 @@ void UDPTransport::fd_writer() {
                 continue;
             }
 
-            if (data_ctx.tx_data->empty()) { // No data, go to next connection
+            if (conn->tx_data->empty()) { // No data, go to next connection
                 // Send keepalive if needed
                 if (conn->last_tx_msg_tick && current_tick - conn->last_tx_msg_tick > conn->ka_interval_ms) {
                     conn->last_tx_msg_tick = current_tick;
@@ -518,7 +542,7 @@ void UDPTransport::fd_writer() {
                 continue;
             }
 
-            auto cd = data_ctx.tx_data->pop_front();
+            auto cd = conn->tx_data->pop_front();
 
             if (!cd.has_value) {
                 // Send keepalive if needed
@@ -531,7 +555,17 @@ void UDPTransport::fd_writer() {
                 continue; // Data maybe null if time queue has a delay in pop
             }
 
-            data_ctx.tx_queue_expired += cd.expired_count;
+            const auto data_ctx_it = conn->data_contexts.find(cd.value.data_ctx_id);
+            if (data_ctx_it == conn->data_contexts.end()) {
+                logger->warning << "No data context, ignoring"
+                                << " conn_id: " << conn_id
+                                << " data_ctx_id: " << cd.value.data_ctx_id
+                                << std::flush;
+                conn->metrics.tx_no_context++;
+                continue;
+            }
+
+            data_ctx_it->second.metrics.tx_queue_expired += cd.expired_count;
 
             cd.value.trace.push_back({"transport_udp:send_data", cd.value.trace.front().start_time});
 
@@ -547,9 +581,12 @@ void UDPTransport::fd_writer() {
                 logger->info << " total_duration: " << cd.value.trace.back().delta << std::flush;
             }
 
-            if (! send_data(*conn, cd.value, (cd.value.priority ? false : true))) {
+            if (! send_data(*conn, data_ctx_it->second, cd.value, (cd.value.priority ? false : true))) {
                 continue;
             }
+
+            data_ctx_it->second.metrics.tx_bytes += cd.value.data.size();
+            data_ctx_it->second.metrics.tx_objects++;
 
             sent_data = true;
 
@@ -672,9 +709,10 @@ UDPTransport::fd_reader() {
                                                                         std::make_shared<ConnectionContext>());
 
                         auto &conn = *conn_it->second;
-
-                        createDataContext(last_conn_id, false, 10, false);
-
+                        conn.tx_data = std::make_unique<priority_queue<ConnData>>(tconfig.time_queue_max_duration,
+                                                                                  tconfig.time_queue_bucket_interval,
+                                                                                  _tick_service,
+                                                                                  tconfig.time_queue_init_queue_size);
                         conn.addr = remote_addr;
                         conn.id = last_conn_id;
 
@@ -691,9 +729,13 @@ UDPTransport::fd_reader() {
                         addr_conn_contexts.emplace(remote_addr.id, conn_it->second); // Add to the addr lookup map
 
                         lock.unlock(); // no need to hold lock, especially with a call to a delegate
+                        createDataContext(conn.id, false, 2, false);
 
                         // New remote address/connection
                         const TransportRemote remote = create_addr_remote(remote_addr.addr);
+
+                        logger->info << "New Connection from " << remote.host_or_ip
+                                      << " port: " << remote.port << std::flush;
 
                         // Notify caller that there is a new connection
                         delegate.on_new_connection(last_conn_id, std::move(remote));
@@ -802,7 +844,6 @@ UDPTransport::fd_reader() {
                                      << " Loss: " << loss_pct << "%"
                                      << " TX-OTT: " << hdr.metrics.recv_ott_ms << "ms"
                                      << " RX-OTT: " << a_conn_it->second->rx_report_ott << "ms"
-                                     << " expired_count: " << a_conn_it->second->data_contexts[0].tx_queue_expired
                                      << std::flush;
 
                         a_conn_it->second->tx_zero_loss_count = 0;
@@ -829,7 +870,6 @@ UDPTransport::fd_reader() {
                                          << " Loss: " << loss_pct << "%"
                                          << " TX-OTT: " << hdr.metrics.recv_ott_ms << "ms"
                                          << " RX-OTT: " << a_conn_it->second->rx_report_ott << "ms"
-                                         << " expired_count: " << a_conn_it->second->data_contexts[0].tx_queue_expired
                                          << std::flush;
 
                             // Add some data discard packets to measure if increase is okay
@@ -845,7 +885,7 @@ UDPTransport::fd_reader() {
                             for (int i=0; i < send_count; i++) {
                                 ConnData cd { a_conn_it->second->id, 0, 0,
                                               discard_data, trace};
-                                a_conn_it->second->data_contexts[0].tx_data->push(cd, 6, 0, 0);
+                                a_conn_it->second->tx_data->push(cd, 6, 0, 0);
                             }
 
                             a_conn_it->second->tx_zero_loss_count = 2;
@@ -856,9 +896,19 @@ UDPTransport::fd_reader() {
             }
 
             case UdpProtocol::ProtocolType::DATA: {
+                auto data_p = data;
+
                 UdpProtocol::DataMsg hdr;
-                memcpy(&hdr, data, sizeof(hdr));
+                memcpy(&hdr, data_p, sizeof(hdr));
+                data_p += sizeof(hdr);
                 rLen -= sizeof(hdr);
+
+                const auto remote_data_ctx_id_len = uintV_size(*data_p);
+                uintV_t remote_data_ctx_V (data_p, data_p + remote_data_ctx_id_len);
+                data_p += remote_data_ctx_id_len;
+                rLen -= remote_data_ctx_id_len;
+
+                const auto data_ctx_id = to_uint64(remote_data_ctx_V);
 
                 if (a_conn_it != addr_conn_contexts.end()) {
                     if (hdr.report_id != a_conn_it->second->report.report_id &&
@@ -889,27 +939,40 @@ UDPTransport::fd_reader() {
                     a_conn_it->second->last_rx_msg_tick = current_tick;
                     a_conn_it->second->last_rx_hdr_tick = hdr.ticks_ms;
 
-                    // Only send data if not set to discard
+                    // Only process data if not set to discard
                     if (!hdr.flags.discard) {
-                        std::vector<uint8_t> buffer(data + sizeof(hdr), data + sizeof(hdr) + rLen);
+                        const auto data_ctx_it = a_conn_it->second->data_contexts.find(data_ctx_id);
+                        if (data_ctx_it == a_conn_it->second->data_contexts.end()) {
+                            logger->debug << "Data context not found for RX object"
+                                          << " conn_id:" << a_conn_it->second->id
+                                          << " data_ctx_id: " << data_ctx_id
+                                          << std::flush;
+
+                            a_conn_it->second->metrics.rx_no_context++;
+                            lock.unlock();
+                            continue;
+                        }
+
+                        std::vector<uint8_t> buffer(data_p, data_p + rLen);
 
                         std::vector<MethodTraceItem> trace;
                         const auto start_time = std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::steady_clock::now());
 
                         trace.push_back({"transport_udp:recv_data", start_time});
-                        ConnData cd { a_conn_it->second->id, 0, 2,
+                        ConnData cd { a_conn_it->second->id, data_ctx_id, 2,
                                       std::move(buffer), std::move(trace)};
                         cd.trace.reserve(10);
 
-                        a_conn_it->second->data_contexts[0].rx_data.push(cd);
+
+                        data_ctx_it->second.rx_data.push(cd);
 
                         lock.unlock();
-                        if ( a_conn_it->second->data_contexts[0].rx_data.size() < 10
-                            || a_conn_it->second->data_contexts[0].in_data_cb_skip_count > 20) {
+                        if ( data_ctx_it->second.rx_data.size() < 10
+                            || data_ctx_it->second.in_data_cb_skip_count > 20) {
 
                             delegate.on_recv_notify(cd.conn_id, cd.data_ctx_id);
                         } else {
-                            a_conn_it->second->data_contexts[0].in_data_cb_skip_count++;
+                            data_ctx_it->second.in_data_cb_skip_count++;
                         }
                         continue;
                     }
@@ -957,6 +1020,8 @@ TransportError UDPTransport::enqueue(const TransportConnId &conn_id,
         return TransportError::InvalidDataContextId;
     }
 
+    data_ctx_it->second.metrics.enqueued_objs++;
+
     const auto trace_start_time = trace.front().start_time;
     ConnData cd { conn_id,
                   data_ctx_id,
@@ -964,7 +1029,7 @@ TransportError UDPTransport::enqueue(const TransportConnId &conn_id,
                   std::move(bytes),
                   std::move(trace)};
 
-    data_ctx_it->second.tx_data->push(std::move(cd), ttl_ms, priority, delay_ms);
+    conn_it->second->tx_data->push(std::move(cd), ttl_ms, priority, delay_ms);
 
     return TransportError::None;
 }
@@ -1125,22 +1190,24 @@ int err = 0;
 
     ++last_conn_id;
 
-    std::lock_guard<std::mutex> _(_writer_mutex);  // just for safety in case a close is called at the same time
-
     const auto& [conn_it, is_new] = conn_contexts.emplace(last_conn_id,
-                                                    std::make_shared<ConnectionContext>());
+                                                          std::make_shared<ConnectionContext>());
 
     auto &conn = *conn_it->second;
     conn.addr = serverAddr;
     conn.id = last_conn_id;
+    conn.tx_data = std::make_unique<priority_queue<ConnData>>(tconfig.time_queue_max_duration,
+                                                              tconfig.time_queue_bucket_interval,
+                                                              _tick_service,
+                                                              tconfig.time_queue_init_queue_size);
+
 
     conn.tx_report_interval_ms = tconfig.time_queue_rx_size; // TODO: this temp to set this via UI
 
     conn.set_KBps(2000); // Set to 16Mbps=2000KBps connection rate
 
-    createDataContext(last_conn_id, false, 10, false);
-
     addr_conn_contexts.emplace(serverAddr.id, conn_it->second); // Add to the addr lookup map
+    createDataContext(conn.id, false, 2, false);
 
     send_connect(conn.id, conn.addr);
 
