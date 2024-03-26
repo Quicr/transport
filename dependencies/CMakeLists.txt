@@ -12,14 +12,14 @@ if (NOT PLATFORM_ESP_IDF)
         add_subdirectory( boringssl )
 
         # Setup OpenSSL vars for submodules
-        set (OPENSSL_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/boringssl CACHE TRUE "" FORCE)
-        set (OPENSSL_LIBDIR ${CMAKE_CURRENT_BINARY_DIR}/boringssl CACHE TRUE "" FORCE)
-        set (OPENSSL_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/boringssl/include CACHE TRUE "" FORCE)
-        set (OPENSSL_LIBRARIES BoringSSL::ssl CACHE TRUE "" FORCE)
-        set (OPENSSL_SSL_LIBRARIES BoringSSL::ssl CACHE TRUE "" FORCE)
-        set (OPENSSL_SSL_LIBRARY BoringSSL::ssl CACHE TRUE "" FORCE)
-        set (OPENSSL_CRYPTO_LIBRARY BoringSSL::crypto CACHE TRUE "" FORCE)
-        set (OPENSSL_CRYPTO_LIBRARIES "${OPENSSL_CRYPTO_LIBRARY}" CACHE TRUE "" FORCE)
+        set (OPENSSL_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/boringssl CACHE STRING "" FORCE)
+        set (OPENSSL_LIBDIR ${CMAKE_CURRENT_BINARY_DIR}/boringssl CACHE STRING "" FORCE)
+        set (OPENSSL_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/boringssl/include CACHE STRING "" FORCE)
+        set (OPENSSL_LIBRARIES BoringSSL::ssl CACHE STRING "" FORCE)
+        set (OPENSSL_SSL_LIBRARIES BoringSSL::ssl CACHE STRING "" FORCE)
+        set (OPENSSL_SSL_LIBRARY BoringSSL::ssl CACHE STRING "" FORCE)
+        set (OPENSSL_CRYPTO_LIBRARY BoringSSL::crypto CACHE STRING "" FORCE)
+        set (OPENSSL_CRYPTO_LIBRARIES "${OPENSSL_CRYPTO_LIBRARY}" CACHE STRING "" FORCE)
 
         # Create aliases for this and upstream submodules
         add_library( BoringSSL::ssl ALIAS ssl)
