@@ -15,6 +15,12 @@ all: ${BUILD_DIR}
 ${BUILD_DIR}: CMakeLists.txt cmd/CMakeLists.txt
 	cmake -B${BUILD_DIR} -DBUILD_TESTING=ON -DQTRANSPORT_BUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Debug .
 
+cert:
+	@echo "Creating certs in ${BUILD_DIR}/cmd"
+	@openssl req -nodes -x509 -newkey rsa:2048 -days 365 \
+		-subj "/C=US/ST=CA/L=San Jose/O=Cisco/CN=test.quicr.ctgpoc.com" \
+		-keyout ${BUILD_DIR}/cmd/server-key.pem -out ${BUILD_DIR}/cmd/server-cert.pem
+
 clean:
 	cmake --build ${BUILD_DIR} --target clean
 

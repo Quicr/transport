@@ -432,6 +432,7 @@ PicoQuicTransport::start()
     }
 
     (void)picoquic_config_set_option(&config, picoquic_option_CC_ALGO, "bbr");
+    //(void)picoquic_config_set_option(&config, picoquic_option_CC_ALGO, "reno");
     (void)picoquic_config_set_option(&config, picoquic_option_ALPN, QUICR_ALPN);
     (void)picoquic_config_set_option(&config, picoquic_option_CWIN_MIN,
                                      std::to_string(tconfig.quic_cwin_minimum).c_str());
@@ -1111,6 +1112,7 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
 
             obj.value.trace.push_back({"transport_quic:send_stream", obj.value.trace.front().start_time});
 
+            /*
             if (!obj.value.trace.empty() && obj.value.trace.back().delta > 15000) {
                 logger->info << "MethodTrace conn_id: " << data_ctx->conn_id
                              << " data_ctx_id: " << data_ctx->data_ctx_id
@@ -1121,6 +1123,7 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
 
                 logger->info << " total_duration: " << obj.value.trace.back().delta << std::flush;
             }
+            */
 
             max_len -= data_ctx->data_header.size(); // Subtract out the length header that will be added
 
@@ -1564,6 +1567,7 @@ void PicoQuicTransport::check_conns_for_congestion()
             }
             data_ctx.metrics.prev_tx_delayed_callback = data_ctx.metrics.tx_delayed_callback;
 
+            // TODO(tievens): size of TX is based on rate; adjust based on burst rates
             if (data_ctx.tx_data->size() >= 10) {
                 logger->info << "CC: Stream congested, queue backlog"
                              << " conn_id: " << data_ctx.conn_id
@@ -1671,6 +1675,7 @@ TransportConnId PicoQuicTransport::createClient()
         sni = serverInfo.host_or_ip.c_str();
     }
 
+    //picoquic_set_default_congestion_algorithm(quic_ctx, picoquic_newreno_algorithm);
     picoquic_set_default_congestion_algorithm(quic_ctx, picoquic_bbr_algorithm);
 
     uint64_t current_time = picoquic_current_time();

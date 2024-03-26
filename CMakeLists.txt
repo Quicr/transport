@@ -22,11 +22,14 @@ endif()
 ###
 ### Dependencies
 ###
+set (CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 add_subdirectory(dependencies)
 
 ###
 ### Main code
 ###
+set (BUILD_SHARED_LIBS OFF)
+set (BUILD_STATIC_LIBS ON)
 
 set (sources 
     src/transport.cpp

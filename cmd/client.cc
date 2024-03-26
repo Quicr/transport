@@ -88,7 +88,9 @@ main()
 {
     char* envVar;
 
-    TransportRemote server = TransportRemote{ "127.0.0.1", 1234, TransportProtocol::UDP };
+    logger->SetLogLevel("DEBUG");
+
+    TransportRemote server = TransportRemote{ "127.0.0.1", 1234, TransportProtocol::QUIC };
 
     TransportConfig tconfig{ .tls_cert_filename = NULL,
                              .tls_key_filename = NULL,
@@ -123,12 +125,13 @@ main()
         std::this_thread::sleep_for(std::chrono::milliseconds(250));
     }
 
-    DataContextId data_ctx_id = client->createDataContext(conn_id, true, 1, bidir);
+    bool use_reliable = true;
+    DataContextId data_ctx_id = client->createDataContext(conn_id, use_reliable, 1, bidir);
 
     uint32_t* msg_num = (uint32_t*)&data_buf;
     int period_count = 0;
 
-    ITransport::EnqueueFlags encode_flags { .new_stream = true, .clear_tx_queue = true, .use_reset = true};
+    ITransport::EnqueueFlags encode_flags { .use_reliable = use_reliable, .new_stream = true, .clear_tx_queue = true, .use_reset = true};
 
     while (client->status() != TransportStatus::Shutdown && client->status() != TransportStatus::Disconnected) {
         period_count++;
@@ -138,28 +141,27 @@ main()
 
             std::vector<MethodTraceItem> trace;
             const auto start_time = std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::steady_clock::now());
-
             trace.push_back({"client:publish", start_time});
 
             if (period_count > 2000) {
                 period_count = 0;
-                client->enqueue(conn_id,
-                                server.proto == TransportProtocol::UDP ? 1 : data_ctx_id,
-                                std::move(data),
-                                std::move(trace),
-                                1,
-                                350,
-                                0,
-                                encode_flags);
-            }
-            else {
-                std::vector<MethodTraceItem> trace;
-                const auto start_time = std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::steady_clock::now());
-
-                trace.push_back({"client:publish", start_time});
-                client->enqueue(conn_id, server.proto == TransportProtocol::UDP ? 1 : data_ctx_id, std::move(data), std::move(trace));
+                encode_flags.new_stream = true;
+                encode_flags.clear_tx_queue = true;
+                encode_flags.use_reset = true;
+            } else {
+                encode_flags.new_stream = false;
+                encode_flags.clear_tx_queue = false;
+                encode_flags.use_reset = false;
             }
 
+            client->enqueue(conn_id,
+                            data_ctx_id,
+                            std::move(data),
+                            std::move(trace),
+                            1,
+                            350,
+                            0,
+                            encode_flags);
         }
 
         // Increase delay if using UDP, need to pace more
