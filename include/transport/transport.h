@@ -9,6 +9,8 @@
 #include <sys/socket.h>
 
 #include <cantina/logger.h>
+#include <transport/safe_queue.h>
+#include <transport/transport_metrics.h>
 
 namespace qtransport {
 
@@ -417,7 +419,7 @@ public:
                                   const DataContextId remote_data_ctx_id) = 0;
 
 
-    /**
+  /**
    * Enqueue flags
    */
   struct EnqueueFlags
@@ -448,7 +450,7 @@ public:
   virtual TransportError enqueue(const TransportConnId& context_id,
                                  const DataContextId& data_ctx_id,
                                  std::vector<uint8_t>&& bytes,
-                                 std::vector<qtransport::MethodTraceItem> &&trace = { MethodTraceItem{} },
+                                 std::vector<MethodTraceItem> &&trace = { MethodTraceItem{} },
                                  const uint8_t priority = 1,
                                  const uint32_t ttl_ms=350,
                                  const uint32_t delay_ms=0,
@@ -468,6 +470,10 @@ public:
   virtual std::optional<std::vector<uint8_t>> dequeue(
     const TransportConnId& context_id,
     const DataContextId& data_ctx_id) = 0;
+
+   /// Metrics samples to be written to TSDB. When full the buffer will remove the oldest
+   std::shared_ptr<safe_queue<MetricsConnSample>> metrics_conn_samples;
+   std::shared_ptr<safe_queue<MetricsDataSample>> metrics_data_samples;
 };
 
 } // namespace qtransport

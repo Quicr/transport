@@ -20,6 +20,7 @@
 #include "transport_udp_protocol.h"
 #include "transport/priority_queue.h"
 #include "transport/safe_queue.h"
+#include "transport/transport_metrics.h"
 
 namespace qtransport {
     constexpr size_t UDP_MAX_PACKET_SIZE = 64000;
@@ -113,20 +114,6 @@ namespace qtransport {
             }
         };
 
-        struct DataContextMetrics {
-            uint64_t enqueued_objs {0};
-
-            uint64_t tx_queue_expired {0};                      /// count of objects expired before pop/front
-            uint64_t tx_bytes {0};                              /// count of bytes sent
-            uint64_t tx_objects {0};                            /// count of objects (messages) sent
-
-            uint64_t rx_bytes {0};                              /// count of bytes received
-            uint64_t rx_objects {0};                            /// count of objects received
-
-            constexpr auto operator<=>(const DataContextMetrics&) const = default;
-        };
-
-
         struct DataContext {
             DataContextId data_ctx_id{0};
             uint8_t priority {10};
@@ -134,18 +121,11 @@ namespace qtransport {
             DataContextId remote_data_ctx_id {0};              /// Remote data context ID to use for this context
             uintV_t remote_data_ctx_id_V {0};                  /// Remote data context ID as variable length integer
 
-            DataContextMetrics metrics;
+            UdpDataContextMetrics metrics;
 
             uint64_t in_data_cb_skip_count {0};               /// Number of times callback was skipped due to size
 
             safe_queue<ConnData> rx_data;                     /// Receive queue
-        };
-
-        struct ConnectionMetrics {
-            uint64_t rx_no_context {0};                 /// count of times RX object data context doesn't exist
-
-            uint64_t tx_no_context {0};                 /// count of times TX object data context doesn't exist
-            uint64_t tx_discard_objects {0};            /// count of discard objects sent
         };
 
         struct ConnectionContext {
@@ -154,7 +134,7 @@ namespace qtransport {
             DataContextId next_data_ctx_id {0};
             std::map<DataContextId, DataContext> data_contexts;
 
-            ConnectionMetrics metrics;
+            UdpConnectionMetrics metrics;
 
             TransportStatus status { TransportStatus::Disconnected };
             std::unique_ptr<priority_queue<ConnData>> tx_data;  // TX priority queue

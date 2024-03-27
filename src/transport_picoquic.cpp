@@ -83,10 +83,11 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
         case picoquic_callback_prepare_datagram: {
             // length is the max allowed data length
             if (auto conn_ctx = transport->getConnContext(conn_id)) {
+                conn_ctx->metrics.tx_dgram_cb++;
+
                 transport->send_next_datagram(conn_ctx, bytes, length);
 
                 if (picoquic_get_cwin(pq_cnx) < PQ_CC_LOW_CWIN) {        // Congested if less than 8K or near jumbo MTU size
-                    conn_ctx->metrics.tx_dgram_cb++;
                     conn_ctx->metrics.cwin_congested++;
                 }
             }
@@ -366,7 +367,15 @@ int pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode, void
                     transport->pq_loop_prev_time = targ->current_time;
                 }
 
-                if (targ->current_time - transport->pq_loop_prev_time > 100000) {
+                if (targ->current_time - transport->pq_loop_metrics_prev_time >= METRICS_INTERVAL_US) {
+                    if (transport->pq_loop_metrics_prev_time) {
+                        transport->emit_metrics();
+                    }
+
+                    transport->pq_loop_metrics_prev_time = targ->current_time;
+                }
+
+                if (targ->current_time - transport->pq_loop_prev_time > 100'000) {
 
                     transport->check_conns_for_congestion();
 
@@ -799,6 +808,9 @@ PicoQuicTransport::PicoQuicTransport(const TransportRemote& server,
             throw InvalidConfigException("Missing cert key filename");
         }
     }
+
+    metrics_conn_samples = std::make_unique<safe_queue<MetricsConnSample>>(MAX_METRICS_SAMPLES_QUEUE);
+    metrics_data_samples = std::make_unique<safe_queue<MetricsDataSample>>(MAX_METRICS_SAMPLES_QUEUE);
 
     _tick_service = std::make_shared<threaded_tick_service>();
 }
@@ -1503,6 +1515,19 @@ void PicoQuicTransport::on_recv_stream_bytes(ConnectionContext* conn_ctx,
                       << std::flush;
 
         on_recv_stream_bytes(conn_ctx, data_ctx, stream_id, bytes_p, length);
+    }
+}
+
+void PicoQuicTransport::emit_metrics()
+{
+    for (auto& [conn_id, conn_ctx] : conn_context) {
+        const auto sample_time = std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::steady_clock::now());
+
+        metrics_conn_samples->push({sample_time, conn_id, conn_ctx.metrics});
+
+        for (auto& [data_ctx_id, data_ctx] : conn_ctx.active_data_contexts) {
+            metrics_data_samples->push({sample_time, conn_id, data_ctx_id, data_ctx.metrics});
+        }
     }
 }
 
