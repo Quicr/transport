@@ -461,7 +461,7 @@ PicoQuicTransport::start()
         logger->info << "Using Reset and Wait congestion control strategy" << std::flush;
     }
 
-    (void)picoquic_config_set_option(&config, picoquic_option_CC_ALGO, "bbr");
+    (void)picoquic_config_set_option(&config, picoquic_option_CC_ALGO, (tconfig.use_bbrv3 ? "bbr" : "reno"));
     (void)picoquic_config_set_option(&config, picoquic_option_ALPN, QUICR_ALPN);
     (void)picoquic_config_set_option(&config, picoquic_option_CWIN_MIN,
                                      std::to_string(tconfig.quic_cwin_minimum).c_str());
@@ -1676,7 +1676,12 @@ TransportConnId PicoQuicTransport::createClient()
         sni = serverInfo.host_or_ip.c_str();
     }
 
-    picoquic_set_default_congestion_algorithm(quic_ctx, picoquic_bbr_algorithm);
+    if (tconfig.use_bbrv3) {
+        picoquic_set_default_congestion_algorithm(quic_ctx, picoquic_bbr_algorithm);
+    } else {
+        logger->info << "Using NewReno insetad of BBRv3" << std::flush;
+        picoquic_set_default_congestion_algorithm(quic_ctx, picoquic_newreno_algorithm);
+    }
 
     uint64_t current_time = picoquic_current_time();
 

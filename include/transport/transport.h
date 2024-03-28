@@ -84,6 +84,7 @@ struct TransportConfig
 
   const uint64_t idle_timeout_ms { 30000 };             /// Idle timeout for transport connection(s) in milliseconds
   const bool use_reset_wait_strategy { true };          /// Use Reset and wait strategy for congestion control
+  const bool use_bbrv3 { true };                        /// True to use BBRv3, False to use newReno
 };
 
 using time_stamp_us = std::chrono::time_point<std::chrono::steady_clock, std::chrono::microseconds>;
