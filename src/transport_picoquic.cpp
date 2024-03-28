@@ -461,7 +461,12 @@ PicoQuicTransport::start()
         logger->info << "Using Reset and Wait congestion control strategy" << std::flush;
     }
 
-    (void)picoquic_config_set_option(&config, picoquic_option_CC_ALGO, (tconfig.use_bbrv3 ? "bbr" : "reno"));
+    if (tconfig.use_bbrv3) {
+        (void)picoquic_config_set_option(&config, picoquic_option_CC_ALGO, "bbr");
+    } else {
+        logger->info << "Using NewReno insetad of BBRv3" << std::flush;
+        (void)picoquic_config_set_option(&config, picoquic_option_CC_ALGO, "reno");
+    }
     (void)picoquic_config_set_option(&config, picoquic_option_ALPN, QUICR_ALPN);
     (void)picoquic_config_set_option(&config, picoquic_option_CWIN_MIN,
                                      std::to_string(tconfig.quic_cwin_minimum).c_str());
