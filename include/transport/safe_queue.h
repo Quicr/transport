@@ -200,7 +200,7 @@ private:
       _empty = true;
     }
 
-    return std::move(elem);
+    return elem;
   }
 
   /**
