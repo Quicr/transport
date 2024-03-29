@@ -68,12 +68,15 @@ UDPTransport::UDPTransport(const TransportRemote &server,
                            bool isServerMode,
                            const cantina::LoggerPointer &logger)
         : stop(false),
-        logger(std::make_shared<cantina::Logger>("UDP", logger)),
-        tconfig(tcfg),
-        fd(-1),
-        isServerMode(isServerMode),
-        serverInfo(server), delegate(delegate) {
+    logger(std::make_shared<cantina::Logger>("UDP", logger)),
+    tconfig(tcfg),
+    fd(-1),
+    isServerMode(isServerMode),
+    serverInfo(server), delegate(delegate) {
     _tick_service = std::make_shared<threaded_tick_service>();
+
+    metrics_conn_samples = std::make_unique<safe_queue<MetricsConnSample>>(MAX_METRICS_SAMPLES_QUEUE);
+    metrics_data_samples = std::make_unique<safe_queue<MetricsDataSample>>(MAX_METRICS_SAMPLES_QUEUE);
 }
 
 TransportStatus UDPTransport::status() const {
