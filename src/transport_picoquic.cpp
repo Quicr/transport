@@ -958,6 +958,7 @@ PicoQuicTransport::send_next_datagram(ConnectionContext* conn_ctx, uint8_t* byte
                 logger->info << " total_duration: " << out_data.value.trace.back().delta << std::flush;
             }
 
+            data_ctx_it->second.metrics.tx_dgrams_bytes += data_size;
             data_ctx_it->second.metrics.tx_dgrams++;
 
             uint8_t* buf = nullptr;
@@ -1294,6 +1295,9 @@ PicoQuicTransport::on_recv_datagram(ConnectionContext* conn_ctx, uint8_t* bytes,
     ConnData cd { data_ctx_it->second.conn_id, data_ctx_it->second.data_ctx_id,
                   data_ctx_it->second.priority, std::move(data), std::move(trace)};
 
+    data_ctx_it->second.metrics.rx_dgrams++;
+    data_ctx_it->second.metrics.rx_dgrams_bytes += cd.data.size();
+
     if (!data_ctx_it->second.rx_data->push(std::move(cd))) {
         logger->error << "conn_id: " << data_ctx_it->second.conn_id
                       << " data_ctx_id: " << data_ctx_it->second.data_ctx_id
@@ -1527,7 +1531,10 @@ void PicoQuicTransport::emit_metrics()
 
         for (auto& [data_ctx_id, data_ctx] : conn_ctx.active_data_contexts) {
             metrics_data_samples->push({sample_time, conn_id, data_ctx_id, data_ctx.metrics});
+            data_ctx.metrics.resetPeriod();
         }
+
+        conn_ctx.metrics.resetPeriod();
     }
 }
 
@@ -1544,10 +1551,21 @@ void PicoQuicTransport::check_conns_for_congestion()
 
     for (auto& [conn_id, conn_ctx] : conn_context) {
         int congested_count { 0 };
-        uint16_t cwin_congested_count = conn_ctx.metrics.cwin_congested - conn_ctx.metrics.prev_cwin_congested;
+        uint16_t cwin_congested_count = conn_ctx.metrics.cwin_congested - conn_ctx.metrics._prev_cwin_congested;
 
         picoquic_path_quality_t path_quality;
         picoquic_get_path_quality(conn_ctx.pq_cnx, conn_ctx.pq_cnx->path[0]->unique_path_id, &path_quality);
+
+        /*
+         * Update metrics
+         */
+        conn_ctx.metrics.tx_lost_pkts += path_quality.lost;
+        conn_ctx.metrics.tx_cwin_bytes.addValue(path_quality.cwin);
+        conn_ctx.metrics.rtt_us.addValue(path_quality.rtt_sample);
+        conn_ctx.metrics.srtt_us.addValue(path_quality.rtt);
+        conn_ctx.metrics.tx_rate_bps.addValue(path_quality.pacing_rate * 8);
+        conn_ctx.metrics.rx_rate_bps.addValue(path_quality.receive_rate_estimate * 8);
+
 
         // Is CWIN congested
         if (cwin_congested_count > 5 || (path_quality.cwin < PQ_CC_LOW_CWIN && path_quality.bytes_in_transit > 1)) {
@@ -1567,7 +1585,7 @@ void PicoQuicTransport::check_conns_for_congestion()
 
             //congested_count++; /* TODO(tievens): DO NOT react to this right now, causing issue with low latency wired networks */
         }
-        conn_ctx.metrics.prev_cwin_congested = conn_ctx.metrics.cwin_congested;
+        conn_ctx.metrics._prev_cwin_congested = conn_ctx.metrics.cwin_congested;
 
         // All other data flows (streams)
         uint64_t reset_wait_data_ctx_id {0};       // Positive value indicates the data_ctx_id that can be set to reset_wait
@@ -1581,16 +1599,18 @@ void PicoQuicTransport::check_conns_for_congestion()
 
             // Don't include control stream in delayed callbacks check. Control stream should be priority 0 or 1
             if (data_ctx.priority >= 2
-                    && data_ctx.metrics.tx_delayed_callback - data_ctx.metrics.prev_tx_delayed_callback > 1) {
+                    && data_ctx.metrics.tx_delayed_callback - data_ctx.metrics._prev_tx_delayed_callback > 1) {
                 logger->info << "CC: Stream congested,  callback count greater than 1"
                              << " conn_id: " << data_ctx.conn_id
                              << " data_ctx_id: " << data_ctx.data_ctx_id
                              << " tx_data_queue: " << data_ctx.tx_data->size()
-                             << " congested_callbacks: " << data_ctx.metrics.tx_delayed_callback - data_ctx.metrics.prev_tx_delayed_callback
+                             << " congested_callbacks: " << data_ctx.metrics.tx_delayed_callback - data_ctx.metrics._prev_tx_delayed_callback
                              << std::flush;
                 congested_count++;
             }
-            data_ctx.metrics.prev_tx_delayed_callback = data_ctx.metrics.tx_delayed_callback;
+            data_ctx.metrics._prev_tx_delayed_callback = data_ctx.metrics.tx_delayed_callback;
+
+            data_ctx.metrics.tx_queue_size.addValue(data_ctx.tx_data->size());
 
             // TODO(tievens): size of TX is based on rate; adjust based on burst rates
             if (data_ctx.tx_data->size() >= 10) {
@@ -1623,6 +1643,8 @@ void PicoQuicTransport::check_conns_for_congestion()
 
         // Act on congested
         if (congested_count) {
+            conn_ctx.metrics.tx_congested++;
+
             conn_ctx.is_congested = true;
             logger->info << "CC: conn_id: " << conn_id << " has streams congested."
                          << " congested_count: " << congested_count
