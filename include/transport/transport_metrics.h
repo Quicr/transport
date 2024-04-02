@@ -17,6 +17,8 @@ namespace qtransport {
         uint64_t _value_sum {0};        /// Accumulating sum of values in period
         uint16_t _value_count {0};      /// Number of values in period
 
+      auto operator<=>(const MinMaxAvg&) const = default;
+
         /**
          * @brief  Add value to period
          *
