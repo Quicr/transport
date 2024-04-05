@@ -72,7 +72,6 @@ class PicoQuicTransport : public ITransport
 
             auto it = hdr_bytes.begin() + 1;
 
-
             const auto data_ctx_id_len = uintV_size(*it);
             remote_data_ctx_id_V.assign(it, it + data_ctx_id_len);
             it += data_ctx_id_len;
@@ -85,6 +84,8 @@ class PicoQuicTransport : public ITransport
             length_V.assign(it, it + length_len);
 
             length = to_uint64(length_V);
+
+            return true;
         }
 
         /**
