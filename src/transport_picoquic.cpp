@@ -1559,7 +1559,7 @@ void PicoQuicTransport::check_conns_for_congestion()
         /*
          * Update metrics
          */
-        conn_ctx.metrics.tx_lost_pkts += path_quality.lost;
+        conn_ctx.metrics.tx_lost_pkts = path_quality.lost;
         conn_ctx.metrics.tx_cwin_bytes.addValue(path_quality.cwin);
         conn_ctx.metrics.rtt_us.addValue(path_quality.rtt_sample);
         conn_ctx.metrics.srtt_us.addValue(path_quality.rtt);
