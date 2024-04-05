@@ -27,7 +27,7 @@ namespace qtransport {
          * @param value           The value to add.
          */
         void addValue(const uint64_t value) {
-            min = std::min(min, value);
+            min = min ? std::min(min, value) : value;
             max = std::max(max, value);
 
             _value_sum += value;
