@@ -163,7 +163,7 @@ using uintV_t = std::vector<uint8_t>;
     constexpr std::array<uint8_t, sizeof(uint64_t)> host_order { 7,6,5,4,3,2,1,0 };
 #endif
 
-   if (byte_value[host_order[0]] & 0xC0) {
+   if (byte_value[host_order[0]] & 0xC0) { // Check if invalid
         return {};
     }
 

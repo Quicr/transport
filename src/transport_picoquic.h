@@ -54,7 +54,8 @@ class PicoQuicTransport : public ITransport
          * @return
          */
         uint8_t size() {
-            return 1 + uintV_size(remote_data_ctx_id_V[0]) + uintV_size(length_V[0]);
+            hdr_length = 1 + uintV_size(remote_data_ctx_id_V[0]) + uintV_size(length_V[0]);
+            return hdr_length;
         }
 
         /**
