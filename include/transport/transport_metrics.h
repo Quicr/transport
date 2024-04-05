@@ -41,7 +41,7 @@ namespace qtransport {
             min = 0;
             max = 0;
             avg = 0;
-            _value_count = 0;
+            _value_sum = 0;
             _value_count = 0;
         }
     };
