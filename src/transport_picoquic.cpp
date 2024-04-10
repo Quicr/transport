@@ -1314,7 +1314,7 @@ PicoQuicTransport::on_recv_datagram(ConnectionContext* conn_ctx, uint8_t* bytes,
 
         if (!cbNotifyQueue.push([=, this]() {
                 delegate.on_recv_notify(data_ctx_it->second.conn_id,
-                                        data_ctx_it->second.data_ctx_id, true); })) {
+                                        data_ctx_it->second.data_ctx_id, data_ctx_it->second.is_bidir); })) {
 
             logger->error << "conn_id: " << data_ctx_it->second.conn_id
                           << " data_ctx_id: " << data_ctx_it->second.data_ctx_id
