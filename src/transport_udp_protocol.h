@@ -104,6 +104,11 @@ namespace qtransport {
 
             uint16_t report_id { 0 };           /// Report ID this data applies to
             uint16_t ticks_ms { 0 };            /// Senders Tick millisecond value from start of report period, reset to zero on new report
+
+            /*
+             * Following the data header are additional variable length integers
+             */
+            // remote_data_ctx_id -- The remote side data context ID. The data_ctx_id is learned out of band of the transport
         } __attribute__((__packed__, aligned(1)));
 
 

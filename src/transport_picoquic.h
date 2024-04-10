@@ -2,7 +2,6 @@
 #pragma once
 
 #include <atomic>
-#include <cassert>
 #include <cstdint>
 #include <functional>
 #include <vector>
@@ -26,6 +25,7 @@
 #include "transport/priority_queue.h"
 #include "transport/safe_queue.h"
 #include "transport/time_queue.h"
+#include "transport/transport_metrics.h"
 
 namespace qtransport {
 
@@ -38,44 +38,71 @@ class PicoQuicTransport : public ITransport
   public:
     const char* QUICR_ALPN = "quicr-v1";
 
-    struct ConnectionMetrics {
-        uint64_t time_checks {0};
-        uint64_t total_retransmits {0};
-        uint64_t cwin_congested {0};                    /// Number of times CWIN is low or zero (congested)
-        uint64_t prev_cwin_congested {0};               /// Previous number of times CWIN is congested
+    /**
+     * Data header is transmitted for every object transmitted (stream and datagram)
+     */
+    struct DataHeader {
+        uint8_t  hdr_length {0};                            /// Length of header in bytes, including hdr_length byte
+        uintV_t  remote_data_ctx_id_V {0};                  /// Receiver data context ID encoded
+        uint64_t remote_data_ctx_id {0};                    /// Receiver data context ID
 
-        auto operator<=>(const ConnectionMetrics&) const = default;
+        uintV_t  length_V {0};                              /// Length of stream object value being transmitted encoded
+        uint64_t length {0};                                /// Length of stream object value being transmitted
+
+        /**
+         * @brief Size of the data header
+         * @return
+         */
+        uint8_t size() {
+            hdr_length = 1 + uintV_size(remote_data_ctx_id_V[0]) + uintV_size(length_V[0]);
+            return hdr_length;
+        }
+
+        /**
+         * @brief Load data header from bytes
+         *
+         * @param hdr_bytes         Bytes as written from network to load
+         *
+         * @return true if loaded, false if there was an error
+         */
+        bool load(std::vector<uint8_t> &&hdr_bytes) {
+            if (hdr_bytes.empty()) return false;
+
+            hdr_length = hdr_bytes.front();
+
+            auto it = hdr_bytes.begin() + 1;
+
+            const auto data_ctx_id_len = uintV_size(*it);
+            remote_data_ctx_id_V.assign(it, it + data_ctx_id_len);
+            it += data_ctx_id_len;
+
+            if (it == hdr_bytes.end()) return false;
+
+            remote_data_ctx_id = to_uint64(remote_data_ctx_id_V);
+
+            const auto length_len = uintV_size(*it);
+            length_V.assign(it, it + length_len);
+
+            length = to_uint64(length_V);
+
+            return true;
+        }
+
+        /**
+         * @brief data for header. Data can be written to network
+         *
+         * @return
+         */
+        std::vector<uint8_t> data() {
+            std::vector<uint8_t> net_data;
+
+            net_data.push_back(size());
+            net_data.insert(net_data.end(), remote_data_ctx_id_V.begin(), remote_data_ctx_id_V.end());
+            net_data.insert(net_data.end(), length_V.begin(), length_V.end());
+
+            return net_data;
+        }
     };
-
-    struct DataContextMetrics {
-        uint64_t dgram_ack {0};
-        uint64_t dgram_spurious {0};
-        uint64_t dgram_prepare_send {0};
-        uint64_t dgram_lost {0};
-        uint64_t dgram_received {0};
-        uint64_t dgram_sent {0};
-
-        uint64_t enqueued_objs {0};
-
-        uint64_t stream_prepare_send {0};
-        uint64_t stream_rx_callbacks {0};
-
-        uint64_t rx_buffer_drops {0};                       /// count of receive buffer drops of data due to RESET request
-        uint64_t tx_buffer_drops{0};                        /// Count of write buffer drops of data due to RESET request
-        uint64_t tx_queue_discards {0};                     /// Number of objects discarded due to TTL expiry or clear
-        uint64_t tx_queue_expired {0};                      /// Number of objects expired before pop/front
-        uint64_t tx_delayed_callback {0};                   /// Count of times transmit callbacks were delayed
-        uint64_t prev_tx_delayed_callback {0};              /// Previous transmit delayed callback value, set each interval
-        uint64_t tx_reset_wait {0};                         /// Number of times data context performed a reset and wait
-        uint64_t stream_objects_sent {0};
-        uint64_t stream_bytes_sent {0};
-        uint64_t stream_bytes_recv {0};
-        uint64_t stream_objects_recv {0};
-
-        constexpr auto operator<=>(const DataContextMetrics&) const = default;
-
-    };
-
 
     using bytes_t = std::vector<uint8_t>;
     using timeQueue = time_queue<bytes_t, std::chrono::milliseconds>;
@@ -87,10 +114,8 @@ class PicoQuicTransport : public ITransport
      *      data that may use datagram or one or more stream QUIC frames
      */
     struct DataContext {
-        bool is_default_context { false };                   /// Indicates if the data context is the default context
         bool is_bidir { false };                             /// Indicates if the stream is bidir (true) or unidir (false)
         bool mark_stream_active { false };                   /// Instructs the stream to be marked active
-        bool mark_dgram_ready { false };                     /// Instructs datagram to be marked ready/active
 
         bool uses_reset_wait { false };                      /// Indicates if data context can/uses reset wait strategy
         bool tx_reset_wait_discard { false };                /// Instructs TX objects to be discarded on POP instead
@@ -103,6 +128,8 @@ class PicoQuicTransport : public ITransport
             REPLACE_STREAM_USE_RESET,
             REPLACE_STREAM_USE_FIN,
         } stream_action {StreamAction::NO_ACTION};
+
+        DataHeader data_header {};                           /// Data header to use for start of stream or for every datagram
 
         uint64_t current_stream_id {0};                      /// Current active stream if the value is >= 4
 
@@ -120,9 +147,8 @@ class PicoQuicTransport : public ITransport
         struct StreamRxBuffer
         {
             uint8_t* object { nullptr };           /// Current object that is being received via byte stream
-            uint16_t object_hdr_size{ 0 };         /// Size of header read in (should be 4 right now)
-            uint32_t object_size{ 0 };             /// Receive object data size to append up to before sending to app
-            size_t object_offset{ 0 };             /// Pointer offset to next byte to append
+            uint32_t object_size { 0 };            /// Receive object data size to append up to before sending to app
+            size_t object_offset { 0 };            /// Pointer offset to next byte to append
 
             ~StreamRxBuffer() {
                 if (object != nullptr) {
@@ -136,7 +162,6 @@ class PicoQuicTransport : public ITransport
                 }
 
                 object = nullptr;
-                object_hdr_size = 0;
                 object_size = 0;
                 object_offset = 0;
             }
@@ -146,7 +171,7 @@ class PicoQuicTransport : public ITransport
         // The last ticks when TX callback was run
         uint64_t last_tx_tick { 0 };
 
-        DataContextMetrics metrics;
+        QuicDataContextMetrics metrics;
 
         DataContext() = default;
         DataContext(DataContext&&) = default;
@@ -195,17 +220,15 @@ class PicoQuicTransport : public ITransport
         picoquic_cnx_t * pq_cnx = nullptr;                    /// Picoquic connection/path context
         uint64_t last_stream_id {0};                          /// last stream Id - Zero means not set/no stream yet. >=4 is the starting stream value
 
+        bool mark_dgram_ready { false };                     /// Instructs datagram to be marked ready/active
+
         DataContextId next_data_ctx_id {1};                   /// Next data context ID; zero is reserved for default context
 
-        /**
-         * Default data context is used for datagrams and received unidirectional streams only. Transmit
-         *  unidirectional MUST be it's own context.
-         */
-        DataContext default_data_context;
 
+        std::unique_ptr<priority_queue<ConnData>> dgram_tx_data;  /// Datagram pending objects to be written to the network
 
         /**
-         * Active data contexts are for transmit unidirectional data flows as well as for bi-directional (received) flows
+         * Active data contexts (streams bidir/unidir and datagram)
          */
         std::map<qtransport::DataContextId, DataContext> active_data_contexts;
 
@@ -218,10 +241,9 @@ class PicoQuicTransport : public ITransport
         uint16_t not_congested_gauge { 0 };                  /// Interval gauge count of consecutive not congested checks
 
         // Metrics
-        ConnectionMetrics metrics;
+        QuicConnectionMetrics metrics;
 
         ConnectionContext() {
-            default_data_context.is_default_context = true;
         }
 
         ConnectionContext(picoquic_cnx_t *cnx) : ConnectionContext() {
@@ -233,6 +255,7 @@ class PicoQuicTransport : public ITransport
      * pq event loop member vars
      */
     uint64_t pq_loop_prev_time = 0;
+    uint64_t pq_loop_metrics_prev_time = 0;
 
     /*
      * Exceptions
@@ -296,6 +319,10 @@ class PicoQuicTransport : public ITransport
       const TransportConnId& conn_id,
       const DataContextId& data_ctx_id) override;
 
+    void setRemoteDataCtxId(const TransportConnId conn_id,
+                            const DataContextId data_ctx_id,
+                            const DataContextId remote_data_ctx_id) override;
+
     /*
      * Internal public methods
      */
@@ -317,21 +344,20 @@ class PicoQuicTransport : public ITransport
 
     ConnectionContext& createConnContext(picoquic_cnx_t * pq_cnx);
 
-    DataContext* getDefaultDataContext(TransportConnId conn_id);
-
-    void send_next_datagram(DataContext* data_ctx, uint8_t* bytes_ctx, size_t max_len);
+    void send_next_datagram(ConnectionContext* conn_ctx, uint8_t* bytes_ctx, size_t max_len);
     void send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, size_t max_len);
 
     void on_connection_status(const TransportConnId conn_id,
                               const TransportStatus status);
 
     void on_new_connection(const TransportConnId conn_id);
-    void on_recv_datagram(DataContext* data_ctx,
+    void on_recv_datagram(ConnectionContext* conn_ctx,
                           uint8_t* bytes, size_t length);
-    void on_recv_stream_bytes(DataContext* data_ctx, uint64_t stream_id,
+    void on_recv_stream_bytes(ConnectionContext *conn_ctx, DataContext* data_ctx, uint64_t stream_id,
                              uint8_t* bytes, size_t length);
 
     void check_conns_for_congestion();
+    void emit_metrics();
 
     /**
      * @brief Function run the queue functions within the picoquic thread via the pq_loop_cb
@@ -343,14 +369,13 @@ class PicoQuicTransport : public ITransport
     void pq_runner();
 
     /*
-   * Internal Public Variables
+     * Internal Public Variables
      */
     cantina::LoggerPointer logger;
     cantina::LoggerPointer picoquic_logger;
     bool _is_server_mode;
     bool _is_unidirectional{ false };
     bool debug {false};
-
 
   private:
     TransportConnId createClient();

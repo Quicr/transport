@@ -4,11 +4,14 @@
 #include <mutex>
 #include <optional>
 #include <queue>
+#include <array>
 #include <vector>
 #include <chrono>
 #include <sys/socket.h>
 
 #include <cantina/logger.h>
+#include <transport/safe_queue.h>
+#include <transport/transport_metrics.h>
 
 namespace qtransport {
 
@@ -114,6 +117,112 @@ struct ConnData {
     std::vector<uint8_t> data;
     std::vector<MethodTraceItem> trace;
 };
+
+using uintV_t = std::vector<uint8_t>;
+
+/**
+ * @brief Get the byte size from variable length-integer
+ *
+ * @param uintV_msbbyte     MSB byte of the variable length integer
+ *
+ * @returns the size in bytes of the variable length integer
+ */
+ inline uint8_t uintV_size(const uint8_t uintV_msbbyte) {
+     if ((uintV_msbbyte & 0x40) == 0x40) {
+         return 2;
+     } else if ((uintV_msbbyte & 0x80) == 0x80) {
+         return 4;
+     } else if ((uintV_msbbyte & 0xC0) == 0xC0) {
+         return 8;
+     } else {
+         return 1;
+     }
+ }
+
+/**
+ * @brief Convert uint64_t to Variable-Length Integer
+ *
+ * @details Encode unsigned 64bit value to shorten wrire format per RFC9000 Section 16 (Variable-Length Integer Encoding)
+ *
+ * @param value         64bit value to convert
+ *
+ * @returns vector of encoded bytes or empty vector if value is invalid
+ */
+ inline uintV_t to_uintV(uint64_t value) {
+    static constexpr uint64_t len_1 =  (static_cast<uint64_t>(-1) << (64 - 6) >> (64 - 6));
+    static constexpr uint64_t len_2 =  (static_cast<uint64_t>(-1) << (64 - 14) >> (64 - 14));
+    static constexpr uint64_t len_4 =  (static_cast<uint64_t>(-1) << (64 - 30) >> (64 - 30));
+
+    uint8_t net_bytes[8] {0};          // Network order bytes
+    uint8_t len {0};                   // Length of bytes encoded
+
+    uint8_t* byte_value = reinterpret_cast<uint8_t *>(&value);
+
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    constexpr std::array<uint8_t, sizeof(uint64_t)> host_order { 0,1,2,3,4,5,6,7 };
+#else
+    constexpr std::array<uint8_t, sizeof(uint64_t)> host_order { 7,6,5,4,3,2,1,0 };
+#endif
+
+   if (byte_value[host_order[0]] & 0xC0) { // Check if invalid
+        return {};
+    }
+
+    if (value > len_4) { // 62 bit encoding (8 bytes)
+        for (int i = 0; i < 8; i++) {
+            net_bytes[i] = byte_value[host_order[i]];
+        }
+        net_bytes[0] |= 0xC0;
+        len = 8;
+    } else if (value > len_2) { // 30 bit encoding (4 bytes)
+        for (int i = 0; i < 4; i++) {
+            net_bytes[i] = byte_value[host_order[i + 4]];
+        }
+        net_bytes[0] |= 0x80;
+        len = 4;
+    } else if (value > len_1) { // 14 bit encoding (2 bytes)
+        net_bytes[0] = byte_value[host_order[6]] | 0x40;
+        net_bytes[1] = byte_value[host_order[7]];
+        len = 2;
+    } else {
+        net_bytes[0] = byte_value[host_order[7]];
+        len = 1;
+    }
+
+    std::vector<uint8_t> encoded_bytes(net_bytes, net_bytes+len);
+    return encoded_bytes;
+ }
+
+/**
+ * @brief Convert Variable-Length Integer to uint64_t
+ *
+ * @param uintV             Encoded variable-Length integer
+ *
+ * @returns uint64_t value of the variable length integer
+ */
+ inline uint64_t to_uint64(const uintV_t& uintV) {
+     if (uintV.empty()) {
+         return 0;
+     }
+
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    constexpr std::array<uint8_t, sizeof(uint64_t)> host_order { 0,1,2,3,4,5,6,7 };
+#else
+    constexpr std::array<uint8_t, sizeof(uint64_t)> host_order { 7,6,5,4,3,2,1,0 };
+#endif
+    uint64_t value {0};
+    uint8_t* byte_value = reinterpret_cast<uint8_t *>(&value);
+
+    const auto offset = 8 - uintV.size();
+
+    for (size_t i=0; i < uintV.size(); i++) {
+        byte_value[host_order[i + offset]] = uintV[i];
+    }
+
+    byte_value[host_order[offset]] = uintV[0] & 0x3f; // Zero MSB length bits
+
+    return value;
+}
 
 /**
  * @brief ITransport interface
@@ -299,10 +408,24 @@ public:
                                sockaddr_storage* addr) = 0;
 
   /**
+   * @brief Set the remote data context id
+   * @details sets the remote data context id for data objects transmitted
+   *
+   * @param conn_id                  Connection ID
+   * @param data_ctx_id              Local data context ID
+   * @param remote_data_ctx_id       Remote data context ID (learned via subscribe/publish)
+   */
+  virtual void setRemoteDataCtxId(const TransportConnId conn_id,
+                                  const DataContextId data_ctx_id,
+                                  const DataContextId remote_data_ctx_id) = 0;
+
+
+  /**
    * Enqueue flags
    */
   struct EnqueueFlags
   {
+    bool use_reliable { false };        /// Indicates if object should use reliable stream or unreliable
     bool new_stream { false };          /// Indicates that a new stream should be created to replace existing one
     bool clear_tx_queue { false };      /// Indicates that the TX queue should be cleared before adding new object
     bool use_reset { false };           /// Indicates new stream created will close the previous using reset/abrupt
@@ -328,11 +451,11 @@ public:
   virtual TransportError enqueue(const TransportConnId& context_id,
                                  const DataContextId& data_ctx_id,
                                  std::vector<uint8_t>&& bytes,
-                                 std::vector<qtransport::MethodTraceItem> &&trace = { MethodTraceItem{} },
+                                 std::vector<MethodTraceItem> &&trace = { MethodTraceItem{} },
                                  const uint8_t priority = 1,
                                  const uint32_t ttl_ms=350,
                                  const uint32_t delay_ms=0,
-                                 const EnqueueFlags flags={false, false, false}) = 0;
+                                 const EnqueueFlags flags={true, false, false, false}) = 0;
 
   /**
    * @brief Dequeue application data from transport queue
@@ -348,6 +471,10 @@ public:
   virtual std::optional<std::vector<uint8_t>> dequeue(
     const TransportConnId& context_id,
     const DataContextId& data_ctx_id) = 0;
+
+   /// Metrics samples to be written to TSDB. When full the buffer will remove the oldest
+   std::shared_ptr<safe_queue<MetricsConnSample>> metrics_conn_samples;
+   std::shared_ptr<safe_queue<MetricsDataSample>> metrics_data_samples;
 };
 
 } // namespace qtransport

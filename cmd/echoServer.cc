@@ -49,7 +49,7 @@ public:
   void on_recv_notify(const TransportConnId &conn_id,
                       const DataContextId &data_ctx_id, const bool is_bidir) {
 
-    while (true) {
+    for (int i=0; i < 100; i++) {
       auto data = server->dequeue(conn_id, data_ctx_id);
 
       if (data.has_value()) {
@@ -70,7 +70,6 @@ public:
                          << "  msg_num: " << *msg_num << "  prev_num: " << prev_msg_num << "("
                          << *msg_num - prev_msg_num << ")" << std::flush;
         }
-
         prev_msg_num = *msg_num;
 
         if (is_bidir) {
@@ -96,9 +95,10 @@ public:
 int main() {
   char *envVar;
   cantina::LoggerPointer logger = std::make_shared<cantina::Logger>("ECHO");
+  logger->SetLogLevel("DEBUG");
   Delegate d(logger);
   TransportRemote serverIp =
-      TransportRemote{"127.0.0.1", 1234, TransportProtocol::UDP};
+  TransportRemote{"127.0.0.1", 1234, TransportProtocol::QUIC};
   TransportConfig tconfig{.tls_cert_filename = "./server-cert.pem",
                           .tls_key_filename = "./server-key.pem",
                           .time_queue_max_duration = 1000,
