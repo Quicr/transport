@@ -176,11 +176,6 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
 
                 if (is_fin) {
                     transport->logger->info << "Received FIN for stream " << stream_id << std::flush;
-
-                    data_ctx->current_stream_id = 0;
-                    picoquic_reset_stream_ctx(pq_cnx, data_ctx->current_stream_id);
-
-                    transport->deleteDataContext(conn_id, data_ctx->data_ctx_id);
                 }
             }
 
@@ -687,6 +682,11 @@ PicoQuicTransport::close(const TransportConnId& conn_id)
     for (const auto& [d_id, d_ctx]: conn_it->second.active_data_contexts) {
         picoquic_mark_active_stream(conn_it->second.pq_cnx, d_ctx.current_stream_id, 0, NULL);
         picoquic_reset_stream(conn_it->second.pq_cnx, d_ctx.current_stream_id, 0);
+
+        for (const auto& [stream_id, _]: d_ctx.stream_rx_buffer) {
+            picoquic_unlink_app_stream_ctx(conn_it->second.pq_cnx, stream_id);
+            picoquic_reset_stream(conn_it->second.pq_cnx, stream_id, 0);
+        }
     }
 
     picoquic_close(conn_it->second.pq_cnx, 0);
@@ -882,14 +882,8 @@ void PicoQuicTransport::pq_runner() {
     }
 }
 
-void PicoQuicTransport::deleteDataContext(const TransportConnId& conn_id, DataContextId data_ctx_id)
+void PicoQuicTransport::delete_data_context_internal(TransportConnId conn_id, DataContextId data_ctx_id)
 {
-    if (data_ctx_id == 0) {
-        return; // use close() instead of deleting default/datagram context
-    }
-
-    std::lock_guard<std::mutex> _(_state_mutex);
-
     const auto conn_it = conn_context.find(conn_id);
 
     if (conn_it == conn_context.end())
@@ -905,7 +899,31 @@ void PicoQuicTransport::deleteDataContext(const TransportConnId& conn_id, DataCo
 
     close_stream(conn_it->second, &data_ctx_it->second, false);
 
+    /*
+     * Clear all received/active streams
+     */
+    for (const auto& [stream_id, _]: data_ctx_it->second.stream_rx_buffer) {
+        picoquic_unlink_app_stream_ctx(conn_it->second.pq_cnx, stream_id);
+        picoquic_reset_stream(conn_it->second.pq_cnx, stream_id, 0);
+    }
+
     conn_it->second.active_data_contexts.erase(data_ctx_it);
+}
+
+void PicoQuicTransport::deleteDataContext(const TransportConnId& conn_id, DataContextId data_ctx_id)
+{
+    if (data_ctx_id == 0) {
+        return; // use close() instead of deleting default/datagram context
+    }
+
+    /*
+     * Race conditions exist with picoquic thread callbacks that will cause a problem if the context (pointer context)
+     *    is deleted outside of the picoquic thread. Below schedules the delete to be done within the picoquic thread.
+     */
+    picoquic_runner_queue.push([=]() {
+        delete_data_context_internal(conn_id, data_ctx_id);
+    });
+
 }
 
 void
@@ -1567,8 +1585,9 @@ void PicoQuicTransport::check_conns_for_congestion()
         conn_ctx.metrics.rx_rate_bps.addValue(path_quality.receive_rate_estimate * 8);
 
 
-        // Is CWIN congested
-        if (cwin_congested_count > 5 || (path_quality.cwin < PQ_CC_LOW_CWIN && path_quality.bytes_in_transit > 1)) {
+        // Is CWIN congested?
+        if (cwin_congested_count > 5 || (path_quality.cwin < PQ_CC_LOW_CWIN
+                                         && path_quality.bytes_in_transit)) {
 
             logger->info << "CC: CWIN congested (fyi only)"
                          << " conn_id: " << conn_id
@@ -1936,14 +1955,16 @@ void PicoQuicTransport::close_stream(const ConnectionContext& conn_ctx, DataCont
         logger->debug << "Reset stream_id: " << data_ctx->current_stream_id << " conn_id: " << conn_ctx.conn_id
                      << std::flush;
 
-        picoquic_set_app_stream_ctx(conn_ctx.pq_cnx, data_ctx->current_stream_id , NULL);
+        picoquic_reset_stream_ctx(conn_ctx.pq_cnx, data_ctx->current_stream_id);
         picoquic_reset_stream(conn_ctx.pq_cnx, data_ctx->current_stream_id, 0);
 
     } else {
         logger->info << "Sending FIN for stream_id: " << data_ctx->current_stream_id << " conn_id: " << conn_ctx.conn_id
                      << std::flush;
 
-        picoquic_add_to_stream(conn_ctx.pq_cnx, data_ctx->current_stream_id, NULL, 0, 1);
+        picoquic_reset_stream_ctx(conn_ctx.pq_cnx, data_ctx->current_stream_id);
+        uint8_t empty {0};
+        picoquic_add_to_stream(conn_ctx.pq_cnx, data_ctx->current_stream_id, &empty, 0, 1);
     }
 
     data_ctx->reset_tx_object();
