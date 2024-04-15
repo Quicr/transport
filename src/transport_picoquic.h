@@ -305,6 +305,7 @@ class PicoQuicTransport : public ITransport
                                     uint8_t priority, bool bidir) override;
 
     void deleteDataContext(const TransportConnId& conn_id, DataContextId data_ctx_id) override;
+    void delete_data_context_internal(TransportConnId conn_id, DataContextId data_ctx_id);
 
     TransportError enqueue(const TransportConnId& conn_id,
                            const DataContextId& data_ctx_id,
