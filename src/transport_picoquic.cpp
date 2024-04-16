@@ -965,6 +965,8 @@ PicoQuicTransport::send_next_datagram(ConnectionContext* conn_ctx, uint8_t* byte
 
             out_data.value.trace.push_back({"transport_quic:send_dgram", out_data.value.trace.front().start_time});
 
+            data_ctx_it->second.metrics.tx_object_duration_us.addValue(out_data.value.trace.back().delta);
+
             if (out_data.value.trace.back().delta > 60000) {
                 logger->info << "MethodTrace conn_id: " << conn_ctx->conn_id
                              << " data_ctx_id: " << data_ctx_it->second.data_ctx_id
@@ -1862,8 +1864,9 @@ void PicoQuicTransport::check_callback_delta(DataContext* data_ctx, bool tx) {
     const auto delta_ms = current_tick - data_ctx->last_tx_tick;
     data_ctx->last_tx_tick = current_tick;
 
+    data_ctx->metrics.tx_callback_ms.addValue(delta_ms);
 
-    if (data_ctx->priority > 0 && delta_ms > 50 && data_ctx->tx_data->size() >= 3) {
+    if (data_ctx->priority > 0 && delta_ms > 40 && data_ctx->tx_data->size() >= 3) {
         data_ctx->metrics.tx_delayed_callback++;
 
         picoquic_path_quality_t path_quality;
@@ -1872,6 +1875,7 @@ void PicoQuicTransport::check_callback_delta(DataContext* data_ctx, bool tx) {
             picoquic_get_path_quality(conn_it->pq_cnx, conn_it->pq_cnx->path[0]->unique_path_id, &path_quality);
         }
 
+        /*
         logger->info << "conn_id: " << data_ctx->conn_id
                       << " data_ctx_id: " << data_ctx->data_ctx_id
                       << " stream_id: " << data_ctx->current_stream_id
@@ -1892,6 +1896,7 @@ void PicoQuicTransport::check_callback_delta(DataContext* data_ctx, bool tx) {
                       << " bytes_in_transit: " << path_quality.bytes_in_transit
                       << " recv_rate_Kbps: " << path_quality.receive_rate_estimate * 8 / 1000
                       << std::flush;
+        */
     }
 }
 

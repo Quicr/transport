@@ -108,6 +108,8 @@ namespace qtransport {
         uint64_t _prev_tx_delayed_callback{ 0 }; /// Previous transmit delayed callback value, set each interval
         uint64_t tx_reset_wait{ 0 };            /// count of times data context performed a reset and wait
         MinMaxAvg tx_queue_size;                /// TX queue size in period
+        MinMaxAvg tx_callback_ms;               /// Callback time in milliseconds in period
+        MinMaxAvg tx_object_duration_us;        /// TX object time in queue duration in microseconds
 
         uint64_t tx_dgrams{ 0 };                /// count of datagrams sent
         uint64_t tx_dgrams_bytes{ 0 };          /// count of datagrams sent bytes
@@ -124,6 +126,8 @@ namespace qtransport {
         void resetPeriod()
         {
           tx_queue_size.clear();
+          tx_callback_ms.clear();
+          tx_object_duration_us.clear();
         }
     };
 
