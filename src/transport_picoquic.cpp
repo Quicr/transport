@@ -1634,7 +1634,7 @@ void PicoQuicTransport::check_conns_for_congestion()
             data_ctx.metrics.tx_queue_size.addValue(data_ctx.tx_data->size());
 
             // TODO(tievens): size of TX is based on rate; adjust based on burst rates
-            if (data_ctx.tx_data->size() >= 10) {
+            if (data_ctx.tx_data->size() >= 30) {
                 logger->info << "CC: Stream congested, queue backlog"
                              << " conn_id: " << data_ctx.conn_id
                              << " data_ctx_id: " << data_ctx.data_ctx_id
