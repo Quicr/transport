@@ -435,8 +435,13 @@ PicoQuicTransport::start()
         logger->info << "Using Reset and Wait congestion control strategy" << std::flush;
     }
 
-    (void)picoquic_config_set_option(&config, picoquic_option_CC_ALGO, "bbr");
-    //(void)picoquic_config_set_option(&config, picoquic_option_CC_ALGO, "reno");
+    if (tconfig.use_bbr) {
+        (void)picoquic_config_set_option(&config, picoquic_option_CC_ALGO, "bbr");
+    } else {
+        logger->info << "Using NewReno congestion control" << std::flush;
+        (void)picoquic_config_set_option(&config, picoquic_option_CC_ALGO, "reno");
+    }
+
     (void)picoquic_config_set_option(&config, picoquic_option_ALPN, QUICR_ALPN);
     (void)picoquic_config_set_option(&config, picoquic_option_CWIN_MIN,
                                      std::to_string(tconfig.quic_cwin_minimum).c_str());
@@ -1144,6 +1149,7 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
             data_hdr_size = data_ctx->data_header.size();
 
             obj.value.trace.push_back({"transport_quic:send_stream", obj.value.trace.front().start_time});
+            data_ctx->metrics.tx_object_duration_us.addValue(obj.value.trace.back().delta);
 
             /*
             if (!obj.value.trace.empty() && obj.value.trace.back().delta > 15000) {
@@ -1743,8 +1749,11 @@ TransportConnId PicoQuicTransport::createClient()
         sni = serverInfo.host_or_ip.c_str();
     }
 
-    //picoquic_set_default_congestion_algorithm(quic_ctx, picoquic_newreno_algorithm);
-    picoquic_set_default_congestion_algorithm(quic_ctx, picoquic_bbr_algorithm);
+    if (tconfig.use_bbr) {
+        picoquic_set_default_congestion_algorithm(quic_ctx, picoquic_bbr_algorithm);
+    } else {
+        picoquic_set_default_congestion_algorithm(quic_ctx, picoquic_newreno_algorithm);
+    }
 
     uint64_t current_time = picoquic_current_time();
 
