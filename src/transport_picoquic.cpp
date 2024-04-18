@@ -1149,6 +1149,7 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
             data_hdr_size = data_ctx->data_header.size();
 
             obj.value.trace.push_back({"transport_quic:send_stream", obj.value.trace.front().start_time});
+            data_ctx->metrics.tx_object_duration_us.addValue(obj.value.trace.back().delta);
 
             /*
             if (!obj.value.trace.empty() && obj.value.trace.back().delta > 15000) {
