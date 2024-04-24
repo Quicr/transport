@@ -422,8 +422,12 @@ TransportStatus PicoQuicTransport::status() const
 }
 
 TransportConnId
-PicoQuicTransport::start()
+PicoQuicTransport::start(std::shared_ptr<safe_queue<MetricsConnSample>>& metrics_conn_samples,
+                         std::shared_ptr<safe_queue<MetricsDataSample>>& metrics_data_samples)
 {
+    this->metrics_conn_samples = metrics_conn_samples;
+    this->metrics_data_samples = metrics_data_samples;
+
     uint64_t current_time = picoquic_current_time();
 
     if (debug) {
@@ -813,10 +817,6 @@ PicoQuicTransport::PicoQuicTransport(const TransportRemote& server,
             throw InvalidConfigException("Missing cert key filename");
         }
     }
-
-    metrics_conn_samples = std::make_unique<safe_queue<MetricsConnSample>>(MAX_METRICS_SAMPLES_QUEUE);
-    metrics_data_samples = std::make_unique<safe_queue<MetricsDataSample>>(MAX_METRICS_SAMPLES_QUEUE);
-
     _tick_service = std::make_shared<threaded_tick_service>();
 }
 
@@ -1111,6 +1111,7 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
 
     if (data_ctx->stream_tx_object == nullptr) {
 
+        /*
         if (max_len < data_hdr_size) {
             // Not enough bytes to send
             logger->debug << "Not enough bytes to send stream header, waiting for next callback. "
@@ -1129,6 +1130,7 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
 
             return;
         }
+        */
 
         auto obj = data_ctx->tx_data->pop_front();
         data_ctx->metrics.tx_queue_expired += obj.expired_count;
@@ -1363,27 +1365,42 @@ void PicoQuicTransport::on_recv_stream_bytes(ConnectionContext* conn_ctx,
     }
 
     if (data_ctx == NULL)  {
+        if (length < bytes[0]) {
+            logger->error << "New stream received and header length " << static_cast<int>(bytes[0])
+                          << " greater than length " << length
+                          << " conn_id: " << conn_ctx->conn_id
+                          << " stream_id: " << stream_id
+                          << std::flush;
+
+            return;
+        }
+
         std::vector hdr_bytes(bytes, bytes + bytes[0]);
         DataHeader dhdr {};
         dhdr.load(std::move(hdr_bytes));
 
         if (dhdr.remote_data_ctx_id == 0) {
             logger->warning << "New stream received with null data context and null data_context_id; dropping "
+                            << " conn_id: " << conn_ctx->conn_id
                             << " stream_id: " << stream_id
                             << " header_len: " << dhdr.hdr_length
                             << " data_ctx_id: " << dhdr.remote_data_ctx_id
                             << " length: " << dhdr.length
                             << std::flush;
+            picoquic_reset_stream_ctx(conn_ctx->pq_cnx, stream_id);
+            picoquic_reset_stream(conn_ctx->pq_cnx, stream_id, 0);
             return;
         } else {
             const auto data_ctx_it = conn_ctx->active_data_contexts.find(dhdr.remote_data_ctx_id);
             if (data_ctx_it == conn_ctx->active_data_contexts.end()) {
                 logger->warning << "Stream received with null data context data ctx id is not found; dropping "
+                                << " conn_id: " << conn_ctx->conn_id
                                 << " stream_id: " << stream_id
                                 << " header_len: " << dhdr.hdr_length
                                 << " data_ctx_id: " << dhdr.remote_data_ctx_id
                                 << " length: " << dhdr.length
                                 << std::flush;
+                close_stream(conn_ctx->pq_cnx, &data_ctx_it->second, true);
                 return;
             }
 
@@ -1414,8 +1431,12 @@ void PicoQuicTransport::on_recv_stream_bytes(ConnectionContext* conn_ctx,
             logger->warning << "Stream object header length " << static_cast<int>(bytes[0])
                             << " is greater than callback length " << length
                             << ". This is invalid and being dropped "
+                            << " conn_id: " << conn_ctx->conn_id
+                            << " stream_id: " << stream_id
                             << std::flush;
+
             data_ctx->metrics.rx_invalid_drops++;
+            picoquic_reset_stream(conn_ctx->pq_cnx, stream_id, 0);
             return;
         }
 
@@ -1431,12 +1452,13 @@ void PicoQuicTransport::on_recv_stream_bytes(ConnectionContext* conn_ctx,
         if (rx_buf.object_size > 40000000L) { // Safety check
             logger->warning << "on_recv_stream_bytes stream_id: " << stream_id
                             << " conn_id: " << data_ctx->conn_id
+                            << " stream_id: " << stream_id
                             << " data_ctx_id: " << data_ctx->data_ctx_id
                             << " data length is too large: " << rx_buf.object_size
                             << std::flush;
 
-            rx_buf.reset_buffer();
-            // TODO: Should reset stream in this case
+            data_ctx->metrics.rx_invalid_drops++;
+            close_stream(conn_ctx->pq_cnx, data_ctx, true);
             return;
         }
 
@@ -1460,7 +1482,6 @@ void PicoQuicTransport::on_recv_stream_bytes(ConnectionContext* conn_ctx,
             data_ctx->metrics.rx_stream_bytes += rx_buf.object_size;
 
             rx_buf.reset_buffer();
-            length = 0; // no more data left to process
         }
         else {
             // Need to wait for more data, create new object buffer

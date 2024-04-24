@@ -360,9 +360,13 @@ public:
    * 		start listening on the socket for new connections. In client
    * mode this will initiate a connection to the remote/server.
    *
+   * @param metrics_conn_samples      Connection metrics samples (from MetricsExporter)
+   * @param metrics_data_samples      Data flow metrics samples (from MetricsExporter)
+   *
    * @return TransportContextId: identifying the connection
    */
-  virtual TransportConnId start() = 0;
+   virtual TransportConnId start(std::shared_ptr<safe_queue<MetricsConnSample>>& metrics_conn_samples,
+                                 std::shared_ptr<safe_queue<MetricsDataSample>>& metrics_data_samples) = 0;
 
   /**
    * @brief Create a data context

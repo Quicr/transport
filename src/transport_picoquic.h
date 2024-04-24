@@ -294,7 +294,8 @@ class PicoQuicTransport : public ITransport
     virtual ~PicoQuicTransport();
 
     TransportStatus status() const override;
-    TransportConnId start() override;
+    TransportConnId start(std::shared_ptr<safe_queue<MetricsConnSample>>& metrics_conn_samples,
+                          std::shared_ptr<safe_queue<MetricsDataSample>>& metrics_data_samples) override;
     void close(const TransportConnId& conn_id) override;
 
     virtual bool getPeerAddrInfo(const TransportConnId& conn_id,
