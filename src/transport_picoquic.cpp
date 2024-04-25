@@ -1111,7 +1111,7 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
 
     if (data_ctx->stream_tx_object == nullptr) {
 
-        if (max_len < data_hdr_size) {
+        if (max_len < MAX_DATA_HEADER_SIZE) {
             // Not enough bytes to send
             logger->debug << "Not enough bytes to send stream header, waiting for next callback. "
                           << " conn_id: " << data_ctx->conn_id

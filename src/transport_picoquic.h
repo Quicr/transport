@@ -41,6 +41,7 @@ class PicoQuicTransport : public ITransport
     /**
      * Data header is transmitted for every object transmitted (stream and datagram)
      */
+    constexpr size_t MAX_DATA_HEADER_SIZE = 9;              /// Maximum network byte size of the data header
     struct DataHeader {
         uint8_t  hdr_length {0};                            /// Length of header in bytes, including hdr_length byte
         uintV_t  remote_data_ctx_id_V {0};                  /// Receiver data context ID encoded
