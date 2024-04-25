@@ -1111,7 +1111,6 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
 
     if (data_ctx->stream_tx_object == nullptr) {
 
-        /*
         if (max_len < data_hdr_size) {
             // Not enough bytes to send
             logger->debug << "Not enough bytes to send stream header, waiting for next callback. "
@@ -1121,6 +1120,9 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
                           << " priority: " << static_cast<int>(data_ctx->priority)
                          << data_ctx->current_stream_id << std::flush;
 
+            mark_stream_active(data_ctx->conn_id, data_ctx->data_ctx_id);
+
+            // TODO: It seems that picoquic will override the above since we didn't actually send data, below schedules it again
             if (!data_ctx->tx_data->empty()) {
                 data_ctx->mark_stream_active = true;
                 picoquic_runner_queue.push([=]() {
@@ -1130,7 +1132,6 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
 
             return;
         }
-        */
 
         auto obj = data_ctx->tx_data->pop_front();
         data_ctx->metrics.tx_queue_expired += obj.expired_count;
@@ -1149,24 +1150,10 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
             data_ctx->metrics.tx_stream_objects++;
             data_ctx->data_header.length_V = std::move(to_uintV(obj.value.data.size()));
             data_hdr_size = data_ctx->data_header.size();
+            max_len -= data_hdr_size; // Subtract out the length header that will be added
 
             obj.value.trace.push_back({"transport_quic:send_stream", obj.value.trace.front().start_time});
             data_ctx->metrics.tx_object_duration_us.addValue(obj.value.trace.back().delta);
-
-            /*
-            if (!obj.value.trace.empty() && obj.value.trace.back().delta > 15000) {
-                logger->info << "MethodTrace conn_id: " << data_ctx->conn_id
-                             << " data_ctx_id: " << data_ctx->data_ctx_id
-                             << " priority: " << static_cast<int>(obj.value.priority);
-                for (const auto &ti: obj.value.trace) {
-                    logger->info << " " << ti.method << ": " << ti.delta << " ";
-                }
-
-                logger->info << " total_duration: " << obj.value.trace.back().delta << std::flush;
-            }
-            */
-
-            max_len -= data_ctx->data_header.size(); // Subtract out the length header that will be added
 
             data_ctx->stream_tx_object = new uint8_t[obj.value.data.size()];
             data_ctx->stream_tx_object_size = obj.value.data.size();
