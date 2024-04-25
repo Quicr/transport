@@ -1551,8 +1551,7 @@ void PicoQuicTransport::on_recv_stream_bytes(ConnectionContext* conn_ctx,
                       << " dhr hdr len: " << static_cast<int>(data_ctx->data_header.hdr_length)
                       << " dhr size: " << static_cast<int>(data_ctx->data_header.hdr_length)
                       << std::flush;
-        }
-
+        
         on_recv_stream_bytes(conn_ctx, data_ctx, stream_id, bytes_p, length);
     }
 }
