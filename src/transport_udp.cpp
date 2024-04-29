@@ -74,9 +74,6 @@ UDPTransport::UDPTransport(const TransportRemote &server,
     isServerMode(isServerMode),
     serverInfo(server), delegate(delegate) {
     _tick_service = std::make_shared<threaded_tick_service>();
-
-    metrics_conn_samples = std::make_unique<safe_queue<MetricsConnSample>>(MAX_METRICS_SAMPLES_QUEUE);
-    metrics_data_samples = std::make_unique<safe_queue<MetricsDataSample>>(MAX_METRICS_SAMPLES_QUEUE);
 }
 
 TransportStatus UDPTransport::status() const {
@@ -122,7 +119,11 @@ DataContextId UDPTransport::createDataContext(const qtransport::TransportConnId 
     return data_ctx_id;
 }
 
-TransportConnId UDPTransport::start() {
+TransportConnId UDPTransport::start(std::shared_ptr<safe_queue<MetricsConnSample>>& metrics_conn_samples,
+                                    std::shared_ptr<safe_queue<MetricsDataSample>>& metrics_data_samples) {
+
+    this->metrics_conn_samples = metrics_conn_samples;
+    this->metrics_data_samples = metrics_data_samples;
 
     if (isServerMode) {
         return connect_server();
