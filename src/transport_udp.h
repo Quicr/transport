@@ -58,8 +58,8 @@ namespace qtransport {
 
         TransportStatus status() const override;
 
-      TransportConnId start(std::shared_ptr<safe_queue<MetricsConnSample>>& metrics_conn_samples,
-                            std::shared_ptr<safe_queue<MetricsDataSample>>& metrics_data_samples) override;
+      TransportConnId start(std::shared_ptr<safe_queue<MetricsConnSample>> metrics_conn_samples,
+                            std::shared_ptr<safe_queue<MetricsDataSample>> metrics_data_samples) override;
 
         void close(const TransportConnId &conn_id) override;
 

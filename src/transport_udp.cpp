@@ -119,11 +119,11 @@ DataContextId UDPTransport::createDataContext(const qtransport::TransportConnId 
     return data_ctx_id;
 }
 
-TransportConnId UDPTransport::start(std::shared_ptr<safe_queue<MetricsConnSample>>& metrics_conn_samples,
-                                    std::shared_ptr<safe_queue<MetricsDataSample>>& metrics_data_samples) {
+TransportConnId UDPTransport::start(std::shared_ptr<safe_queue<MetricsConnSample>> metrics_conn_samples,
+                                    std::shared_ptr<safe_queue<MetricsDataSample>> metrics_data_samples) {
 
-    this->metrics_conn_samples = metrics_conn_samples;
-    this->metrics_data_samples = metrics_data_samples;
+    this->metrics_conn_samples = std::move(metrics_conn_samples);
+    this->metrics_data_samples = std::move(metrics_data_samples);
 
     if (isServerMode) {
         return connect_server();
