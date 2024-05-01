@@ -365,8 +365,8 @@ public:
    *
    * @return TransportContextId: identifying the connection
    */
-   virtual TransportConnId start(std::shared_ptr<safe_queue<MetricsConnSample>>& metrics_conn_samples,
-                                 std::shared_ptr<safe_queue<MetricsDataSample>>& metrics_data_samples) = 0;
+   virtual TransportConnId start(std::shared_ptr<safe_queue<MetricsConnSample>> metrics_conn_samples,
+                                 std::shared_ptr<safe_queue<MetricsDataSample>> metrics_data_samples) = 0;
 
   /**
    * @brief Create a data context

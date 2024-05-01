@@ -422,11 +422,11 @@ TransportStatus PicoQuicTransport::status() const
 }
 
 TransportConnId
-PicoQuicTransport::start(std::shared_ptr<safe_queue<MetricsConnSample>>& metrics_conn_samples,
-                         std::shared_ptr<safe_queue<MetricsDataSample>>& metrics_data_samples)
+PicoQuicTransport::start(std::shared_ptr<safe_queue<MetricsConnSample>> metrics_conn_samples,
+                         std::shared_ptr<safe_queue<MetricsDataSample>> metrics_data_samples)
 {
-    this->metrics_conn_samples = metrics_conn_samples;
-    this->metrics_data_samples = metrics_data_samples;
+    this->metrics_conn_samples = std::move(metrics_conn_samples);
+    this->metrics_data_samples = std::move(metrics_data_samples);
 
     uint64_t current_time = picoquic_current_time();
 
@@ -1414,6 +1414,18 @@ void PicoQuicTransport::on_recv_stream_bytes(ConnectionContext* conn_ctx,
     bool object_complete = false;
 
     if (rx_buf.object == nullptr) {
+        if (bytes[0] < 3) {
+            logger->warning << "Stream object header length " << static_cast<int>(bytes[0])
+                            << " is too small " << length
+                            << ". This is invalid and being dropped "
+                            << " conn_id: " << conn_ctx->conn_id
+                            << " stream_id: " << stream_id
+                            << std::flush;
+
+            data_ctx->metrics.rx_invalid_drops++;
+            picoquic_reset_stream(conn_ctx->pq_cnx, stream_id, 0);
+            return;
+        }
         if (length < bytes[0]) {
             logger->warning << "Stream object header length " << static_cast<int>(bytes[0])
                             << " is greater than callback length " << length
@@ -1558,6 +1570,8 @@ void PicoQuicTransport::on_recv_stream_bytes(ConnectionContext* conn_ctx,
 
 void PicoQuicTransport::emit_metrics()
 {
+    if (!metrics_data_samples || !metrics_conn_samples) return;
+
     for (auto& [conn_id, conn_ctx] : conn_context) {
         const auto sample_time = std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::steady_clock::now());
 
@@ -1605,6 +1619,7 @@ void PicoQuicTransport::check_conns_for_congestion()
         if (cwin_congested_count > 5 || (path_quality.cwin < PQ_CC_LOW_CWIN
                                          && path_quality.bytes_in_transit)) {
 
+            /* TODO(tievens): comem back to this later. Right now it's too loud
             logger->info << "CC: CWIN congested (fyi only)"
                          << " conn_id: " << conn_id
                          << " cwin_congested_count: " << cwin_congested_count
@@ -1617,7 +1632,7 @@ void PicoQuicTransport::check_conns_for_congestion()
                          << " bytes_in_transit: " << path_quality.bytes_in_transit
                          << " recv_rate_Kbps: " << path_quality.receive_rate_estimate * 8 / 1000
                          << std::flush;
-
+            */
             //congested_count++; /* TODO(tievens): DO NOT react to this right now, causing issue with low latency wired networks */
         }
         conn_ctx.metrics._prev_cwin_congested = conn_ctx.metrics.cwin_congested;
