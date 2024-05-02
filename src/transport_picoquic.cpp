@@ -1264,6 +1264,7 @@ PicoQuicTransport::on_new_connection(const TransportConnId conn_id)
                             .proto = TransportProtocol::QUIC };
 
     picoquic_enable_keep_alive(conn_ctx->pq_cnx, tconfig.idle_timeout_ms * 500);
+    picoquic_set_feedback_loss_notification(conn_ctx->pq_cnx, 1);
 
     cbNotifyQueue.push([=, this]() { delegate.on_new_connection(conn_id, remote); });
 }
@@ -1803,6 +1804,7 @@ TransportConnId PicoQuicTransport::createClient()
 
     // Using default TP
     picoquic_set_transport_parameters(cnx, &local_tp_options);
+    picoquic_set_feedback_loss_notification(cnx, 1);
 
 //    picoquic_subscribe_pacing_rate_updates(cnx, tconfig.pacing_decrease_threshold_Bps,
 //                                           tconfig.pacing_increase_threshold_Bps);
