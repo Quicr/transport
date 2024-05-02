@@ -132,7 +132,7 @@ class PicoQuicTransport : public ITransport
 
         DataHeader data_header {};                           /// Data header to use for start of stream or for every datagram
 
-        uint64_t current_stream_id {0};                      /// Current active stream if the value is >= 4
+        uint64_t current_stream_id {~(uint64_t(0))};         /// Current active stream if the value is >= 4
 
         uint8_t priority {0};
 
@@ -219,7 +219,7 @@ class PicoQuicTransport : public ITransport
     struct ConnectionContext {
         TransportConnId conn_id {0};                          /// This connection ID
         picoquic_cnx_t * pq_cnx = nullptr;                    /// Picoquic connection/path context
-        uint64_t last_stream_id {0};                          /// last stream Id - Zero means not set/no stream yet. >=4 is the starting stream value
+        uint64_t last_stream_id {0};                          /// last stream Id
 
         bool mark_dgram_ready { false };                     /// Instructs datagram to be marked ready/active
 

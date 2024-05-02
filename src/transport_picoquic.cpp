@@ -193,7 +193,7 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
                 break;
             }
 
-            data_ctx->current_stream_id = 0;
+            data_ctx->current_stream_id = ~(uint64_t(0));
 
             const auto rx_buf_it = data_ctx->stream_rx_buffer.find(stream_id);
             if (rx_buf_it != data_ctx->stream_rx_buffer.end()) {
@@ -504,6 +504,10 @@ PicoQuicTransport::start(std::shared_ptr<safe_queue<MetricsConnSample>> metrics_
         if ((cid = createClient())) {
             picoQuicThread = std::thread(&PicoQuicTransport::client, this, cid);
         }
+    }
+
+    if (tconfig.quic_qlog_path.size()) {
+        picoquic_set_qlog(quic_ctx, tconfig.quic_qlog_path.c_str());
     }
 
     return cid;
@@ -1028,7 +1032,7 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
         case DataContext::StreamAction::NO_ACTION:
             [[fallthrough]];
         default:
-            if (data_ctx->current_stream_id == 0) {
+            if (data_ctx->current_stream_id == ~(uint64_t(0))) {
                 logger->info << "Creating unset stream in conn_id: " << data_ctx->conn_id
                              << std::flush;
                 const auto conn_ctx = getConnContext(data_ctx->conn_id);
@@ -1610,6 +1614,9 @@ void PicoQuicTransport::check_conns_for_congestion()
          */
         conn_ctx.metrics.tx_lost_pkts = path_quality.lost;
         conn_ctx.metrics.tx_cwin_bytes.addValue(path_quality.cwin);
+        conn_ctx.metrics.tx_in_transit_bytes.addValue(path_quality.bytes_in_transit);
+        conn_ctx.metrics.tx_spurious_losses = path_quality.spurious_losses;
+        conn_ctx.metrics.tx_timer_losses = path_quality.timer_losses;
         conn_ctx.metrics.rtt_us.addValue(path_quality.rtt_sample);
         conn_ctx.metrics.srtt_us.addValue(path_quality.rtt);
         conn_ctx.metrics.tx_rate_bps.addValue(path_quality.pacing_rate * 8);
@@ -1781,12 +1788,6 @@ TransportConnId PicoQuicTransport::createClient()
 
     uint64_t current_time = picoquic_current_time();
 
-    /* TODO: Instead of using debug, change to client/server config of the directory
-    if (debug) {
-        picoquic_set_qlog(quic_ctx, ".");
-    }
-    */
-
     picoquic_cnx_t* cnx = picoquic_create_cnx(quic_ctx,
                                               picoquic_null_connection_id,
                                               picoquic_null_connection_id,
@@ -1952,14 +1953,15 @@ void PicoQuicTransport::cbNotifier()
 
 void PicoQuicTransport::create_stream(ConnectionContext& conn_ctx, DataContext *data_ctx)
 {
-    conn_ctx.last_stream_id = ::get_next_stream_id(conn_ctx.last_stream_id ,
-                                                   _is_server_mode, !data_ctx->is_bidir);
+    conn_ctx.last_stream_id = picoquic_get_next_local_stream_id(conn_ctx.pq_cnx, !data_ctx->is_bidir);
+//    conn_ctx.last_stream_id = ::get_next_stream_id(conn_ctx.last_stream_id ,
+//                                                   _is_server_mode, !data_ctx->is_bidir);
 
     logger->debug << "conn_id: " << conn_ctx.conn_id << " data_ctx_id: " << data_ctx->data_ctx_id
                  << " create new stream with stream_id: " << conn_ctx.last_stream_id
                  << std::flush;
 
-    if (data_ctx->current_stream_id) {
+    if (data_ctx->current_stream_id != ~(uint64_t(0))) {
         close_stream(conn_ctx, data_ctx, false);
     }
 
@@ -1982,7 +1984,7 @@ void PicoQuicTransport::create_stream(ConnectionContext& conn_ctx, DataContext *
 
 void PicoQuicTransport::close_stream(const ConnectionContext& conn_ctx, DataContext* data_ctx, const bool send_reset)
 {
-    if (data_ctx->current_stream_id == 0) {
+    if (data_ctx->current_stream_id == ~(uint64_t(0))) {
         return; // stream already closed
     }
 
@@ -2009,7 +2011,7 @@ void PicoQuicTransport::close_stream(const ConnectionContext& conn_ctx, DataCont
     data_ctx->reset_tx_object();
     data_ctx->stream_rx_buffer.erase(data_ctx->current_stream_id);
 
-    data_ctx->current_stream_id = 0;
+    data_ctx->current_stream_id = ~(uint64_t(0));
 }
 
 void PicoQuicTransport::mark_stream_active(const TransportConnId conn_id, const DataContextId data_ctx_id) {
@@ -2027,7 +2029,7 @@ void PicoQuicTransport::mark_stream_active(const TransportConnId conn_id, const 
 
     data_ctx_it->second.mark_stream_active = false;
 
-    if (data_ctx_it->second.current_stream_id == 0) {
+    if (data_ctx_it->second.current_stream_id == ~(uint64_t(0))) {
         return;
     }
 
