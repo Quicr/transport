@@ -506,8 +506,9 @@ PicoQuicTransport::start(std::shared_ptr<safe_queue<MetricsConnSample>> metrics_
         }
     }
 
-    if (tconfig.quic_qlog_path.size()) {
-        picoquic_set_qlog(quic_ctx, tconfig.quic_qlog_path.c_str());
+    if (tconfig.quic_qlog_path != nullptr) {
+        logger->info << "Enabling qlog using '" << tconfig.quic_qlog_path << "' path" << std::flush;
+        picoquic_set_qlog(quic_ctx, tconfig.quic_qlog_path);
     }
 
     return cid;
