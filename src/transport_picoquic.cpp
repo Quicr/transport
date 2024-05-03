@@ -280,7 +280,7 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
                 return PICOQUIC_NO_ERROR_TERMINATE_PACKET_LOOP;
             }
 
-            return 0;
+            return PICOQUIC_ERROR_DISCONNECTED;
         }
 
         case picoquic_callback_ready: { // Connection callback, not per stream
@@ -689,19 +689,21 @@ PicoQuicTransport::close(const TransportConnId& conn_id)
     if (conn_it == conn_context.end())
         return;
 
-    // Only one datagram context is per connection, if it's deleted, then the connection is to be terminated
-    on_connection_status(conn_id, TransportStatus::Disconnected);
-
     // Remove pointer references in picoquic for active streams
     for (const auto& [d_id, d_ctx]: conn_it->second.active_data_contexts) {
-        picoquic_mark_active_stream(conn_it->second.pq_cnx, d_ctx.current_stream_id, 0, NULL);
-        picoquic_reset_stream(conn_it->second.pq_cnx, d_ctx.current_stream_id, 0);
+        if (d_ctx.current_stream_id != ~(uint64_t(0))) {
+            picoquic_mark_active_stream(conn_it->second.pq_cnx, d_ctx.current_stream_id, 0, NULL);
+            picoquic_reset_stream(conn_it->second.pq_cnx, d_ctx.current_stream_id, 0);
+        }
 
         for (const auto& [stream_id, _]: d_ctx.stream_rx_buffer) {
             picoquic_unlink_app_stream_ctx(conn_it->second.pq_cnx, stream_id);
             picoquic_reset_stream(conn_it->second.pq_cnx, stream_id, 0);
         }
     }
+
+    // Only one datagram context is per connection, if it's deleted, then the connection is to be terminated
+    on_connection_status(conn_id, TransportStatus::Disconnected);
 
     picoquic_close(conn_it->second.pq_cnx, 0);
 
