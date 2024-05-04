@@ -280,7 +280,7 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
                 return PICOQUIC_NO_ERROR_TERMINATE_PACKET_LOOP;
             }
 
-            return PICOQUIC_ERROR_DISCONNECTED;
+            return 0;
         }
 
         case picoquic_callback_ready: { // Connection callback, not per stream
