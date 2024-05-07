@@ -132,7 +132,7 @@ class PicoQuicTransport : public ITransport
 
         DataHeader data_header {};                           /// Data header to use for start of stream or for every datagram
 
-        uint64_t current_stream_id {~(uint64_t(0))};         /// Current active stream if the value is >= 4
+        std::optional<uint64_t> current_stream_id;           /// Current active stream if the value is >= 4
 
         uint8_t priority {0};
 
