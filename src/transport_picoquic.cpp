@@ -1031,6 +1031,8 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
     size_t offset = 0;
     int is_still_active = 0;
 
+    check_callback_delta(data_ctx);
+
     switch (data_ctx->stream_action) {
         case DataContext::StreamAction::NO_ACTION:
             [[fallthrough]];
@@ -1113,6 +1115,7 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
         data_ctx->mark_stream_active = false;
         return;
     }
+
 
     auto data_hdr_size = data_ctx->data_header.size();
 
