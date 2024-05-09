@@ -58,11 +58,14 @@ namespace qtransport {
         MinMaxAvg tx_rate_bps;             /// Rate in bits per second in period
         MinMaxAvg rx_rate_bps;             /// Estimated rate in bits per second in period
         MinMaxAvg tx_cwin_bytes;           /// Congestion window bytes in period
+        MinMaxAvg tx_in_transit_bytes;     /// Number of bytes in transit
         MinMaxAvg rtt_us;                  /// Round trip time in microseconds in period
         MinMaxAvg srtt_us;                 /// Smooth Round trip time in microseconds in period
 
         uint64_t tx_retransmits{ 0 };      /// count of retransmits
         uint64_t tx_lost_pkts{0};          /// Number of lost packets sent
+        uint64_t tx_timer_losses {0};      /// Packet losses detected due to timer expiring
+        uint64_t tx_spurious_losses {0};   /// Number of packet lost that were later acked
 
         uint64_t dgram_invalid_ctx_id{ 0 }; /// count of datagrams that had a data context that was not known
 
@@ -81,6 +84,7 @@ namespace qtransport {
             tx_rate_bps.clear();
             rx_rate_bps.clear();
             tx_cwin_bytes.clear();
+            tx_in_transit_bytes.clear();
             rtt_us.clear();
             srtt_us.clear();
         }

@@ -88,6 +88,7 @@ struct TransportConfig
   const uint64_t idle_timeout_ms { 30000 };             /// Idle timeout for transport connection(s) in milliseconds
   const bool use_reset_wait_strategy { true };          /// Use Reset and wait strategy for congestion control
   const bool use_bbr { true };                          /// Use BBR if true, NewReno if false
+  const char* quic_qlog_path;                           /// QUIC LOG file location path, trivially copyable null terminated string
 };
 
 using time_stamp_us = std::chrono::time_point<std::chrono::steady_clock, std::chrono::microseconds>;
