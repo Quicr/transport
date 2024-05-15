@@ -1907,7 +1907,7 @@ void PicoQuicTransport::check_callback_delta(DataContext* data_ctx, bool tx) {
 
     data_ctx->metrics.tx_callback_ms.addValue(delta_ms);
 
-    if (data_ctx->priority > 0 && delta_ms > 40 && data_ctx->tx_data->size() >= 3) {
+    if (data_ctx->priority > 0 && delta_ms > 50 && data_ctx->tx_data->size() >= 20) {
         data_ctx->metrics.tx_delayed_callback++;
 
         picoquic_path_quality_t path_quality;
