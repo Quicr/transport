@@ -6,14 +6,16 @@
 #include <mutex>
 #include <span>
 
+#include <transport/uintvar.h>
+
 namespace qtransport {
     template <typename T, class Allocator = std::allocator<T>>
-    class stream_buffer
+    class StreamBuffer
     {
         using buffer_t = std::deque<T, Allocator>;
 
     public:
-        stream_buffer() = default;
+        StreamBuffer() = default;
         bool empty() const noexcept
         {
             return _buffer.empty();
@@ -44,6 +46,7 @@ namespace qtransport {
                 std::copy_n(_buffer.begin(), length, result.begin());
                 return result;
             }
+            return std::vector<T>();
         }
 
         void pop()
@@ -95,6 +98,63 @@ namespace qtransport {
             std::lock_guard<std::mutex> _(_rwLock);
             _buffer.insert(_buffer.end(), value.begin(), value.end());
         }
+
+        /**
+         * Decodes a variable length int (uintV) from start of stream buffer
+         *
+         * @details Reads uintV from stream buffer. If all bytes are available, the
+         *      unsigned 64bit integer will be returned and the buffer
+         *      will be moved past the uintV. Nullopt will be returned if not enough
+         *      bytes are available.
+         *
+         * @return Returns uint64 decoded value or nullopt if not enough bytes are available
+         */
+        std::optional<uint64_t> decode_uintV()
+        {
+            if (const auto uv_msb = front()) {
+                if (available(uintV_size(*uv_msb))) {
+                    uint64_t uv_len = uintV_size(*uv_msb);
+                    auto len = to_uint64(front(uv_len));
+
+                    pop(uv_len);
+
+                    return len;
+                }
+            }
+
+            return std::nullopt;
+        }
+
+        /**
+         * Decodes a variable length array of uint8_t bytes from start of stream buffer
+         *
+         * @details Reads uintV from stream buffer to get the length of the byte array. Then
+         *      reads byte array from stream buffer after the uintV length.  Vector of bytes
+         *      will be returned if all bytes are available. Otherwise nullopt will be returned
+         *      to indicate not enough bytes available.
+
+         * @return Returns vector<uint8_t> or nullopt if not enough bytes are available
+         */
+        std::optional<std::vector<uint8_t>> decode_bytes()
+        {
+            if (const auto uv_msb = front()) {
+                if (available(uintV_size(*uv_msb))) {
+                    uint64_t uv_len = uintV_size(*uv_msb);
+                    auto len = to_uint64(front(uv_len));
+
+                    if (_buffer.size() >= uv_len + len) {
+                        pop(uv_len);
+                        auto v = front(len);
+                        pop(len);
+
+                        return v;
+                    }
+                }
+            }
+
+            return std::nullopt;
+        }
+
 
     private:
         buffer_t _buffer;
