@@ -2,14 +2,15 @@
 
 #include <iostream>
 #include <iterator>
-#include <list>
+#include <deque>
+#include <mutex>
 #include <span>
 
 namespace qtransport {
     template <typename T, class Allocator = std::allocator<T>>
     class stream_buffer
     {
-        using buffer_t = std::list<T, Allocator>;
+        using buffer_t = std::deque<T, Allocator>;
 
     public:
         stream_buffer() = default;
@@ -20,51 +21,50 @@ namespace qtransport {
 
         size_t size() noexcept
         {
-            return _size;
-        }
-
-        size_t actual_size() noexcept
-        {
             return _buffer.size();
         }
 
         std::optional<T> front() noexcept
         {
-            if (_size && _remove_len == 0) {
-                _buffer_cursor = _buffer.begin();
-                return *_buffer_cursor;
-            }
-
-            if (_size && _size != _remove_len && _buffer_cursor != _buffer.end()) {
-                return *_buffer_cursor;
+            if (_buffer.size()) {
+                std::lock_guard<std::mutex> _(_rwLock);
+                return _buffer.front();
             }
 
             return std::nullopt;
         }
 
-        std::vector<T> front(std::uint16_t length) const noexcept
+        std::vector<T> front(std::uint16_t length) noexcept
         {
-            if (!_size || _buffer_cursor == _buffer.end()) {
-                _buffer_cursor = _buffer.begin();
-                return {};
-            } else if (_size == 1) {    // If size equals one, reset the cursor to beginning
-                _buffer_cursor = _buffer_cursor.begin();
-                return *_buffer_cursor;
-            }
 
-            std::vector<T> result(length);
-            std::copy_n(_buffer_cursor, length, result.begin());
-            return result;
+            if (_buffer.size()) {
+                std::lock_guard<std::mutex> _(_rwLock);
+
+                std::vector<T> result(length);
+                std::copy_n(_buffer.begin(), length, result.begin());
+                return result;
+            }
         }
 
         void pop()
         {
-            next();
+            if (_buffer.size()) {
+                std::lock_guard<std::mutex> _(_rwLock);
+                _buffer.pop_front();
+            }
         }
 
         void pop(std::uint16_t length)
         {
-            next(length);
+            if (!length || !_buffer.size()) return;
+
+            std::lock_guard<std::mutex> _(_rwLock);
+
+            if (length >= _buffer.size()) {
+                _buffer.clear();
+            } else {
+                _buffer.erase(_buffer.begin(), _buffer.begin() + length);
+            }
         }
 
         bool available(std::uint16_t length) const noexcept
@@ -74,68 +74,30 @@ namespace qtransport {
 
         void push(const T& value)
         {
-            purge();
+            std::lock_guard<std::mutex> _(_rwLock);
             _buffer.push_back(value);
-            _size++;
         }
 
         void push(T&& value)
         {
-            purge();
+            std::lock_guard<std::mutex> _(_rwLock);
             _buffer.push_back(std::move(value));
-            _size++;
         }
 
         void push(std::span<T> value)
         {
-            purge();
+            std::lock_guard<std::mutex> _(_rwLock);
             _buffer.insert(_buffer.end(), value.begin(), value.end());
-            _size += value.size();
         }
 
         void push(std::initializer_list<T> value)
         {
-            purge();
+            std::lock_guard<std::mutex> _(_rwLock);
             _buffer.insert(_buffer.end(), value.begin(), value.end());
-            _size += value.size();
-        }
-
-        void purge()
-        {
-            if (_remove_len > 0) {
-                if (_remove_len >= _size) {
-                    _buffer.clear();
-                    _size = 0;
-
-                } else {
-                    auto last = std::next(_buffer.begin(), _remove_len);
-                    _buffer.erase(_buffer.begin(), last);
-                    _size -= _remove_len;
-                }
-                _remove_len = 0;
-            }
         }
 
     private:
         buffer_t _buffer;
-        buffer_t::iterator _buffer_cursor { _buffer.end() };
-        size_t _remove_len {0};
-        size_t _size {0};
-
-        void next()
-        {
-            next(1);
-        }
-
-        void next(uint16_t len)
-        {
-            if (len == 0 || _buffer_cursor == _buffer.end()) return;
-
-            if (len > _size) len = _size;
-
-            _remove_len += len;
-            _buffer_cursor = std::next(_buffer_cursor, len);
-        }
-
+        std::mutex _rwLock;
     };
 }
