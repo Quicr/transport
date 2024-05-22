@@ -5,6 +5,7 @@
 #include <deque>
 #include <mutex>
 #include <span>
+#include <optional>
 
 #include <transport/uintvar.h>
 
