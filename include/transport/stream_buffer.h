@@ -115,11 +115,11 @@ namespace qtransport {
             if (const auto uv_msb = front()) {
                 if (available(uintV_size(*uv_msb))) {
                     uint64_t uv_len = uintV_size(*uv_msb);
-                    auto len = to_uint64(front(uv_len));
+                    auto val = to_uint64(front(uv_len));
 
                     pop(uv_len);
 
-                    return len;
+                    return val;
                 }
             }
 
