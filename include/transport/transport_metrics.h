@@ -33,6 +33,8 @@ namespace qtransport {
             _value_sum += value;
             _value_count++;
 
+            if (_value_count == 0) _value_count = 1;
+
             avg = _value_sum / _value_count;
         }
 

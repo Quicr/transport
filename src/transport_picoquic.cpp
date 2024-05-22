@@ -1581,15 +1581,18 @@ void PicoQuicTransport::on_recv_stream_bytes(ConnectionContext* conn_ctx,
 
 void PicoQuicTransport::emit_metrics()
 {
-    if (!metrics_data_samples || !metrics_conn_samples) return;
-
     for (auto& [conn_id, conn_ctx] : conn_context) {
         const auto sample_time = std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::steady_clock::now());
 
-        metrics_conn_samples->push({sample_time, conn_id, conn_ctx.metrics});
+        if (metrics_conn_samples) {
+            metrics_conn_samples->push({ sample_time, conn_id, conn_ctx.metrics });
+        }
 
         for (auto& [data_ctx_id, data_ctx] : conn_ctx.active_data_contexts) {
-            metrics_data_samples->push({sample_time, conn_id, data_ctx_id, data_ctx.metrics});
+
+            if (metrics_data_samples) {
+                metrics_data_samples->push({ sample_time, conn_id, data_ctx_id, data_ctx.metrics });
+            }
             data_ctx.metrics.resetPeriod();
         }
 
