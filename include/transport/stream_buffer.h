@@ -37,10 +37,10 @@ namespace qtransport {
             return std::nullopt;
         }
 
-        std::vector<T> front(std::uint16_t length) noexcept
+        std::vector<T> front(std::uint32_t length) noexcept
         {
 
-            if (_buffer.size()) {
+            if (!_buffer.empty()) {
                 std::lock_guard<std::mutex> _(_rwLock);
 
                 std::vector<T> result(length);
@@ -58,9 +58,9 @@ namespace qtransport {
             }
         }
 
-        void pop(std::uint16_t length)
+        void pop(std::uint32_t length)
         {
-            if (!length || !_buffer.size()) return;
+            if (!length || _buffer.empty()) return;
 
             std::lock_guard<std::mutex> _(_rwLock);
 
@@ -71,7 +71,7 @@ namespace qtransport {
             }
         }
 
-        bool available(std::uint16_t length) const noexcept
+        bool available(std::uint32_t length) const noexcept
         {
             return _buffer.size() >= length;
         }
