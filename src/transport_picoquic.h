@@ -131,6 +131,7 @@ class PicoQuicTransport : public ITransport
          struct RxStreamBuffer {
              std::shared_ptr<StreamBuffer<uint8_t>> buf;
              bool closed { false };                                          /// Indicates if stream is active or in closed state
+             bool checked_once { false };                                    /// True if closed and checked once to close
 
              RxStreamBuffer() {
                  buf = std::make_shared<StreamBuffer<uint8_t>>();
@@ -230,6 +231,8 @@ class PicoQuicTransport : public ITransport
 
     std::optional<std::vector<uint8_t>> dequeue(TransportConnId conn_id,
                                                 std::optional<DataContextId> data_ctx_id) override;
+
+    std::shared_ptr<StreamBuffer<uint8_t>> getStreamBuffer(TransportConnId conn_id, uint64_t stream_id) override;
 
     void setRemoteDataCtxId(const TransportConnId conn_id,
                             const DataContextId data_ctx_id,

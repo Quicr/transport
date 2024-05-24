@@ -202,13 +202,11 @@ public:
      * @param[in] conn_id 	Transport context identifier mapped to the connection
      * @param[in] stream_id     Transport stream ID
      * @param[in] data_ctx_id	If known, Data context id that the data was received on
-     * @param[in] stream_buf    Pointer to stream buffer if stream buffer
      * @param[in] is_bidir      True if the message is from a bidirectional stream
      */
     virtual void on_recv_stream(const TransportConnId& conn_id,
                                 uint64_t stream_id,
                                 std::optional<DataContextId> data_ctx_id,
-                                std::shared_ptr<StreamBuffer<uint8_t>> stream_buf,
                                 const bool is_bidir=false) = 0;
 
 
@@ -387,14 +385,22 @@ public:
    * @details Data received by the transport will be queued and made available
    * to the caller using this method.  An empty return will be
    *
-   * @param[in] context_id		Identifying the connection
+   * @param[in] conn_id		        Identifying the connection
    * @param[in] data_ctx_id             Data context ID if known
    *
    * @returns std::nullopt if there is no data
    */
-  virtual std::optional<std::vector<uint8_t>> dequeue(TransportConnId context_id,
+  virtual std::optional<std::vector<uint8_t>> dequeue(TransportConnId conn_id,
                                                       std::optional<DataContextId> data_ctx_id) = 0;
 
+
+  /**
+   * @brief Similar to dequeue for datagrams this will return a shared pointer to the stream buffer
+   *
+   * @param[in] conn_id		        Identifying the connection
+   * @param[in] stream_id               Stream ID of stream buffer
+   */
+  virtual std::shared_ptr<StreamBuffer<uint8_t>> getStreamBuffer(TransportConnId conn_id, uint64_t stream_id) = 0;
 
    /// Metrics samples to be written to TSDB. When full the buffer will remove the oldest
    std::shared_ptr<safe_queue<MetricsConnSample>> metrics_conn_samples;

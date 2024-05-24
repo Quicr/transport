@@ -46,17 +46,24 @@ struct Delegate : public ITransport::TransportDelegate
     void on_recv_stream(const TransportConnId& conn_id,
                         uint64_t stream_id,
                         std::optional<DataContextId> data_ctx_id,
-                        std::shared_ptr<StreamBuffer<uint8_t>> stream_buf,
                         const bool is_bidir)
     {
-        if (stream_buf->available(4)) {
-            uint32_t* msg_len = (uint32_t*)stream_buf->front(4).data();
+        auto stream_buf = std::move(client->getStreamBuffer(conn_id, stream_id));
 
-            if (stream_buf->available(4 + *msg_len)) {
-                auto obj = stream_buf->front(4 + *msg_len);
-                stream_buf->pop(4 + *msg_len);
+        while (true) {
+            if (stream_buf->available(4)) {
+                uint32_t* msg_len = (uint32_t*)stream_buf->front(4).data();
 
-                _rx_object.process(conn_id, data_ctx_id, obj);
+                if (stream_buf->available(4 + *msg_len)) {
+                    auto obj = stream_buf->front(4 + *msg_len);
+                    stream_buf->pop(4 + *msg_len);
+
+                    _rx_object.process(conn_id, data_ctx_id, obj);
+                } else {
+                    break;
+                }
+            } else {
+                break;
             }
         }
     }
@@ -101,7 +108,7 @@ main()
     if ((envVar = getenv("RELAY_PORT")))
         server.port = atoi(envVar);
 
-    bool bidir = true;
+    bool bidir = false;
     if (getenv("RELAY_UNIDIR"))
         bidir = false;
 
@@ -141,7 +148,7 @@ main()
             const auto start_time = std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::steady_clock::now());
             trace.push_back({"client:publish", start_time});
 
-            if (encode_flags.use_reliable && 1 == 2) {
+            if (encode_flags.use_reliable) {
                 if (period_count > 2000) {
                     period_count = 0;
                     encode_flags.new_stream = true;
@@ -153,9 +160,6 @@ main()
                     encode_flags.use_reset = false;
                 }
             }
-            encode_flags.new_stream = false;
-            encode_flags.clear_tx_queue = false;
-            encode_flags.use_reset = false;
 
             client->enqueue(conn_id,
                             data_ctx_id,

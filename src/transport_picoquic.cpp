@@ -620,6 +620,22 @@ PicoQuicTransport::enqueue(const TransportConnId& conn_id,
     return TransportError::None;
 }
 
+std::shared_ptr<StreamBuffer<uint8_t>>
+PicoQuicTransport::getStreamBuffer(TransportConnId conn_id, uint64_t stream_id)
+{
+    std::lock_guard<std::mutex> _(_state_mutex);
+
+    const auto conn_ctx_it = conn_context.find(conn_id);
+    if (conn_ctx_it == conn_context.end()) {
+        return nullptr;
+    }
+
+    const auto sbuf_it = conn_ctx_it->second.rx_stream_buffer.find(stream_id);
+    if (sbuf_it != conn_ctx_it->second.rx_stream_buffer.end()) {
+        return sbuf_it->second.buf;
+    }
+}
+
 std::optional<std::vector<uint8_t>>
 PicoQuicTransport::dequeue(TransportConnId conn_id,
                            [[maybe_unused]] std::optional<DataContextId> data_ctx_id)
@@ -1287,6 +1303,8 @@ void PicoQuicTransport::on_recv_stream_bytes(ConnectionContext* conn_ctx,
 
     auto rx_buf_it = conn_ctx->rx_stream_buffer.find(stream_id);
     if (rx_buf_it == conn_ctx->rx_stream_buffer.end()) {
+        std::lock_guard<std::mutex> _l(_state_mutex);
+
         logger->debug << "Adding received conn_id: " << conn_ctx->conn_id
                      << " stream_id: " << stream_id
                      << " into RX buffer" << std::flush;
@@ -1301,10 +1319,27 @@ void PicoQuicTransport::on_recv_stream_bytes(ConnectionContext* conn_ctx,
     rx_buf.buf->push(bytes_a);
 
     if (data_ctx != nullptr) {
+        data_ctx->metrics.rx_stream_cb++;
         data_ctx->metrics.rx_stream_bytes += length;
-        delegate.on_recv_stream(conn_ctx->conn_id, stream_id, data_ctx->data_ctx_id, rx_buf.buf, data_ctx->is_bidir);
+
+        if (!cbNotifyQueue.push([=, this]() {
+                delegate.on_recv_stream(conn_ctx->conn_id, stream_id, data_ctx->data_ctx_id, data_ctx->is_bidir);
+            })) {
+
+            logger->error << "conn_id: " << conn_ctx->conn_id
+                          << " stream_id: " << stream_id
+                          << " notify queue is full" << std::flush;
+        }
+
     } else {
-        delegate.on_recv_stream(conn_ctx->conn_id, stream_id, std::nullopt, rx_buf.buf);
+        if (!cbNotifyQueue.push([=, this]() {
+                delegate.on_recv_stream(conn_ctx->conn_id, stream_id, std::nullopt);
+            })) {
+
+            logger->error << "conn_id: " << conn_ctx->conn_id
+                          << " stream_id: " << stream_id
+                          << " notify queue is full" << std::flush;
+        }
     }
 }
 
@@ -1336,10 +1371,11 @@ void PicoQuicTransport::remove_closed_streams() {
     for (auto& [conn_id, conn_ctx] : conn_context) {
         std::vector<uint64_t> closed_streams;
 
-        for (const auto& [stream_id, rx_buf]: conn_ctx.rx_stream_buffer) {
-            if (rx_buf.closed && rx_buf.buf->empty()) {
+        for (auto& [stream_id, rx_buf]: conn_ctx.rx_stream_buffer) {
+            if (rx_buf.closed && (rx_buf.buf->empty() || rx_buf.checked_once)) {
                 closed_streams.push_back(stream_id);
             }
+            rx_buf.checked_once = true;
         }
 
         for (const auto stream_id: closed_streams) {

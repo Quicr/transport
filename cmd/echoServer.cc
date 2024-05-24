@@ -49,23 +49,30 @@ struct Delegate : public ITransport::TransportDelegate
     void on_recv_stream(const TransportConnId& conn_id,
                         uint64_t stream_id,
                         std::optional<DataContextId> data_ctx_id,
-                        std::shared_ptr<StreamBuffer<uint8_t>> stream_buf,
-                        const bool is_bidir)
+                        [[maybe_unused]] const bool is_bidir)
     {
-        uint32_t msg_len;
-        if (stream_buf->available(4)) {
-            auto len_b =  stream_buf->front(4);
-            if (!len_b.size()) return;
+        auto stream_buf = std::move(server->getStreamBuffer(conn_id, stream_id));
 
-            uint32_t* msg_len = (uint32_t *)len_b.data();
+        while(true) {
+            if (stream_buf->available(4)) {
+                auto len_b = stream_buf->front(4);
+                if (!len_b.size())
+                    return;
 
-            if (stream_buf->available(4 + *msg_len)) {
-                auto obj = stream_buf->front(*msg_len);
-                stream_buf->pop(*msg_len);
+                uint32_t* msg_len = (uint32_t*)len_b.data();
 
-                _object.process(conn_id, data_ctx_id, obj);
+                if (stream_buf->available(*msg_len)) {
+                    auto obj = stream_buf->front(*msg_len);
+                    stream_buf->pop(*msg_len);
 
-                server->enqueue(conn_id, out_data_ctx, std::move(obj));
+                    _object.process(conn_id, data_ctx_id, obj);
+
+                    server->enqueue(conn_id, out_data_ctx, std::move(obj));
+                } else {
+                    break;
+                }
+            } else {
+                break;
             }
         }
     }

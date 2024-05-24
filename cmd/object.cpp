@@ -13,7 +13,7 @@ void Object::process(TransportConnId conn_id, std::optional<DataContextId> data_
     if (msg_num == nullptr)
         return;
 
-    if (prev_msg_num && (*msg_num - prev_msg_num) > 1) {
+    if (prev_msg_num && ((*msg_num - prev_msg_num) > 1 || (*msg_num - prev_msg_num) < 0)) {
         logger->info << "GAP: conn_id: " << conn_id << " data_ctx_id: " << (data_ctx_id ? *data_ctx_id : -1)
                      << " msg_len: " << *msg_len
                      << " length: " << obj.size() << " RecvMsg (" << msgcount << ")"

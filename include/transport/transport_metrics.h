@@ -69,8 +69,6 @@ namespace qtransport {
         uint64_t tx_timer_losses {0};      /// Packet losses detected due to timer expiring
         uint64_t tx_spurious_losses {0};   /// Number of packet lost that were later acked
 
-        uint64_t dgram_invalid_ctx_id{ 0 }; /// count of datagrams that had a data context that was not known
-
         uint64_t rx_dgrams{ 0 };           /// count of datagrams received
         uint64_t rx_dgrams_bytes{ 0 };     /// Number of receive datagram bytes
 
@@ -100,15 +98,8 @@ namespace qtransport {
     {
         uint64_t enqueued_objs{ 0 };            /// count of objects enqueued by the app to be transmitted
 
-        uint64_t rx_dgrams{ 0 };                /// count of datagrams received
-        uint64_t rx_dgrams_bytes{ 0 };          /// Number of receive datagram bytes
-
-        uint64_t rx_invalid_drops{ 0 };         /// count of times receive data could not be processed due to being invalid
-        uint64_t rx_buffer_drops{ 0 };          /// count of receive buffer drops of data due to RESET request
-
         uint64_t rx_stream_cb{ 0 };             /// count of callbacks to receive data
         uint64_t rx_stream_bytes{ 0 };          /// count of stream bytes received
-        uint64_t rx_stream_objects{ 0 };        /// count of stream objects received
 
         uint64_t tx_buffer_drops{ 0 };          /// Count of write buffer drops of data due to RESET request
         uint64_t tx_queue_discards{ 0 };        /// count of objects discarded due to TTL expiry or clear
