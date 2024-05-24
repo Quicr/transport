@@ -3,126 +3,124 @@
 #include <sstream>
 #include <thread>
 
-#include <transport/transport.h>
 #include <cantina/logger.h>
+#include <transport/transport.h>
+#include "object.h"
 
 using namespace qtransport;
 
-struct Delegate : public ITransport::TransportDelegate {
-private:
-  std::shared_ptr<ITransport> server;
-  cantina::LoggerPointer logger;
+struct Delegate : public ITransport::TransportDelegate
+{
+  private:
+    std::shared_ptr<ITransport> server;
+    cantina::LoggerPointer logger;
 
-  uint64_t msgcount {0};
-  uint64_t prev_msgcount {0};
-  uint32_t prev_msg_num {0};
-  DataContextId out_data_ctx {0};
+    Object _object { logger };
 
-public:
-  Delegate(const cantina::LoggerPointer& logger)
-    : logger(std::make_shared<cantina::Logger>("ECHO", logger))
-  {
-  }
+    uint64_t msgcount{ 0 };
+    uint64_t prev_msgcount{ 0 };
+    uint32_t prev_msg_num{ 0 };
+    DataContextId out_data_ctx{ 0 };
 
-  void stop() {
-      server.reset();
-  }
-
-  void setServerTransport(std::shared_ptr<ITransport> server) {
-    this->server = server;
-  }
-
-  void on_connection_status(const TransportConnId &conn_id,
-                            const TransportStatus status) {
-    logger->info << "Connection state change conn_id: " << conn_id << ", "
-                 << int(status) << std::flush;
-  }
-
-  void on_new_connection(const TransportConnId &conn_id,
-                         const TransportRemote &remote) {
-    logger->info << "New connection conn_id: " << conn_id << " from "
-                 << remote.host_or_ip << ":" << remote.port << std::flush;
-
-    out_data_ctx = this->server->createDataContext(conn_id, true, 10);
-  }
-
-  void on_recv_notify(const TransportConnId &conn_id,
-                      const DataContextId &data_ctx_id, const bool is_bidir) {
-
-    for (int i=0; i < 100; i++) {
-      auto data = server->dequeue(conn_id, data_ctx_id);
-
-      if (data.has_value()) {
-        msgcount++;
-
-        if (msgcount % 2000 == 0 && prev_msgcount != msgcount) {
-            prev_msgcount = msgcount;
-            logger->info << "conn_id: " << conn_id << " data_ctx_id: " << data_ctx_id << "  msgcount: " << msgcount << std::flush;
-        }
-
-        uint32_t *msg_num = (uint32_t *)data->data();
-        if (msg_num == nullptr)
-            continue;
-
-        if (prev_msg_num && (*msg_num - prev_msg_num) > 1) {
-            logger->info << "conn_id: " << conn_id << " data_ctx_id: " << data_ctx_id << "  length: " << data->size()
-                         << "  RecvMsg (" << msgcount << ")"
-                         << "  msg_num: " << *msg_num << "  prev_num: " << prev_msg_num << "("
-                         << *msg_num - prev_msg_num << ")" << std::flush;
-        }
-        prev_msg_num = *msg_num;
-
-        if (is_bidir) {
-            server->enqueue(conn_id, data_ctx_id, std::move(data.value()));
-
-        } else {
-            server->enqueue(conn_id, out_data_ctx, std::move(data.value()));
-        }
-
-      } else {
-        break;
-      }
+  public:
+    Delegate(const cantina::LoggerPointer& logger)
+      : logger(std::make_shared<cantina::Logger>("SERVER", logger))
+    {
     }
-  }
 
-  void on_new_data_context(const TransportConnId& conn_id, const DataContextId& data_ctx_id)
-  {
-    logger->info << "Callback for new data context conn_id: " << conn_id << " data_ctx_id: " << data_ctx_id
-                 << std::flush;
-  }
+    void stop() { server.reset(); }
+
+    void setServerTransport(std::shared_ptr<ITransport> server) { this->server = server; }
+
+    void on_connection_status(const TransportConnId& conn_id, const TransportStatus status)
+    {
+        logger->info << "Connection state change conn_id: " << conn_id << ", " << int(status) << std::flush;
+    }
+
+    void on_new_connection(const TransportConnId& conn_id, const TransportRemote& remote)
+    {
+        logger->info << "New connection conn_id: " << conn_id << " from " << remote.host_or_ip << ":" << remote.port
+                     << std::flush;
+
+        out_data_ctx = this->server->createDataContext(conn_id, true, 10);
+    }
+
+
+    void on_recv_stream(const TransportConnId& conn_id,
+                        uint64_t stream_id,
+                        std::optional<DataContextId> data_ctx_id,
+                        std::shared_ptr<StreamBuffer<uint8_t>> stream_buf,
+                        const bool is_bidir)
+    {
+        uint32_t msg_len;
+        if (stream_buf->available(4)) {
+            auto len_b =  stream_buf->front(4);
+            if (!len_b.size()) return;
+
+            uint32_t* msg_len = (uint32_t *)len_b.data();
+
+            if (stream_buf->available(4 + *msg_len)) {
+                auto obj = stream_buf->front(*msg_len);
+                stream_buf->pop(*msg_len);
+
+                _object.process(conn_id, data_ctx_id, obj);
+
+                server->enqueue(conn_id, out_data_ctx, std::move(obj));
+            }
+        }
+    }
+
+    void on_recv_dgram(const TransportConnId& conn_id,
+                       std::optional<DataContextId> data_ctx_id)
+    {
+        for (int i=0; i < 150; i++) {
+            auto data = server->dequeue(conn_id, data_ctx_id);
+
+            if (data) {
+                _object.process(conn_id, data_ctx_id, *data);
+
+                server->enqueue(conn_id, out_data_ctx, std::move(*data));
+            }
+        }
+    }
+
+    void on_new_data_context(const TransportConnId& conn_id, const DataContextId& data_ctx_id)
+    {
+        logger->info << "Callback for new data context conn_id: " << conn_id << " data_ctx_id: " << data_ctx_id
+                     << std::flush;
+    }
 };
 
-int main() {
-  char *envVar;
-  cantina::LoggerPointer logger = std::make_shared<cantina::Logger>("ECHO");
-  logger->SetLogLevel("DEBUG");
-  Delegate d(logger);
-  TransportRemote serverIp =
-  TransportRemote{"127.0.0.1", 1234, TransportProtocol::QUIC};
-  TransportConfig tconfig{.tls_cert_filename = "./server-cert.pem",
-                          .tls_key_filename = "./server-key.pem",
-                          .time_queue_max_duration = 1000,
-                          .time_queue_bucket_interval = 1,
-                          .debug = true};
+int
+main()
+{
+    char* envVar;
+    cantina::LoggerPointer logger = std::make_shared<cantina::Logger>("ECHO");
+    logger->SetLogLevel("DEBUG");
+    Delegate d(logger);
+    TransportRemote serverIp = TransportRemote{ "127.0.0.1", 1234, TransportProtocol::QUIC };
+    TransportConfig tconfig{ .tls_cert_filename = "./server-cert.pem",
+                             .tls_key_filename = "./server-key.pem",
+                             .time_queue_max_duration = 1000,
+                             .time_queue_bucket_interval = 1,
+                             .debug = true };
 
+    if ((envVar = getenv("RELAY_PORT")))
+        serverIp.port = atoi(envVar);
 
-  if ( (envVar = getenv("RELAY_PORT")))
-    serverIp.port = atoi(envVar);
+    auto server = ITransport::make_server_transport(serverIp, tconfig, d, logger);
+    auto metrics_conn_samples = std::make_shared<safe_queue<MetricsConnSample>>(10);
+    auto metrics_data_samples = std::make_shared<safe_queue<MetricsDataSample>>(10);
+    server->start(metrics_conn_samples, metrics_data_samples);
 
-  auto server = ITransport::make_server_transport(serverIp, tconfig, d, logger);
-  auto metrics_conn_samples = std::make_shared<safe_queue<MetricsConnSample>>(10);
-  auto metrics_data_samples = std::make_shared<safe_queue<MetricsDataSample>>(10);
-  server->start(metrics_conn_samples, metrics_data_samples);
+    d.setServerTransport(server);
 
-  d.setServerTransport(server);
+    while (server->status() != TransportStatus::Shutdown) {
+        std::this_thread::sleep_for(std::chrono::seconds(3));
+    }
 
-  while (server->status() != TransportStatus::Shutdown) {
-    std::this_thread::sleep_for(std::chrono::seconds(3));
-  }
+    server.reset();
+    d.stop();
 
-  server.reset();
-  d.stop();
-
-  return 0;
+    return 0;
 }
-

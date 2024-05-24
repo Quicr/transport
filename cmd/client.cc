@@ -6,6 +6,7 @@
 #include <transport/transport.h>
 
 #include <cantina/logger.h>
+#include "object.h"
 
 using namespace qtransport;
 
@@ -16,15 +17,14 @@ struct Delegate : public ITransport::TransportDelegate
 {
   private:
     std::shared_ptr<ITransport> client;
-    uint64_t msgcount;
     TransportConnId conn_id;
     cantina::LoggerPointer logger;
+    Object _rx_object { logger };
 
   public:
     Delegate(const cantina::LoggerPointer& logger)
-      : logger(std::make_shared<cantina::Logger>("CMD", logger))
+      : logger(std::make_shared<cantina::Logger>("CLIENT", logger))
     {
-        msgcount = 0;
         conn_id = 0;
     }
 
@@ -43,39 +43,35 @@ struct Delegate : public ITransport::TransportDelegate
 
     void on_new_connection(const TransportConnId& , const TransportRemote&) {}
 
-    void on_recv_notify(const TransportConnId& conn_id, const DataContextId& data_ctx_id, [[maybe_unused]] const bool is_bidir)
+    void on_recv_stream(const TransportConnId& conn_id,
+                        uint64_t stream_id,
+                        std::optional<DataContextId> data_ctx_id,
+                        std::shared_ptr<StreamBuffer<uint8_t>> stream_buf,
+                        const bool is_bidir)
     {
-        static uint32_t prev_msg_num = 0;
-        static uint32_t prev_msgcount = 0;
+        if (stream_buf->available(4)) {
+            uint32_t* msg_len = (uint32_t*)stream_buf->front(4).data();
 
-        while (true) {
-            auto data = client->dequeue(conn_id, data_ctx_id);
+            if (stream_buf->available(4 + *msg_len)) {
+                auto obj = stream_buf->front(4 + *msg_len);
+                stream_buf->pop(4 + *msg_len);
 
-            if (data.has_value()) {
-                msgcount++;
-
-                if (msgcount % 2000 == 0 && prev_msgcount != msgcount) {
-                    logger->info << "conn_id: " << conn_id << " data_ctx_id: " << data_ctx_id << "  msgcount: " << msgcount << std::flush;
-                }
-
-                uint32_t* msg_num = (uint32_t*)data.value().data();
-                if (msg_num == NULL) break;
-
-                if (prev_msg_num && (*msg_num - prev_msg_num) > 1) {
-                    logger->info << "conn_id: " << conn_id << " data_ctx_id: " << data_ctx_id << "  length: " << data->size()
-                                 << "  RecvMsg (" << msgcount << ")"
-                                 << "  msg_num: " << *msg_num << "  prev_num: " << prev_msg_num << "("
-                                 << *msg_num - prev_msg_num << ")" << std::flush;
-                }
-
-                prev_msg_num = *msg_num;
-
-            } else {
-                break;
+                _rx_object.process(conn_id, data_ctx_id, obj);
             }
         }
     }
 
+    void on_recv_dgram(const TransportConnId& conn_id,
+                       std::optional<DataContextId> data_ctx_id)
+    {
+        for (int i=0; i < 50; i++) {
+            auto data = client->dequeue(conn_id, data_ctx_id);
+
+            if (data) {
+                _rx_object.process(conn_id, data_ctx_id, *data);
+            }
+        }
+    }
 
     void on_new_data_context(const TransportConnId&, const DataContextId&) {}
 };
@@ -121,7 +117,6 @@ main()
     auto metrics_data_samples = std::make_shared<safe_queue<MetricsDataSample>>(10);
 
     auto conn_id = client->start(metrics_conn_samples, metrics_data_samples);
-    uint8_t data_buf[4200]{ 0 };
 
     while (client->status() != TransportStatus::Ready) {
         logger->Log("Waiting for client to be ready");
@@ -131,35 +126,40 @@ main()
     bool use_reliable = true;
     DataContextId data_ctx_id = client->createDataContext(conn_id, use_reliable, 1, bidir);
 
-    uint32_t* msg_num = (uint32_t*)&data_buf;
     int period_count = 0;
 
     ITransport::EnqueueFlags encode_flags { .use_reliable = use_reliable, .new_stream = true, .clear_tx_queue = true, .use_reset = true};
 
+    auto tx_object = Object(logger);
+
     while (client->status() != TransportStatus::Shutdown && client->status() != TransportStatus::Disconnected) {
         period_count++;
         for (int i = 0; i < 10; i++) {
-            (*msg_num)++;
-            auto data = bytes(data_buf, data_buf + sizeof(data_buf));
+            auto obj = tx_object.encode();
 
             std::vector<MethodTraceItem> trace;
             const auto start_time = std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::steady_clock::now());
             trace.push_back({"client:publish", start_time});
 
-            if (period_count > 2000) {
-                period_count = 0;
-                encode_flags.new_stream = true;
-                encode_flags.clear_tx_queue = true;
-                encode_flags.use_reset = true;
-            } else {
-                encode_flags.new_stream = false;
-                encode_flags.clear_tx_queue = false;
-                encode_flags.use_reset = false;
+            if (encode_flags.use_reliable && 1 == 2) {
+                if (period_count > 2000) {
+                    period_count = 0;
+                    encode_flags.new_stream = true;
+                    encode_flags.clear_tx_queue = true;
+                    encode_flags.use_reset = true;
+                } else {
+                    encode_flags.new_stream = false;
+                    encode_flags.clear_tx_queue = false;
+                    encode_flags.use_reset = false;
+                }
             }
+            encode_flags.new_stream = false;
+            encode_flags.clear_tx_queue = false;
+            encode_flags.use_reset = false;
 
             client->enqueue(conn_id,
                             data_ctx_id,
-                            std::move(data),
+                            std::move(obj),
                             std::move(trace),
                             1,
                             350,

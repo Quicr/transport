@@ -13,6 +13,7 @@
 #include <transport/uintvar.h>
 #include <transport/safe_queue.h>
 #include <transport/transport_metrics.h>
+#include <transport/stream_buffer.h>
 
 namespace qtransport {
 
@@ -187,19 +188,30 @@ public:
                                      const DataContextId& data_ctx_id) = 0;
 
     /**
-     * @brief Event reporting transport has some data over
-     * 		the network for the application to consume
-     *
-     * @details Applications must invoke ITransport::deqeue() to obtain
-     * 		the data by passing the transport context id
+     * @brief callback notification that data has been received and should be processed
      *
      * @param[in] conn_id 	Transport context identifier mapped to the connection
-     * @param[in] data_ctx_id	Data context id that the data was received on
+     * @param[in] data_ctx_id	If known, Data context id that the data was received on
+     */
+    virtual void on_recv_dgram(const TransportConnId& conn_id,
+                                std::optional<DataContextId> data_ctx_id) = 0;
+
+    /**
+     * @brief callback notification that data has been received and should be processed
+     *
+     * @param[in] conn_id 	Transport context identifier mapped to the connection
+     * @param[in] stream_id     Transport stream ID
+     * @param[in] data_ctx_id	If known, Data context id that the data was received on
+     * @param[in] stream_buf    Pointer to stream buffer if stream buffer
      * @param[in] is_bidir      True if the message is from a bidirectional stream
      */
-    virtual void on_recv_notify(const TransportConnId& conn_id,
-                                const DataContextId& data_ctx_id,
+    virtual void on_recv_stream(const TransportConnId& conn_id,
+                                uint64_t stream_id,
+                                std::optional<DataContextId> data_ctx_id,
+                                std::shared_ptr<StreamBuffer<uint8_t>> stream_buf,
                                 const bool is_bidir=false) = 0;
+
+
   };
 
   /* Factory APIs */
@@ -309,6 +321,17 @@ public:
                                sockaddr_storage* addr) = 0;
 
   /**
+   * @brief Set the data context id for RX unidir stream id
+   *
+   * @param conn_id                 Connection ID of the data context ID
+   * @param data_ctx_id             Local data context ID
+   * @param stream_id               RX stream ID
+   */
+   virtual void setStreamIdDataCtxId(const TransportConnId conn_id,
+                                    DataContextId data_ctx_id,
+                                    uint64_t stream_id) = 0;
+
+  /**
    * @brief Set the remote data context id
    * @details sets the remote data context id for data objects transmitted
    *
@@ -356,22 +379,22 @@ public:
                                  const uint8_t priority = 1,
                                  const uint32_t ttl_ms=350,
                                  const uint32_t delay_ms=0,
-                                 const EnqueueFlags flags={true, false, false, false}) = 0;
+                                 const EnqueueFlags flags={false, false, false, false}) = 0;
 
   /**
-   * @brief Dequeue application data from transport queue
+   * @brief Dequeue datagram application data from transport buffer
    *
    * @details Data received by the transport will be queued and made available
    * to the caller using this method.  An empty return will be
    *
    * @param[in] context_id		Identifying the connection
-   * @param[in] data_ctx_id	        Stream Id to receive data from
+   * @param[in] data_ctx_id             Data context ID if known
    *
    * @returns std::nullopt if there is no data
    */
-  virtual std::optional<std::vector<uint8_t>> dequeue(
-    const TransportConnId& context_id,
-    const DataContextId& data_ctx_id) = 0;
+  virtual std::optional<std::vector<uint8_t>> dequeue(TransportConnId context_id,
+                                                      std::optional<DataContextId> data_ctx_id) = 0;
+
 
    /// Metrics samples to be written to TSDB. When full the buffer will remove the oldest
    std::shared_ptr<safe_queue<MetricsConnSample>> metrics_conn_samples;

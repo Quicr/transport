@@ -974,7 +974,7 @@ UDPTransport::fd_reader() {
                         if ( data_ctx_it->second.rx_data.size() < 10
                             || data_ctx_it->second.in_data_cb_skip_count > 20) {
 
-                            delegate.on_recv_notify(cd.conn_id, cd.data_ctx_id);
+                            delegate.on_recv_dgram(cd.conn_id, cd.data_ctx_id);
                         } else {
                             data_ctx_it->second.in_data_cb_skip_count++;
                         }
@@ -1038,8 +1038,10 @@ TransportError UDPTransport::enqueue(const TransportConnId &conn_id,
     return TransportError::None;
 }
 
-std::optional<std::vector<uint8_t>> UDPTransport::dequeue(const TransportConnId &conn_id,
-                                                          const DataContextId &data_ctx_id) {
+std::optional<std::vector<uint8_t>> UDPTransport::dequeue(TransportConnId conn_id,
+                                                          std::optional<DataContextId> data_ctx_id) {
+
+    if (!data_ctx_id) return std::nullopt;
 
     std::lock_guard<std::mutex> _(_reader_mutex);
 
@@ -1051,10 +1053,10 @@ std::optional<std::vector<uint8_t>> UDPTransport::dequeue(const TransportConnId 
         return std::nullopt;
     }
 
-    const auto data_ctx_it = conn_it->second->data_contexts.find(data_ctx_id);
+    const auto data_ctx_it = conn_it->second->data_contexts.find(*data_ctx_id);
     if (data_ctx_it == conn_it->second->data_contexts.end()) {
         logger->error << "dequeue: invalid stream for conn_id: " << conn_id
-                      << " data_ctx_id: " << data_ctx_id << std::flush;
+                      << " data_ctx_id: " << *data_ctx_id << std::flush;
 
         return std::nullopt;
     }

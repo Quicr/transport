@@ -71,10 +71,14 @@ namespace qtransport {
 
         uint64_t dgram_invalid_ctx_id{ 0 }; /// count of datagrams that had a data context that was not known
 
+        uint64_t rx_dgrams{ 0 };           /// count of datagrams received
+        uint64_t rx_dgrams_bytes{ 0 };     /// Number of receive datagram bytes
+
         uint64_t tx_dgram_cb{ 0 };         /// count of picoquic callback for datagram can be sent
         uint64_t tx_dgram_ack{ 0 };        /// count of picoquic callback for acked datagrams
         uint64_t tx_dgram_lost{ 0 };       /// count of picoquic callback for lost datagrams
         uint64_t tx_dgram_spurious{ 0 };   /// count of picoquic callback for late/delayed dgram acks
+        uint64_t tx_dgram_drops { 0 };     /// count of drops due to data context missing
 
         auto operator<=>(const QuicConnectionMetrics&) const = default;
 
