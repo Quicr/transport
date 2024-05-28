@@ -738,16 +738,10 @@ void PicoQuicTransport::setStreamIdDataCtxId(const TransportConnId conn_id,
                                              DataContextId data_ctx_id,
                                              uint64_t stream_id) {
 
-    logger->debug << "Set data context to stream conn_id: " << conn_id
-                  << " data_ctx_id: " << data_ctx_id
-                  << " stream_id: " << stream_id
-                  << std::flush;
 
     std::lock_guard<std::mutex> _(_state_mutex);
 
-
     const auto conn_it = conn_context.find(conn_id);
-
     if (conn_it == conn_context.end())
         return;
 
@@ -755,10 +749,15 @@ void PicoQuicTransport::setStreamIdDataCtxId(const TransportConnId conn_id,
     if (data_ctx_it == conn_it->second.active_data_contexts.end())
         return;
 
+    logger->debug << "Set data context to stream conn_id: " << conn_id
+                  << " data_ctx_id: " << data_ctx_id
+                  << " stream_id: " << stream_id
+                  << std::flush;
+
     data_ctx_it->second.current_stream_id = stream_id;
 
     picoquic_runner_queue.push([=]() {
-        picoquic_set_app_stream_ctx(conn_it->second.pq_cnx, stream_id, &(*data_ctx_it));
+        picoquic_set_app_stream_ctx(conn_it->second.pq_cnx, stream_id, &data_ctx_it->second);
     });
 }
 
