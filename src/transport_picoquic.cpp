@@ -764,7 +764,7 @@ void PicoQuicTransport::setStreamIdDataCtxId(const TransportConnId conn_id,
 
     picoquic_runner_queue.push([=]() {
         if (conn_it->second.pq_cnx != nullptr)
-            picoquic_set_app_stream_ctx(conn_it->second.pq_cnx, stream_id, &data_ctx_it->second));
+            picoquic_set_app_stream_ctx(conn_it->second.pq_cnx, stream_id, &data_ctx_it->second);
     });
 }
 
