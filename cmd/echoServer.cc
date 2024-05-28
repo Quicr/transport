@@ -59,7 +59,7 @@ struct Delegate : public ITransport::TransportDelegate
                 if (!len_b.size())
                     return;
 
-                uint32_t* msg_len = (uint32_t*)len_b.data();
+                auto* msg_len = reinterpret_cast<uint32_t*>(len_b.data());
 
                 if (stream_buf->available(*msg_len)) {
                     auto obj = stream_buf->front(*msg_len);
@@ -67,7 +67,7 @@ struct Delegate : public ITransport::TransportDelegate
 
                     _object.process(conn_id, data_ctx_id, obj);
 
-                    server->enqueue(conn_id, out_data_ctx, std::move(obj));
+                    server->enqueue(conn_id, out_data_ctx, std::move(obj), { MethodTraceItem{} }, 2, 500, 0, { true, false, false, false });
                 } else {
                     break;
                 }

@@ -52,11 +52,12 @@ struct Delegate : public ITransport::TransportDelegate
 
         while (true) {
             if (stream_buf->available(4)) {
-                uint32_t* msg_len = (uint32_t*)stream_buf->front(4).data();
+                auto msg_len_b = stream_buf->front(4);
+                auto* msg_len = reinterpret_cast<uint32_t*>(msg_len_b.data());
 
-                if (stream_buf->available(4 + *msg_len)) {
-                    auto obj = stream_buf->front(4 + *msg_len);
-                    stream_buf->pop(4 + *msg_len);
+                if (stream_buf->available(*msg_len)) {
+                    auto obj = stream_buf->front(*msg_len);
+                    stream_buf->pop(*msg_len);
 
                     _rx_object.process(conn_id, data_ctx_id, obj);
                 } else {

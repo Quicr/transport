@@ -377,7 +377,7 @@ public:
                                  const uint8_t priority = 1,
                                  const uint32_t ttl_ms=350,
                                  const uint32_t delay_ms=0,
-                                 const EnqueueFlags flags={false, false, false, false}) = 0;
+                                 const EnqueueFlags flags={true, false, false, false}) = 0;
 
   /**
    * @brief Dequeue datagram application data from transport buffer

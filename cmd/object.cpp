@@ -14,17 +14,17 @@ void Object::process(TransportConnId conn_id, std::optional<DataContextId> data_
         return;
 
     if (prev_msg_num && ((*msg_num - prev_msg_num) > 1 || (*msg_num - prev_msg_num) < 0)) {
-        logger->info << "GAP: conn_id: " << conn_id << " data_ctx_id: " << (data_ctx_id ? *data_ctx_id : -1)
+        logger->info << "GAP: conn_id: " << conn_id << " data_ctx_id: " << (data_ctx_id ? *data_ctx_id : 0)
                      << " msg_len: " << *msg_len
                      << " length: " << obj.size() << " RecvMsg (" << msgcount << ")"
-                     << " msg_num: " << *msg_num << " prev_num: " << prev_msg_num << "("
+                     << " msg_num: " << *msg_num << " prev_num: " << prev_msg_num << " ("
                      << *msg_num - prev_msg_num << ")" << std::flush;
     }
 
     if (*msg_num % 2000 == 0) {
-        logger->info << "conn_id: " << conn_id << " data_ctx_id: " << (data_ctx_id ? *data_ctx_id : -1)
+        logger->info << "conn_id: " << conn_id << " data_ctx_id: " << (data_ctx_id ? *data_ctx_id : 0)
                      << " msg_len: " << *msg_len << " length: " << obj.size() << " RecvMsg (" << msgcount << ")"
-                     << " msg_num: " << *msg_num << " prev_num: " << prev_msg_num << "(" << *msg_num - prev_msg_num
+                     << " msg_num: " << *msg_num << " prev_num: " << prev_msg_num << " (" << *msg_num - prev_msg_num
                      << ")" << std::flush;
     }
 

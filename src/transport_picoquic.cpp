@@ -544,7 +544,7 @@ TransportError
 PicoQuicTransport::enqueue(const TransportConnId& conn_id,
                            const DataContextId& data_ctx_id,
                            std::vector<uint8_t>&& bytes,
-                           std::vector<qtransport::MethodTraceItem> &&trace,
+                           std::vector<MethodTraceItem> &&trace,
                            const uint8_t priority,
                            const uint32_t ttl_ms,
                            [[maybe_unused]] const uint32_t delay_ms,
@@ -737,7 +737,14 @@ void PicoQuicTransport::setRemoteDataCtxId([[maybe_unused]] const TransportConnI
 void PicoQuicTransport::setStreamIdDataCtxId(const TransportConnId conn_id,
                                              DataContextId data_ctx_id,
                                              uint64_t stream_id) {
+
+    logger->debug << "Set data context to stream conn_id: " << conn_id
+                  << " data_ctx_id: " << data_ctx_id
+                  << " stream_id: " << stream_id
+                  << std::flush;
+
     std::lock_guard<std::mutex> _(_state_mutex);
+
 
     const auto conn_it = conn_context.find(conn_id);
 
