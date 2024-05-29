@@ -81,12 +81,18 @@ namespace qtransport {
                                const uint32_t delay_ms,
                                const EnqueueFlags flags) override;
 
-        std::optional<std::vector<uint8_t>>
-        dequeue(const TransportConnId &conn_id, const DataContextId &data_ctx_id) override;
+        std::optional<std::vector<uint8_t>> dequeue(TransportConnId conn_id,
+                                                    std::optional<DataContextId> data_ctx_id) override;
+
+        std::shared_ptr<StreamBuffer<uint8_t>> getStreamBuffer(TransportConnId conn_id, uint64_t stream_id) override { return nullptr;}
 
         void setRemoteDataCtxId(const TransportConnId conn_id,
                                 const DataContextId data_ctx_id,
                                 const DataContextId remote_data_ctx_id) override;
+
+        void setStreamIdDataCtxId([[maybe_unused]] const TransportConnId conn_id,
+                                  [[maybe_unused]] DataContextId data_ctx_id,
+                                  [[maybe_unused]] uint64_t stream_id) override {}
 
     private:
         TransportConnId connect_client();

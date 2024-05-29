@@ -1,4 +1,4 @@
-add_executable(server echoServer.cc)
+add_executable(server echoServer.cc object.cpp)
 target_link_libraries(server PRIVATE cantina::logger quicr-transport)
 
 target_compile_options(server
@@ -12,7 +12,7 @@ set_target_properties(server
         CXX_EXTENSIONS ON)
 
 
-add_executable(client client.cc)
+add_executable(client client.cc object.cpp)
 target_link_libraries(client PRIVATE cantina::logger quicr-transport)
 
 target_compile_options(client
