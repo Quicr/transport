@@ -88,7 +88,7 @@ namespace qtransport {
             _buffer.push_back(std::move(value));
         }
 
-        void push(std::span<T> value)
+        void push(const std::span<const T>& value)
         {
             std::lock_guard<std::mutex> _(_rwLock);
             _buffer.insert(_buffer.end(), value.begin(), value.end());
@@ -97,6 +97,14 @@ namespace qtransport {
         void push(std::initializer_list<T> value)
         {
             std::lock_guard<std::mutex> _(_rwLock);
+            _buffer.insert(_buffer.end(), value.begin(), value.end());
+        }
+
+        void push_lv(const std::span<const T>& value)
+        {
+            std::lock_guard<std::mutex> _(_rwLock);
+            const auto len = to_uintV(static_cast<uint64_t>(value.size()));
+            _buffer.insert(_buffer.end(), len.begin(), len.end());
             _buffer.insert(_buffer.end(), value.begin(), value.end());
         }
 
