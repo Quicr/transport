@@ -13,10 +13,13 @@ else()
 endif()
 
 option(PLATFORM_ESP_IDF "Enabble suppport for esp-idf (Default OFF)" OFF)
+option(USE_MBEDTLS OFF)
 
 if (NOT PLATFORM_ESP_IDF)
   find_package(Threads REQUIRED)
   find_package(PkgConfig REQUIRED)
+else()
+  set(USE_MBEDTLS ON)
 endif()
 
 ###
@@ -31,7 +34,7 @@ add_subdirectory(dependencies)
 set (BUILD_SHARED_LIBS OFF)
 set (BUILD_STATIC_LIBS ON)
 
-set (sources 
+set (sources
     src/transport.cpp
     src/transport_udp.cpp
 )
@@ -51,10 +54,10 @@ if (NOT PLATFORM_ESP_IDF)
   target_link_libraries(quicr-transport
           PUBLIC
           picoquic-core picoquic-log)
-endif()          
+endif()
 
 if (PLATFORM_ESP_IDF)
-  add_compile_definitions(${LIB_NAME} PLATFORM_ESP)          
+  add_compile_definitions(${LIB_NAME} PLATFORM_ESP)
 endif()
 
 target_include_directories(quicr-transport PUBLIC include src )

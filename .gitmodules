@@ -12,3 +12,6 @@
 [submodule "dependencies/logger"]
 	path = dependencies/logger
 	url = https://github.com/Quicr/logger.git
+[submodule "dependencies/mbedtls"]
+	path = dependencies/mbedtls
+	url = https://github.com/Mbed-TLS/mbedtls.git
