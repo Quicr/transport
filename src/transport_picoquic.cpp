@@ -1265,7 +1265,7 @@ PicoQuicTransport::on_new_connection(const TransportConnId conn_id)
     picoquic_set_feedback_loss_notification(conn_ctx->pq_cnx, 1);
 
     if (tconfig.quic_priority_limit > 0) {
-        logger->info << "Setting priority bypass limit to " << static_cast<int>(tconfig.quic_priority_limit) << std::endl;
+        logger->info << "Setting priority bypass limit to " << static_cast<int>(tconfig.quic_priority_limit) << std::flush;
         picoquic_set_priority_limit_for_bypass(conn_ctx->pq_cnx, tconfig.quic_priority_limit);
     }
 
@@ -1618,7 +1618,7 @@ TransportConnId PicoQuicTransport::createClient()
     picoquic_set_feedback_loss_notification(cnx, 1);
 
     if (tconfig.quic_priority_limit > 0) {
-        logger->info << "Setting priority bypass limit to " << static_cast<int>(tconfig.quic_priority_limit) << std::endl;
+        logger->info << "Setting priority bypass limit to " << static_cast<int>(tconfig.quic_priority_limit) << std::flush;
         picoquic_set_priority_limit_for_bypass(cnx, tconfig.quic_priority_limit);
     } else {
         logger->info << "No priority bypass" << std::endl;
