@@ -91,6 +91,7 @@ struct TransportConfig
   const bool use_reset_wait_strategy { true };          /// Use Reset and wait strategy for congestion control
   const bool use_bbr { true };                          /// Use BBR if true, NewReno if false
   const char* quic_qlog_path;                           /// QUIC LOG file location path, trivially copyable null terminated string
+  const uint8_t quic_priority_limit { 0 };              /// Lowest priority that will not be bypassed from pacing/CC in picoquic
 };
 
 using time_stamp_us = std::chrono::time_point<std::chrono::steady_clock, std::chrono::microseconds>;
