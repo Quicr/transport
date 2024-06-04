@@ -733,6 +733,27 @@ void PicoQuicTransport::setRemoteDataCtxId([[maybe_unused]] const TransportConnI
     return;
 }
 
+void PicoQuicTransport::setDataCtxPriority(const TransportConnId conn_id, DataContextId data_ctx_id, uint8_t priority)
+{
+    std::lock_guard<std::mutex> _(_state_mutex);
+
+    const auto conn_it = conn_context.find(conn_id);
+
+    if (conn_it == conn_context.end())
+        return;
+
+    const auto data_ctx_it = conn_it->second.active_data_contexts.find(data_ctx_id);
+    if (data_ctx_it == conn_it->second.active_data_contexts.end())
+        return;
+
+    logger->debug << "Set data context priority to " << static_cast<int>(priority)
+                  << " conn_id: " << conn_id
+                  << " data_ctx_id: " << data_ctx_id
+                  << std::flush;
+
+    data_ctx_it->second.priority = priority;
+}
+
 void PicoQuicTransport::setStreamIdDataCtxId(const TransportConnId conn_id,
                                              DataContextId data_ctx_id,
                                              uint64_t stream_id) {

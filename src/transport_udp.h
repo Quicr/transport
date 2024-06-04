@@ -94,6 +94,10 @@ namespace qtransport {
                                   [[maybe_unused]] DataContextId data_ctx_id,
                                   [[maybe_unused]] uint64_t stream_id) override {}
 
+        void setDataCtxPriority([[maybe_unused]] const TransportConnId conn_id,
+                                [[maybe_unused]] DataContextId data_ctx_id,
+                                [[maybe_unused]] uint8_t priority) override {}
+
     private:
         TransportConnId connect_client();
         TransportConnId connect_server();

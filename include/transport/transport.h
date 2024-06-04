@@ -331,6 +331,15 @@ public:
                                     uint64_t stream_id) = 0;
 
   /**
+   * @brief Set/update prioirty for the data context
+   *
+   * @param conn_id                 Connection ID of the data context ID
+   * @param data_ctx_id             Local data context ID
+   * @param priority                Priority for data context stream, range should be 0 - 255
+   */
+  virtual void setDataCtxPriority(const TransportConnId conn_id, DataContextId data_ctx_id, uint8_t priority) = 0;
+
+  /**
    * @brief Set the remote data context id
    * @details sets the remote data context id for data objects transmitted
    *
