@@ -91,6 +91,7 @@ struct TransportConfig
   const bool use_reset_wait_strategy { true };          /// Use Reset and wait strategy for congestion control
   const bool use_bbr { true };                          /// Use BBR if true, NewReno if false
   const char* quic_qlog_path;                           /// QUIC LOG file location path, trivially copyable null terminated string
+  const uint8_t quic_priority_limit { 0 };              /// Lowest priority that will not be bypassed from pacing/CC in picoquic
 };
 
 using time_stamp_us = std::chrono::time_point<std::chrono::steady_clock, std::chrono::microseconds>;
@@ -328,6 +329,15 @@ public:
    virtual void setStreamIdDataCtxId(const TransportConnId conn_id,
                                     DataContextId data_ctx_id,
                                     uint64_t stream_id) = 0;
+
+  /**
+   * @brief Set/update prioirty for the data context
+   *
+   * @param conn_id                 Connection ID of the data context ID
+   * @param data_ctx_id             Local data context ID
+   * @param priority                Priority for data context stream, range should be 0 - 255
+   */
+  virtual void setDataCtxPriority(const TransportConnId conn_id, DataContextId data_ctx_id, uint8_t priority) = 0;
 
   /**
    * @brief Set the remote data context id

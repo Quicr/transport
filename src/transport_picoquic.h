@@ -239,6 +239,7 @@ class PicoQuicTransport : public ITransport
                             const DataContextId remote_data_ctx_id) override;
 
     void setStreamIdDataCtxId(const TransportConnId conn_id, DataContextId data_ctx_id, uint64_t stream_id) override;
+    void setDataCtxPriority(const TransportConnId conn_id, DataContextId data_ctx_id, uint8_t priority) override;
 
     /*
      * Internal public methods
