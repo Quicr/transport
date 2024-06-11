@@ -295,8 +295,11 @@ public:
 
   /**
    * @brief Close a transport context
+   *
+   * @param conn_id           Connection ID to close
+   * @param app_reason_code   Application reason code to use when closing QUIC connnection
    */
-  virtual void close(const TransportConnId& conn_id) = 0;
+  virtual void close(const TransportConnId& conn_id, uint64_t app_reason_code=0) = 0;
 
   /**
    * @brief Delete data context

@@ -256,6 +256,8 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
         }
 
         case picoquic_callback_application_close:
+            transport->logger->info << "Application closed conn_id: " << conn_id << std::flush;
+            [[fallthrough]];
         case picoquic_callback_close: {
             transport->logger->info << "Closing connection conn_id: " << conn_id
                                     << " stream_id: " << stream_id;
@@ -696,7 +698,7 @@ PicoQuicTransport::createDataContext(const TransportConnId conn_id,
 }
 
 void
-PicoQuicTransport::close(const TransportConnId& conn_id)
+PicoQuicTransport::close(const TransportConnId& conn_id, uint64_t app_reason_code)
 {
     std::lock_guard<std::mutex> _(_state_mutex);
 
@@ -718,7 +720,7 @@ PicoQuicTransport::close(const TransportConnId& conn_id)
     // Only one datagram context is per connection, if it's deleted, then the connection is to be terminated
     on_connection_status(conn_id, TransportStatus::Disconnected);
 
-    picoquic_close(conn_it->second.pq_cnx, 0);
+    picoquic_close(conn_it->second.pq_cnx, app_reason_code);
 
     if (not _is_server_mode) {
         setStatus(TransportStatus::Shutdown);

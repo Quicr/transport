@@ -177,7 +177,7 @@ bool UDPTransport::getPeerAddrInfo(const TransportConnId &conn_id,
     return true;
 }
 
-void UDPTransport::close(const TransportConnId &conn_id) {
+void UDPTransport::close(const TransportConnId &conn_id, uint64_t app_reason_code) {
 
     logger->debug << "Close UDP conn_id: " << conn_id << std::flush;
 
