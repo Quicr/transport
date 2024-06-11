@@ -1,32 +1,67 @@
 #pragma once
 
-#include <iostream>
-#include <iterator>
+#include <any>
 #include <deque>
 #include <mutex>
-#include <span>
 #include <optional>
+#include <span>
 
 #include <transport/uintvar.h>
 
 namespace qtransport {
-    template <typename T, class Allocator = std::allocator<T>>
+    template<typename T, class Allocator = std::allocator<T>>
     class StreamBuffer
     {
         using buffer_t = std::deque<T, Allocator>;
 
-    public:
+      public:
         StreamBuffer() = default;
-        bool empty() const noexcept
+
+        /**
+         * @brief Initialize the parsed data
+         * @details Parsed data allows the caller to work on reading data from the
+         *        stream buffer. The datatype is any to support the caller data types.
+         *        This method will initialize the parsed data using the type specified
+         * @tparam D              Data type for value
+         */
+        template<typename D>
+        void initAny()
         {
-            return _buffer.empty();
+            parsed_data.emplace<D>();
         }
 
-        size_t size() noexcept
+        /**
+         * @brief Get the parsed data
+         * @details Parsed data allows the caller to work on reading data from the
+         *        stream buffer. The datatype is any to support the caller data types.
+         *        This returns a reference to the any variable cast to the data type
+         *
+         * @tparam D              Data type of value
+         */
+        template<typename D>
+        D& getAny()
         {
-            return _buffer.size();
+            return std::any_cast<D&>(parsed_data);
         }
 
+        void resetAny()
+        {
+            parsed_data.reset();
+        }
+
+        bool anyHasValue()
+        {
+            return parsed_data.has_value();
+        }
+
+        bool empty() const noexcept { return _buffer.empty(); }
+
+        size_t size() noexcept { return _buffer.size(); }
+
+        /**
+         * @brief Get the first data byte in stream buffer
+         * @returns data byt or nullopt if no data
+         */
         std::optional<T> front() noexcept
         {
             if (_buffer.size()) {
@@ -37,6 +72,13 @@ namespace qtransport {
             return std::nullopt;
         }
 
+        /**
+         * @brief Front length number of data bytes
+         *
+         * @param length            Get the first up to length number of data bytes
+         *
+         * @returns data vector of bytes or nullopt if no data
+         */
         std::vector<T> front(std::uint32_t length) noexcept
         {
 
@@ -60,7 +102,8 @@ namespace qtransport {
 
         void pop(std::uint32_t length)
         {
-            if (!length || _buffer.empty()) return;
+            if (!length || _buffer.empty())
+                return;
 
             std::lock_guard<std::mutex> _(_rwLock);
 
@@ -71,10 +114,14 @@ namespace qtransport {
             }
         }
 
-        bool available(std::uint32_t length) const noexcept
-        {
-            return _buffer.size() >= length;
-        }
+        /**
+         * @brief Checks if lenght bytes are avaialble for front
+         *
+         * @param length        length of bytes needed
+         *
+         * @return True if data length is available, false if not.
+         */
+        bool available(std::uint32_t length) const noexcept { return _buffer.size() >= length; }
 
         void push(const T& value)
         {
@@ -164,9 +211,9 @@ namespace qtransport {
             return std::nullopt;
         }
 
-
-    private:
+      private:
         buffer_t _buffer;
         std::mutex _rwLock;
+        std::any parsed_data; /// Working buffer for parsed data
     };
 }
