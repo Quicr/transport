@@ -176,6 +176,7 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
 
                 if (is_fin) {
                     transport->logger->info << "Received FIN for stream " << stream_id << std::flush;
+                    picoquic_reset_stream_ctx(pq_cnx, stream_id);
 
                     if (auto conn_ctx = transport->getConnContext(conn_id)) {
                         const auto rx_buf_it = conn_ctx->rx_stream_buffer.find(stream_id);
@@ -184,6 +185,11 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
                         }
                     }
 
+                    if (data_ctx == NULL) {
+                        break;
+                    }
+
+                    data_ctx->current_stream_id = std::nullopt;
                 }
             }
 
@@ -1136,19 +1142,24 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
 
         case DataContext::StreamAction::REPLACE_STREAM_USE_FIN: {
             data_ctx->uses_reset_wait = true;
-            if (data_ctx->stream_tx_object == nullptr) {
-                logger->info << "Replacing stream using FIN; conn_id: " << data_ctx->conn_id
-                             << " existing_stream: " << *data_ctx->current_stream_id << std::flush;
 
-                std::lock_guard<std::mutex> _(_state_mutex);
-
-                const auto conn_ctx = getConnContext(data_ctx->conn_id);
-                create_stream(*conn_ctx, data_ctx);
-
-                data_ctx->stream_action = DataContext::StreamAction::NO_ACTION;
+            if (data_ctx->stream_tx_object != nullptr) {
+                data_ctx->metrics.tx_buffer_drops++;
             }
 
-            break; // Continue with this object since this is a FIN
+            logger->info << "Replacing stream using FIN; conn_id: " << data_ctx->conn_id
+                         << " existing_stream: " << *data_ctx->current_stream_id << std::flush;
+
+            std::lock_guard<std::mutex> _(_state_mutex);
+
+            const auto conn_ctx = getConnContext(data_ctx->conn_id);
+            close_stream(*conn_ctx, data_ctx, false);
+            create_stream(*conn_ctx, data_ctx);
+
+            data_ctx->stream_action = DataContext::StreamAction::NO_ACTION;
+
+            data_ctx->mark_stream_active = false;
+            return; // New stream requires PQ to callback again using that stream
         }
     }
 
