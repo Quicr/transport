@@ -30,6 +30,24 @@ namespace qtransport {
             parsed_data.emplace<D>();
         }
 
+        template<typename D>
+        void initAnyB()
+        {
+            parsed_dataB.emplace<D>();
+        }
+
+        /**
+         * @brief Initialize the parsed data and type
+         * @tparam D              Data type for value
+         * @param type            user defined type value for the parsed data any object
+         */
+        template<typename D>
+        void initAny(uint64_t type)
+        {
+            parsed_data.emplace<D>();
+            parsed_data_type = type;
+        }
+
         /**
          * @brief Get the parsed data
          * @details Parsed data allows the caller to work on reading data from the
@@ -44,14 +62,44 @@ namespace qtransport {
             return std::any_cast<D&>(parsed_data);
         }
 
+        template<typename D>
+        D& getAnyB()
+        {
+            return std::any_cast<D&>(parsed_dataB);
+        }
+
+        /**
+         * @brief Get the user defined parsed type value
+         * @return Parsed data type value that was set via initAny(). nullopt if not set
+         */
+        std::optional<uint64_t> getAnyType() { return parsed_data_type; }
+
+        /**
+         * @brief Set the user-defined parsed data type value
+         * @param type          User defined value for the data type
+         */
+        void setAnyType(uint64_t type) { parsed_data_type = type; }
+
         void resetAny()
         {
             parsed_data.reset();
+            parsed_dataB.reset();
+            parsed_data_type = std::nullopt;
+        }
+
+        void resetAnyB()
+        {
+            parsed_dataB.reset();
         }
 
         bool anyHasValue()
         {
             return parsed_data.has_value();
+        }
+
+        bool anyHasValueB()
+        {
+            return parsed_dataB.has_value();
         }
 
         bool empty() const noexcept { return _buffer.empty(); }
@@ -215,5 +263,7 @@ namespace qtransport {
         buffer_t _buffer;
         std::mutex _rwLock;
         std::any parsed_data; /// Working buffer for parsed data
+        std::any parsed_dataB; /// Second Working buffer for parsed data
+        std::optional<uint64_t> parsed_data_type; /// working buffer type value
     };
 }
