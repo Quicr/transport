@@ -74,24 +74,24 @@ struct TransportRemote
  */
 struct TransportConfig
 {
-  const char *tls_cert_filename;                        /// QUIC TLS certificate to use
-  const char *tls_key_filename;                         /// QUIC TLS private key to use
-  const uint32_t time_queue_init_queue_size {1000};     /// Initial queue size to reserve upfront
-  const uint32_t time_queue_max_duration {1000};        /// Max duration for the time queue in milliseconds
-  const uint32_t time_queue_bucket_interval {1};        /// The bucket interval in milliseconds
-  const uint32_t time_queue_rx_size {1000};             /// Receive queue size
+  char *tls_cert_filename;                        /// QUIC TLS certificate to use
+  char *tls_key_filename;                         /// QUIC TLS private key to use
+  uint32_t time_queue_init_queue_size {1000};     /// Initial queue size to reserve upfront
+  uint32_t time_queue_max_duration {1000};        /// Max duration for the time queue in milliseconds
+  uint32_t time_queue_bucket_interval {1};        /// The bucket interval in milliseconds
+  uint32_t time_queue_rx_size {1000};             /// Receive queue size
   bool debug {false};                                   /// Enable debug logging/processing
-  const uint64_t quic_cwin_minimum { 131072 };          /// QUIC congestion control minimum size (default is 128k)
-  const uint32_t quic_wifi_shadow_rtt_us { 20000 };     /// QUIC wifi shadow RTT in microseconds
+  uint64_t quic_cwin_minimum { 131072 };          /// QUIC congestion control minimum size (default is 128k)
+  uint32_t quic_wifi_shadow_rtt_us { 20000 };     /// QUIC wifi shadow RTT in microseconds
 
-  const uint64_t pacing_decrease_threshold_Bps { 16000 };   /// QUIC pacing rate decrease threshold for notification in Bps
-  const uint64_t pacing_increase_threshold_Bps { 16000 };   /// QUIC pacing rate increase threshold for notification in Bps
+  uint64_t pacing_decrease_threshold_Bps { 16000 };   /// QUIC pacing rate decrease threshold for notification in Bps
+  uint64_t pacing_increase_threshold_Bps { 16000 };   /// QUIC pacing rate increase threshold for notification in Bps
 
-  const uint64_t idle_timeout_ms { 30000 };             /// Idle timeout for transport connection(s) in milliseconds
-  const bool use_reset_wait_strategy { true };          /// Use Reset and wait strategy for congestion control
-  const bool use_bbr { true };                          /// Use BBR if true, NewReno if false
-  const char* quic_qlog_path;                           /// QUIC LOG file location path, trivially copyable null terminated string
-  const uint8_t quic_priority_limit { 0 };              /// Lowest priority that will not be bypassed from pacing/CC in picoquic
+  uint64_t idle_timeout_ms { 30000 };             /// Idle timeout for transport connection(s) in milliseconds
+  bool use_reset_wait_strategy { false };         /// Use Reset and wait strategy for congestion control
+  bool use_bbr { true };                          /// Use BBR if true, NewReno if false
+  char* quic_qlog_path;                           /// QUIC LOG file location path, trivially copyable null terminated string
+  uint8_t quic_priority_limit { 0 };              /// Lowest priority that will not be bypassed from pacing/CC in picoquic
 };
 
 using time_stamp_us = std::chrono::time_point<std::chrono::steady_clock, std::chrono::microseconds>;
@@ -295,8 +295,11 @@ public:
 
   /**
    * @brief Close a transport context
+   *
+   * @param conn_id           Connection ID to close
+   * @param app_reason_code   Application reason code to use when closing QUIC connnection
    */
-  virtual void close(const TransportConnId& conn_id) = 0;
+  virtual void close(const TransportConnId& conn_id, uint64_t app_reason_code=0) = 0;
 
   /**
    * @brief Delete data context

@@ -15,12 +15,12 @@ namespace qtransport {
      */
     inline uint8_t uintV_size(const uint8_t uintV_msbbyte)
     {
-        if ((uintV_msbbyte & 0x40) == 0x40) {
-            return 2;
+        if ((uintV_msbbyte & 0xC0) == 0xC0) {
+            return 8;
         } else if ((uintV_msbbyte & 0x80) == 0x80) {
             return 4;
-        } else if ((uintV_msbbyte & 0xC0) == 0xC0) {
-            return 8;
+        } else if ((uintV_msbbyte & 0x40) == 0x40) {
+            return 2;
         } else {
             return 1;
         }

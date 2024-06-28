@@ -1,32 +1,115 @@
 #pragma once
 
-#include <iostream>
-#include <iterator>
+#include <any>
 #include <deque>
 #include <mutex>
-#include <span>
 #include <optional>
+#include <span>
 
 #include <transport/uintvar.h>
 
 namespace qtransport {
-    template <typename T, class Allocator = std::allocator<T>>
+    template<typename T, class Allocator = std::allocator<T>>
     class StreamBuffer
     {
         using buffer_t = std::deque<T, Allocator>;
 
-    public:
+      public:
         StreamBuffer() = default;
-        bool empty() const noexcept
+
+        /**
+         * @brief Initialize the parsed data
+         * @details Parsed data allows the caller to work on reading data from the
+         *        stream buffer. The datatype is any to support the caller data types.
+         *        This method will initialize the parsed data using the type specified
+         * @tparam D              Data type for value
+         */
+        template<typename D>
+        void initAny()
         {
-            return _buffer.empty();
+            parsed_data.emplace<D>();
         }
 
-        size_t size() noexcept
+        template<typename D>
+        void initAnyB()
         {
-            return _buffer.size();
+            parsed_dataB.emplace<D>();
         }
 
+        /**
+         * @brief Initialize the parsed data and type
+         * @tparam D              Data type for value
+         * @param type            user defined type value for the parsed data any object
+         */
+        template<typename D>
+        void initAny(uint64_t type)
+        {
+            parsed_data.emplace<D>();
+            parsed_data_type = type;
+        }
+
+        /**
+         * @brief Get the parsed data
+         * @details Parsed data allows the caller to work on reading data from the
+         *        stream buffer. The datatype is any to support the caller data types.
+         *        This returns a reference to the any variable cast to the data type
+         *
+         * @tparam D              Data type of value
+         */
+        template<typename D>
+        D& getAny()
+        {
+            return std::any_cast<D&>(parsed_data);
+        }
+
+        template<typename D>
+        D& getAnyB()
+        {
+            return std::any_cast<D&>(parsed_dataB);
+        }
+
+        /**
+         * @brief Get the user defined parsed type value
+         * @return Parsed data type value that was set via initAny(). nullopt if not set
+         */
+        std::optional<uint64_t> getAnyType() { return parsed_data_type; }
+
+        /**
+         * @brief Set the user-defined parsed data type value
+         * @param type          User defined value for the data type
+         */
+        void setAnyType(uint64_t type) { parsed_data_type = type; }
+
+        void resetAny()
+        {
+            parsed_data.reset();
+            parsed_dataB.reset();
+            parsed_data_type = std::nullopt;
+        }
+
+        void resetAnyB()
+        {
+            parsed_dataB.reset();
+        }
+
+        bool anyHasValue()
+        {
+            return parsed_data.has_value();
+        }
+
+        bool anyHasValueB()
+        {
+            return parsed_dataB.has_value();
+        }
+
+        bool empty() const noexcept { return _buffer.empty(); }
+
+        size_t size() noexcept { return _buffer.size(); }
+
+        /**
+         * @brief Get the first data byte in stream buffer
+         * @returns data byt or nullopt if no data
+         */
         std::optional<T> front() noexcept
         {
             if (_buffer.size()) {
@@ -37,6 +120,13 @@ namespace qtransport {
             return std::nullopt;
         }
 
+        /**
+         * @brief Front length number of data bytes
+         *
+         * @param length            Get the first up to length number of data bytes
+         *
+         * @returns data vector of bytes or nullopt if no data
+         */
         std::vector<T> front(std::uint32_t length) noexcept
         {
 
@@ -60,7 +150,8 @@ namespace qtransport {
 
         void pop(std::uint32_t length)
         {
-            if (!length || _buffer.empty()) return;
+            if (!length || _buffer.empty())
+                return;
 
             std::lock_guard<std::mutex> _(_rwLock);
 
@@ -71,10 +162,14 @@ namespace qtransport {
             }
         }
 
-        bool available(std::uint32_t length) const noexcept
-        {
-            return _buffer.size() >= length;
-        }
+        /**
+         * @brief Checks if lenght bytes are avaialble for front
+         *
+         * @param length        length of bytes needed
+         *
+         * @return True if data length is available, false if not.
+         */
+        bool available(std::uint32_t length) const noexcept { return _buffer.size() >= length; }
 
         void push(const T& value)
         {
@@ -88,7 +183,7 @@ namespace qtransport {
             _buffer.push_back(std::move(value));
         }
 
-        void push(std::span<T> value)
+        void push(const std::span<const T>& value)
         {
             std::lock_guard<std::mutex> _(_rwLock);
             _buffer.insert(_buffer.end(), value.begin(), value.end());
@@ -97,6 +192,14 @@ namespace qtransport {
         void push(std::initializer_list<T> value)
         {
             std::lock_guard<std::mutex> _(_rwLock);
+            _buffer.insert(_buffer.end(), value.begin(), value.end());
+        }
+
+        void push_lv(const std::span<const T>& value)
+        {
+            std::lock_guard<std::mutex> _(_rwLock);
+            const auto len = to_uintV(static_cast<uint64_t>(value.size()));
+            _buffer.insert(_buffer.end(), len.begin(), len.end());
             _buffer.insert(_buffer.end(), value.begin(), value.end());
         }
 
@@ -156,9 +259,11 @@ namespace qtransport {
             return std::nullopt;
         }
 
-
-    private:
+      private:
         buffer_t _buffer;
         std::mutex _rwLock;
+        std::any parsed_data; /// Working buffer for parsed data
+        std::any parsed_dataB; /// Second Working buffer for parsed data
+        std::optional<uint64_t> parsed_data_type; /// working buffer type value
     };
 }
