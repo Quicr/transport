@@ -8,9 +8,10 @@ if (NOT PLATFORM_ESP_IDF)
         set(BUILD_STATIC_LIBS ON)
 
         # mbedtls
-        message(${USE_MBEDTLS})
         if (${USE_MBEDTLS})
-                message("Use mbedtls")
+                # Get python requirements for mbedtls
+                find_package(Python3 REQUIRED)
+                execute_process(COMMAND ${Python3_EXECUTABLE} -m pip install -r ${CMAKE_CURRENT_SOURCE_DIR}/mbedtls/scripts/basic.requirements.txt)
 
                 option(WITH_FUSION OFF)
                 set(WITH_MBEDTLS ON)
