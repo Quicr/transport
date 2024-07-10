@@ -8,10 +8,34 @@ if (NOT PLATFORM_ESP_IDF)
         set(BUILD_STATIC_LIBS ON)
 
         # mbedtls
-        message(${USE_MBEDTLS})
         if (${USE_MBEDTLS})
-                message("Use mbedtls")
+                # Setup python environment for mbedtls to find.
+                find_package(Python3 REQUIRED)
+                execute_process(
+                         COMMAND
+                                ${Python3_EXECUTABLE} -m venv ${CMAKE_CURRENT_BINARY_DIR}/venv
+                         RESULT_VARIABLE
+                                MBEDTLS_VIRTUALENV
+                )
+                if (MBEDTLS_VIRTUALENV)
+                        message(FATAL_ERROR "Failed to create mbedtls virtual envrionment")
+                endif(MBEDTLS_VIRTUALENV)
 
+                # Override python lookup to use virtualenv when mbedtls later searches for it.
+                set(Python3_EXECUTABLE ${CMAKE_CURRENT_BINARY_DIR}/venv/bin/python)
+
+                # Install mbedtls dependencies into virtualenv.
+                execute_process(
+                        COMMAND
+                                ${Python3_EXECUTABLE} -m pip install -r ${CMAKE_CURRENT_SOURCE_DIR}/mbedtls/scripts/basic.requirements.txt
+                        RESULT_VARIABLE
+                                MBEDTLS_PIP
+                )
+                if (MBEDTLS_PIP)
+                        message(FATAL_ERROR "Failed to install mbedtls dependencies")
+                endif(MBEDTLS_PIP)
+
+                # Continue with mbedtls inclusion.
                 option(WITH_FUSION OFF)
                 set(WITH_MBEDTLS ON)
                 OPTION(ENABLE_TESTING OFF)
