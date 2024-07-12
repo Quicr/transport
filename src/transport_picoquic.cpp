@@ -1005,7 +1005,7 @@ PicoQuicTransport::send_next_datagram(ConnectionContext* conn_ctx, uint8_t* byte
     if (out_data.has_value) {
         const auto data_ctx_it = conn_ctx->active_data_contexts.find(out_data.value.data_ctx_id);
         if (data_ctx_it == conn_ctx->active_data_contexts.end()) {
-            logger->warning << "send_next_dgram has no data context conn_id: " << conn_ctx->conn_id
+            logger->debug << "send_next_dgram has no data context conn_id: " << conn_ctx->conn_id
                             << " data len: " << out_data.value.data.size()
                             << " dropping"
                             << std::flush;
