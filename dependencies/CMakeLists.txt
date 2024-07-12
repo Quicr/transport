@@ -36,35 +36,40 @@ if (NOT PLATFORM_ESP_IDF)
                 endif(MBEDTLS_PIP)
 
                 # Continue with mbedtls inclusion.
-                option(WITH_FUSION OFF)
-                set(WITH_MBEDTLS ON)
-                OPTION(ENABLE_TESTING OFF)
-                OPTION(ENABLE_PROGRAMS OFF)
-                SET(MBEDTLS_AS_SUBPROJECT ON)
-                add_subdirectory(mbedtls)
+                option(ENABLE_TESTING OFF)
+                option(ENABLE_PROGRAMS OFF)
+                set(MBEDTLS_AS_SUBPROJECT ON)
+                add_subdirectory( mbedtls )
 
-                # Load the mbedtls package in before picoquic complains on first compile
-                find_package(MbedTLS)
-
+                set(MBEDTLS_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/mbedtls)
                 set(MBEDTLS_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/mbedtls ${CMAKE_CURRENT_SOURCE_DIR}/mbedtls/include)
                 set(MBEDTLS_LIBRARIES mbedtls mbedcrypto mbedx509)
                 set(MBEDTLS_LIBRARY mbedtls)
                 set(MBEDTLS_CRYPTO mbedcrypto)
                 set(MBEDTLS_X509 mbedx509)
 
+
                 # picoTLS
-                set(WITH_OPENSSL OFF)
-                set(PICOTLS_USE_BROTLI OFF)
-                set(picotls_BUILD_TESTS OFF)
-                add_subdirectory(picotls)
-                add_dependencies(picotls-mbedtls mbedtls)
+                # picoTLS uses its own find mbedtls, which works with the above settings.
+                set (WITH_MBEDTLS ON)
+                option (WITH_FUSION OFF)
+                set (PICOTLS_USE_BROTLI OFF)
+                set (picotls_BUILD_TESTS OFF)
+                add_subdirectory( picotls )
+                add_dependencies( picotls-mbedtls mbedtls )
 
                 # picoQUIC
+                # Picoquic uses its own find mbedtls, which works with a prefix and will not work if mbedtls include dirs is set
+                unset(MBEDTLS_INCLUDE_DIRS)
+                set(MBEDTLS_PREFIX ${CMAKE_CURRENT_SOURCE_DIR}/mbedtls )
+                option (WITH_MBEDTLS ON)
+
+                set (OPENSSL_FOUND OFF)
                 set(PICOQUIC_PTLS_SUBMODULE ON)
                 option (WITH_OPENSSL OFF)
                 set(picoquic_BUILD_TESTS OFF)
-                add_subdirectory(picoquic)
-                add_dependencies(picoquic-core mbedtls)
+                add_subdirectory( picoquic )
+                add_dependencies( picoquic-core mbedtls )
         else()
                 option(WITH_FUSION OFF)
                 OPTION(ENABLE_TESTING OFF)
