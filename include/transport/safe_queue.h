@@ -55,19 +55,19 @@ public:
   {
     bool rval = true;
 
-    std::lock_guard<std::mutex> _(mutex);
+    std::lock_guard<std::mutex> _(_mutex);
 
-    if (queue.empty()) {
-        cv.notify_one();
+    if (_queue.empty()) {
+        _cv.notify_one();
         _empty = false;
     }
 
-    else if (queue.size() >= _limit) { // Make room by removing first element
-     queue.pop();
+    else if (_queue.size() >= _limit) { // Make room by removing first element
+     _queue.pop();
      rval = false;
     }
 
-    queue.push(elem);
+    _queue.push(elem);
 
     return rval;
   }
@@ -79,7 +79,7 @@ public:
    */
   std::optional<T> pop()
   {
-    std::lock_guard<std::mutex> _(mutex);
+    std::lock_guard<std::mutex> _(_mutex);
     return pop_internal();
   }
 
@@ -90,13 +90,13 @@ public:
     */
   std::optional<T> front()
   {
-    std::lock_guard<std::mutex> _(mutex);
+    std::lock_guard<std::mutex> _(_mutex);
 
-    if (queue.empty()) {
+    if (_queue.empty()) {
       return std::nullopt;
     }
 
-    return queue.front();
+    return _queue.front();
   }
 
   /**
@@ -105,7 +105,7 @@ public:
   */
   void pop_front()
   {
-    std::lock_guard<std::mutex> _(mutex);
+    std::lock_guard<std::mutex> _(_mutex);
 
     pop_front_internal();
   }
@@ -122,8 +122,8 @@ public:
    */
   std::optional<T> block_pop()
   {
-    std::unique_lock<std::mutex> lock(mutex);
-    cv.wait(lock, [&]() { return (_stop_waiting || (queue.size() > 0)); });
+    std::unique_lock<std::mutex> lock(_mutex);
+    _cv.wait(lock, [&]() { return (_stop_waiting || (_queue.size() > 0)); });
 
     if (_stop_waiting) {
       return std::nullopt;
@@ -139,17 +139,17 @@ public:
    */
   size_t size()
   {
-    std::lock_guard<std::mutex> _(mutex);
-    return queue.size();
+    std::lock_guard<std::mutex> _(_mutex);
+    return _queue.size();
   }
 
   /**
    * @brief Clear the queue
    */
   void clear() {
-    std::lock_guard<std::mutex> _(mutex);
+    std::lock_guard<std::mutex> _(_mutex);
     std::queue<T> empty;
-    std::swap(queue, empty);
+    std::swap(_queue, empty);
   }
 
   /**
@@ -166,14 +166,14 @@ public:
    */
   void stop_waiting()
   {
-    std::lock_guard<std::mutex> _(mutex);
+    std::lock_guard<std::mutex> _(_mutex);
     _stop_waiting = true;
-    cv.notify_all();
+    _cv.notify_all();
   }
 
   void set_limit(uint32_t limit)
   {
-    std::lock_guard<std::mutex> _(mutex);
+    std::lock_guard<std::mutex> _(_mutex);
     _limit = limit;
   }
 
@@ -188,15 +188,15 @@ private:
    */
   std::optional<T> pop_internal()
   {
-    if (queue.empty()) {
+    if (_queue.empty()) {
       _empty = true;
       return std::nullopt;
     }
 
-    auto elem = queue.front();
-    queue.pop();
+    auto elem = _queue.front();
+    _queue.pop();
 
-    if (queue.empty()) {
+    if (_queue.empty()) {
       _empty = true;
     }
 
@@ -210,14 +210,14 @@ private:
  */
   void pop_front_internal()
   {
-    if (queue.empty()) {
+    if (_queue.empty()) {
       _empty = true;
       return;
     }
 
-    queue.pop();
+    _queue.pop();
 
-    if (queue.empty()) {
+    if (_queue.empty()) {
       _empty = true;
     }
   }
@@ -225,9 +225,9 @@ private:
   std::atomic<bool> _empty { true };
   bool _stop_waiting;                // Instruct threads to stop waiting
   uint32_t _limit;                   // Limit of number of messages in queue
-  std::condition_variable cv;       // Signaling for thread syncronization
-  std::mutex mutex;                 // read/write lock
-  std::queue<T> queue;              // Queue
+  std::condition_variable _cv;       // Signaling for thread syncronization
+  std::mutex _mutex;                 // read/write lock
+  std::queue<T> _queue;              // Queue
 };
 
 } /* namespace qtransport */

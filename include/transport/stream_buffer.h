@@ -27,13 +27,13 @@ namespace qtransport {
         template<typename D>
         void initAny()
         {
-            parsed_data.emplace<D>();
+            _parsed_data.emplace<D>();
         }
 
         template<typename D>
         void initAnyB()
         {
-            parsed_dataB.emplace<D>();
+            _parsed_dataB.emplace<D>();
         }
 
         /**
@@ -44,8 +44,8 @@ namespace qtransport {
         template<typename D>
         void initAny(uint64_t type)
         {
-            parsed_data.emplace<D>();
-            parsed_data_type = type;
+            _parsed_data.emplace<D>();
+            _parsed_data_type = type;
         }
 
         /**
@@ -59,47 +59,47 @@ namespace qtransport {
         template<typename D>
         D& getAny()
         {
-            return std::any_cast<D&>(parsed_data);
+            return std::any_cast<D&>(_parsed_data);
         }
 
         template<typename D>
         D& getAnyB()
         {
-            return std::any_cast<D&>(parsed_dataB);
+            return std::any_cast<D&>(_parsed_dataB);
         }
 
         /**
          * @brief Get the user defined parsed type value
          * @return Parsed data type value that was set via initAny(). nullopt if not set
          */
-        std::optional<uint64_t> getAnyType() { return parsed_data_type; }
+        std::optional<uint64_t> getAnyType() { return _parsed_data_type; }
 
         /**
          * @brief Set the user-defined parsed data type value
          * @param type          User defined value for the data type
          */
-        void setAnyType(uint64_t type) { parsed_data_type = type; }
+        void setAnyType(uint64_t type) { _parsed_data_type = type; }
 
         void resetAny()
         {
-            parsed_data.reset();
-            parsed_dataB.reset();
-            parsed_data_type = std::nullopt;
+            _parsed_data.reset();
+            _parsed_dataB.reset();
+            _parsed_data_type = std::nullopt;
         }
 
         void resetAnyB()
         {
-            parsed_dataB.reset();
+            _parsed_dataB.reset();
         }
 
         bool anyHasValue()
         {
-            return parsed_data.has_value();
+            return _parsed_data.has_value();
         }
 
         bool anyHasValueB()
         {
-            return parsed_dataB.has_value();
+            return _parsed_dataB.has_value();
         }
 
         bool empty() const noexcept { return _buffer.empty(); }
@@ -262,8 +262,8 @@ namespace qtransport {
       private:
         buffer_t _buffer;
         std::mutex _rwLock;
-        std::any parsed_data; /// Working buffer for parsed data
-        std::any parsed_dataB; /// Second Working buffer for parsed data
-        std::optional<uint64_t> parsed_data_type; /// working buffer type value
+        std::any _parsed_data; /// Working buffer for parsed data
+        std::any _parsed_dataB; /// Second Working buffer for parsed data
+        std::optional<uint64_t> _parsed_data_type; /// working buffer type value
     };
 }
