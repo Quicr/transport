@@ -84,6 +84,7 @@ TransportStatus UDPTransport::status() const {
     } else if (!isServerMode) {
         return clientStatus;
     }
+    return clientStatus;
 }
 
 DataContextId UDPTransport::createDataContext(const qtransport::TransportConnId conn_id,

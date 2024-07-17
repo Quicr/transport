@@ -607,7 +607,7 @@ PicoQuicTransport::enqueue(const TransportConnId& conn_id,
         if (! data_ctx_it->second.mark_stream_active) {
             data_ctx_it->second.mark_stream_active = true;
 
-            picoquic_runner_queue.push([=]() {
+            picoquic_runner_queue.push([this, conn_id, data_ctx_id]() {
                 mark_stream_active(conn_id, data_ctx_id);
             });
         }
@@ -619,7 +619,7 @@ PicoQuicTransport::enqueue(const TransportConnId& conn_id,
         if (!conn_ctx_it->second.mark_dgram_ready ) {
             conn_ctx_it->second.mark_dgram_ready = true;
 
-            picoquic_runner_queue.push([=]() {
+            picoquic_runner_queue.push([this, conn_id]() {
                 mark_dgram_ready(conn_id);
             });
         }
@@ -641,6 +641,7 @@ PicoQuicTransport::getStreamBuffer(TransportConnId conn_id, uint64_t stream_id)
     if (sbuf_it != conn_ctx_it->second.rx_stream_buffer.end()) {
         return sbuf_it->second.buf;
     }
+    return nullptr;
 }
 
 std::optional<std::vector<uint8_t>>
@@ -988,7 +989,7 @@ void PicoQuicTransport::deleteDataContext(const TransportConnId& conn_id, DataCo
      * Race conditions exist with picoquic thread callbacks that will cause a problem if the context (pointer context)
      *    is deleted outside of the picoquic thread. Below schedules the delete to be done within the picoquic thread.
      */
-    picoquic_runner_queue.push([=]() {
+    picoquic_runner_queue.push([this, conn_id, data_ctx_id]() {
         delete_data_context_internal(conn_id, data_ctx_id);
     });
 
@@ -1061,8 +1062,8 @@ PicoQuicTransport::send_next_datagram(ConnectionContext* conn_ctx, uint8_t* byte
             }
         }
         else {
-            picoquic_runner_queue.push([=]() {
-                mark_dgram_ready(conn_ctx->conn_id);
+            picoquic_runner_queue.push([this, conn_id = conn_ctx->conn_id]() {
+                mark_dgram_ready(conn_id);
             });
 
             /* TODO(tievens): picoquic_prepare_stream_and_datagrams() appears to ignore the
@@ -1168,8 +1169,8 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
         if (obj.has_value) {
             data_ctx->metrics.tx_queue_discards++;
 
-            picoquic_runner_queue.push([=]() {
-                mark_stream_active(data_ctx->conn_id, data_ctx->data_ctx_id);
+            picoquic_runner_queue.push([this, conn_id = data_ctx->conn_id, data_ctx_id = data_ctx->data_ctx_id]() {
+                mark_stream_active(conn_id, data_ctx_id);
             });
         }
 
@@ -1826,7 +1827,7 @@ void PicoQuicTransport::create_stream(ConnectionContext& conn_ctx, DataContext *
 
     data_ctx->mark_stream_active = true;
 
-    picoquic_runner_queue.push([=, conn_id = conn_ctx.conn_id, data_ctx_id = data_ctx->data_ctx_id]() {
+    picoquic_runner_queue.push([this, conn_id = conn_ctx.conn_id, data_ctx_id = data_ctx->data_ctx_id]() {
         mark_stream_active(conn_id, data_ctx_id);
     });
 
