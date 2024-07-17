@@ -40,5 +40,5 @@ std::vector<uint8_t> Object::encode() {
     *len = obj.size();
     *num = ++msg_num;
 
-    return std::move(obj);
+    return obj;
 }

@@ -46,9 +46,9 @@ struct Delegate : public ITransport::TransportDelegate
     void on_recv_stream(const TransportConnId& conn_id,
                         uint64_t stream_id,
                         std::optional<DataContextId> data_ctx_id,
-                        const bool is_bidir)
+                        [[maybe_unused]] const bool is_bidir)
     {
-        auto stream_buf = std::move(client->getStreamBuffer(conn_id, stream_id));
+        auto stream_buf = client->getStreamBuffer(conn_id, stream_id);
 
         while (true) {
             if (stream_buf->available(4)) {

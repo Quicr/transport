@@ -17,9 +17,6 @@ struct Delegate : public ITransport::TransportDelegate
 
     Object _object { logger };
 
-    uint64_t msgcount{ 0 };
-    uint64_t prev_msgcount{ 0 };
-    uint32_t prev_msg_num{ 0 };
     DataContextId out_data_ctx{ 0 };
 
   public:
@@ -51,7 +48,7 @@ struct Delegate : public ITransport::TransportDelegate
                         std::optional<DataContextId> data_ctx_id,
                         [[maybe_unused]] const bool is_bidir)
     {
-        auto stream_buf = std::move(server->getStreamBuffer(conn_id, stream_id));
+        auto stream_buf = server->getStreamBuffer(conn_id, stream_id);
 
         while(true) {
             if (stream_buf->available(4)) {
