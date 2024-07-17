@@ -14,6 +14,7 @@ endif()
 
 option(PLATFORM_ESP_IDF "Enabble suppport for esp-idf (Default OFF)" OFF)
 option(USE_MBEDTLS OFF)
+option(LINT "Lint using clang-tidy" OFF)
 
 if (NOT PLATFORM_ESP_IDF)
   find_package(Threads REQUIRED)
@@ -66,6 +67,15 @@ set_target_properties(quicr-transport
         CXX_STANDARD 20
         CXX_STANDARD_REQUIRED YES
         CXX_EXTENSIONS OFF)
+
+# linting
+if (LINT)
+  set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+  find_program(CLANG_TIDY_EXE clang-tidy REQUIRED)
+  set_target_properties(quicr-transport
+    PROPERTIES
+      CXX_CLANG_TIDY "${CLANG_TIDY_EXE}")
+endif (LINT)
 
 target_compile_options(quicr-transport
         PRIVATE
