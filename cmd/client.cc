@@ -96,8 +96,8 @@ main()
 
     TransportRemote server = TransportRemote{ "127.0.0.1", 1234, TransportProtocol::QUIC };
 
-    TransportConfig tconfig{ .tls_cert_filename = NULL,
-                             .tls_key_filename = NULL,
+    TransportConfig tconfig{ .tls_cert_filename = "",
+                             .tls_key_filename = "",
                              .time_queue_init_queue_size = 1000,
                              .time_queue_max_duration = 1000,
                              .time_queue_bucket_interval = 1,
