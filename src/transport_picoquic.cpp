@@ -522,9 +522,9 @@ PicoQuicTransport::start(std::shared_ptr<safe_queue<MetricsConnSample>> metrics_
         }
     }
 
-    if (tconfig.quic_qlog_path != nullptr) {
+    if (!tconfig.quic_qlog_path.empty()) {
         logger->info << "Enabling qlog using '" << tconfig.quic_qlog_path << "' path" << std::flush;
-        picoquic_set_qlog(quic_ctx, tconfig.quic_qlog_path);
+        picoquic_set_qlog(quic_ctx, tconfig.quic_qlog_path.c_str());
     }
 
     return cid;
@@ -879,13 +879,13 @@ PicoQuicTransport::PicoQuicTransport(const TransportRemote& server,
 
     picoquic_config_init(&config);
 
-    if (_is_server_mode && tcfg.tls_cert_filename == NULL) {
+    if (_is_server_mode && tcfg.tls_cert_filename.empty()) {
         throw InvalidConfigException("Missing cert filename");
-    } else if (tcfg.tls_cert_filename != NULL) {
-        (void)picoquic_config_set_option(&config, picoquic_option_CERT, tcfg.tls_cert_filename);
+    } else if (!tcfg.tls_cert_filename.empty()) {
+        (void)picoquic_config_set_option(&config, picoquic_option_CERT, tcfg.tls_cert_filename.c_str());
 
-        if (tcfg.tls_key_filename != NULL) {
-            (void)picoquic_config_set_option(&config, picoquic_option_KEY, tcfg.tls_key_filename);
+        if (!tcfg.tls_key_filename.empty()) {
+            (void)picoquic_config_set_option(&config, picoquic_option_KEY, tcfg.tls_key_filename.c_str());
         } else {
             throw InvalidConfigException("Missing cert key filename");
         }

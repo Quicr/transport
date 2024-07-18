@@ -8,6 +8,7 @@
 #include <vector>
 #include <chrono>
 #include <sys/socket.h>
+#include <string>
 
 #include <cantina/logger.h>
 #include <transport/uintvar.h>
@@ -74,8 +75,8 @@ struct TransportRemote
  */
 struct TransportConfig
 {
-  const char *tls_cert_filename;                  /// QUIC TLS certificate to use
-  const char *tls_key_filename;                   /// QUIC TLS private key to use
+  std::string tls_cert_filename;                  /// QUIC TLS certificate to use
+  std::string tls_key_filename;                   /// QUIC TLS private key to use
   uint32_t time_queue_init_queue_size {1000};     /// Initial queue size to reserve upfront
   uint32_t time_queue_max_duration {1000};        /// Max duration for the time queue in milliseconds
   uint32_t time_queue_bucket_interval {1};        /// The bucket interval in milliseconds
@@ -90,7 +91,7 @@ struct TransportConfig
   uint64_t idle_timeout_ms { 30000 };             /// Idle timeout for transport connection(s) in milliseconds
   bool use_reset_wait_strategy { false };         /// Use Reset and wait strategy for congestion control
   bool use_bbr { true };                          /// Use BBR if true, NewReno if false
-  const char* quic_qlog_path;                     /// QUIC LOG file location path, trivially copyable null terminated string
+  std::string quic_qlog_path;                     /// If present, log QUIC LOG file to this path
   uint8_t quic_priority_limit { 0 };              /// Lowest priority that will not be bypassed from pacing/CC in picoquic
 };
 
