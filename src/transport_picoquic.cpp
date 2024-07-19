@@ -522,9 +522,9 @@ PicoQuicTransport::start(std::shared_ptr<safe_queue<MetricsConnSample>> metrics_
         }
     }
 
-    if (_tconfig.quic_qlog_path != nullptr) {
+    if (!_tconfig.quic_qlog_path.empty()) {
         logger->info << "Enabling qlog using '" << _tconfig.quic_qlog_path << "' path" << std::flush;
-        picoquic_set_qlog(_quic_ctx, _tconfig.quic_qlog_path);
+        picoquic_set_qlog(_quic_ctx, _tconfig.quic_qlog_path.c_str());
     }
 
     return cid;
@@ -879,13 +879,13 @@ PicoQuicTransport::PicoQuicTransport(const TransportRemote& server,
 
     picoquic_config_init(&_config);
 
-    if (_is_server_mode && tcfg.tls_cert_filename == NULL) {
+    if (_is_server_mode && tcfg.tls_cert_filename.empty()) {
         throw InvalidConfigException("Missing cert filename");
-    } else if (tcfg.tls_cert_filename != NULL) {
-        (void)picoquic_config_set_option(&_config, picoquic_option_CERT, tcfg.tls_cert_filename);
+    } else if (!tcfg.tls_cert_filename.empty()) {
+        (void)picoquic_config_set_option(&_config, picoquic_option_CERT, tcfg.tls_cert_filename.c_str());
 
-        if (tcfg.tls_key_filename != NULL) {
-            (void)picoquic_config_set_option(&_config, picoquic_option_KEY, tcfg.tls_key_filename);
+        if (!tcfg.tls_key_filename.empty()) {
+            (void)picoquic_config_set_option(&_config, picoquic_option_KEY, tcfg.tls_key_filename.c_str());
         } else {
             throw InvalidConfigException("Missing cert key filename");
         }
@@ -1006,7 +1006,7 @@ PicoQuicTransport::send_next_datagram(ConnectionContext* conn_ctx, uint8_t* byte
     if (out_data.has_value) {
         const auto data_ctx_it = conn_ctx->active_data_contexts.find(out_data.value.data_ctx_id);
         if (data_ctx_it == conn_ctx->active_data_contexts.end()) {
-            logger->warning << "send_next_dgram has no data context conn_id: " << conn_ctx->conn_id
+            logger->debug << "send_next_dgram has no data context conn_id: " << conn_ctx->conn_id
                             << " data len: " << out_data.value.data.size()
                             << " dropping"
                             << std::flush;

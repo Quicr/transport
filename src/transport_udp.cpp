@@ -81,8 +81,6 @@ TransportStatus UDPTransport::status() const {
         return TransportStatus::Shutdown;
     } else if (_isServerMode && _fd > 0) {
         return TransportStatus::Ready;
-    } else if (!_isServerMode) {
-        return _clientStatus;
     }
     return _clientStatus;
 }
