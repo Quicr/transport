@@ -145,7 +145,7 @@ namespace qtransport {
         {};
 
         template<typename Rep, typename Period>
-        struct is_chrono_duration<std::chrono::duration<Rep, Period>> : std::true_type
+        struct IsChronoDuration<std::chrono::duration<Rep, Period>> : std::true_type
         {};
 
         static_assert(IsChronoDuration<Duration_t>::value);
