@@ -73,7 +73,7 @@ UDPTransport::UDPTransport(const TransportRemote &server,
     _fd(-1),
     _isServerMode(isServerMode),
     _serverInfo(server), _delegate(delegate) {
-    _tick_service = std::make_shared<threaded_tick_service>();
+    _tick_service = std::make_shared<ThreadedTickService>();
 }
 
 TransportStatus UDPTransport::status() const {
@@ -118,8 +118,8 @@ DataContextId UDPTransport::createDataContext(const qtransport::TransportConnId 
     return data_ctx_id;
 }
 
-TransportConnId UDPTransport::start(std::shared_ptr<safe_queue<MetricsConnSample>> metrics_conn_samples,
-                                    std::shared_ptr<safe_queue<MetricsDataSample>> metrics_data_samples) {
+TransportConnId UDPTransport::start(std::shared_ptr<SafeQueue<MetricsConnSample>> metrics_conn_samples,
+                                    std::shared_ptr<SafeQueue<MetricsDataSample>> metrics_data_samples) {
 
     this->metrics_conn_samples = std::move(metrics_conn_samples);
     this->metrics_data_samples = std::move(metrics_data_samples);
@@ -712,7 +712,7 @@ UDPTransport::fd_reader() {
                                                                         std::make_shared<ConnectionContext>());
 
                         auto &conn = *conn_it->second;
-                        conn.tx_data = std::make_unique<priority_queue<ConnData>>(_tconfig.time_queue_max_duration,
+                        conn.tx_data = std::make_unique<PriorityQueue<ConnData>>(_tconfig.time_queue_max_duration,
                                                                                   _tconfig.time_queue_bucket_interval,
                                                                                   _tick_service,
                                                                                   _tconfig.time_queue_init_queue_size);
@@ -1201,7 +1201,7 @@ int err = 0;
     auto &conn = *conn_it->second;
     conn.addr = _serverAddr;
     conn.id = _last_conn_id;
-    conn.tx_data = std::make_unique<priority_queue<ConnData>>(_tconfig.time_queue_max_duration,
+    conn.tx_data = std::make_unique<PriorityQueue<ConnData>>(_tconfig.time_queue_max_duration,
                                                               _tconfig.time_queue_bucket_interval,
                                                               _tick_service,
                                                               _tconfig.time_queue_init_queue_size);

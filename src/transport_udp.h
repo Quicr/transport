@@ -58,8 +58,8 @@ namespace qtransport {
 
         TransportStatus status() const override;
 
-      TransportConnId start(std::shared_ptr<safe_queue<MetricsConnSample>> metrics_conn_samples,
-                            std::shared_ptr<safe_queue<MetricsDataSample>> metrics_data_samples) override;
+      TransportConnId start(std::shared_ptr<SafeQueue<MetricsConnSample>> metrics_conn_samples,
+                            std::shared_ptr<SafeQueue<MetricsDataSample>> metrics_data_samples) override;
 
         void close(const TransportConnId &conn_id, uint64_t app_reason_code=0) override;
 
@@ -136,7 +136,7 @@ namespace qtransport {
 
             uint64_t in_data_cb_skip_count {0};               /// Number of times callback was skipped due to size
 
-            safe_queue<ConnData> rx_data;                     /// Receive queue
+            SafeQueue<ConnData> rx_data;                     /// Receive queue
         };
 
         struct ConnectionContext {
@@ -148,7 +148,7 @@ namespace qtransport {
             UdpConnectionMetrics metrics;
 
             TransportStatus status { TransportStatus::Disconnected };
-            std::unique_ptr<priority_queue<ConnData>> tx_data;  // TX priority queue
+            std::unique_ptr<PriorityQueue<ConnData>> tx_data;  // TX priority queue
 
             uint64_t last_rx_msg_tick { 0 };            /// Tick value (ms) when last message was received
             uint64_t last_tx_msg_tick { 0 };            /// Tick value (ms) when last message was sent
@@ -283,7 +283,7 @@ namespace qtransport {
         std::map<TransportConnId, std::shared_ptr<ConnectionContext>> _conn_contexts;
         std::map<AddrId, std::shared_ptr<ConnectionContext>> _addr_conn_contexts;
 
-        std::shared_ptr<tick_service> _tick_service;
+        std::shared_ptr<TickService> _tick_service;
     };
 
 } // namespace qtransport

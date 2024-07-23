@@ -439,8 +439,8 @@ TransportStatus PicoQuicTransport::status() const
 }
 
 TransportConnId
-PicoQuicTransport::start(std::shared_ptr<safe_queue<MetricsConnSample>> metrics_conn_samples,
-                         std::shared_ptr<safe_queue<MetricsDataSample>> metrics_data_samples)
+PicoQuicTransport::start(std::shared_ptr<SafeQueue<MetricsConnSample>> metrics_conn_samples,
+                         std::shared_ptr<SafeQueue<MetricsDataSample>> metrics_data_samples)
 {
     this->metrics_conn_samples = std::move(metrics_conn_samples);
     this->metrics_data_samples = std::move(metrics_data_samples);
@@ -690,7 +690,7 @@ PicoQuicTransport::createDataContext(const TransportConnId conn_id,
 
         data_ctx_it->second.priority = priority;
 
-        data_ctx_it->second.tx_data = std::make_unique<priority_queue<ConnData>>(_tconfig.time_queue_max_duration,
+        data_ctx_it->second.tx_data = std::make_unique<PriorityQueue<ConnData>>(_tconfig.time_queue_max_duration,
                                                                                 _tconfig.time_queue_bucket_interval,
                                                                                 _tick_service,
                                                                                 _tconfig.time_queue_init_queue_size);
@@ -853,7 +853,7 @@ PicoQuicTransport::ConnectionContext& PicoQuicTransport::createConnContext(picoq
         logger->info << "Created new connection context for conn_id: " << conn_ctx.conn_id << std::flush;
 
         conn_ctx.dgram_rx_data.set_limit(_tconfig.time_queue_rx_size);
-        conn_ctx.dgram_tx_data = std::make_unique<priority_queue<ConnData>>(_tconfig.time_queue_max_duration,
+        conn_ctx.dgram_tx_data = std::make_unique<PriorityQueue<ConnData>>(_tconfig.time_queue_max_duration,
                                                                             _tconfig.time_queue_bucket_interval,
                                                                             _tick_service,
                                                                             _tconfig.time_queue_init_queue_size);
@@ -890,7 +890,7 @@ PicoQuicTransport::PicoQuicTransport(const TransportRemote& server,
             throw InvalidConfigException("Missing cert key filename");
         }
     }
-    _tick_service = std::make_shared<threaded_tick_service>();
+    _tick_service = std::make_shared<ThreadedTickService>();
 }
 
 PicoQuicTransport::~PicoQuicTransport()
@@ -926,7 +926,7 @@ PicoQuicTransport::DataContext* PicoQuicTransport::createDataContextBiDirRecv(Tr
 
         data_ctx_it->second.priority = 10; // TODO: Need to get priority from remote
 
-        data_ctx_it->second.tx_data = std::make_unique<priority_queue<ConnData>>(_tconfig.time_queue_max_duration,
+        data_ctx_it->second.tx_data = std::make_unique<PriorityQueue<ConnData>>(_tconfig.time_queue_max_duration,
                                                                                 _tconfig.time_queue_bucket_interval,
                                                                                 _tick_service,
                                                                                 _tconfig.time_queue_init_queue_size);
