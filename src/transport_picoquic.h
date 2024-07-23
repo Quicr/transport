@@ -190,7 +190,7 @@ class PicoQuicTransport : public ITransport
     static void PicoQuicLogging(const char *message, void *argp)
     {
       auto instance = reinterpret_cast<PicoQuicTransport *>(argp);
-      if (!instance->stop && instance->picoquic_logger)
+      if (!instance->_stop && instance->picoquic_logger)
       {
         instance->picoquic_logger->Log(message);
       }
@@ -343,24 +343,24 @@ class PicoQuicTransport : public ITransport
     /*
      * Variables
      */
-    picoquic_quic_config_t config;
-    picoquic_quic_t* quic_ctx;
-    picoquic_tp_t local_tp_options;
-    safe_queue<std::function<void()>> cbNotifyQueue;
+    picoquic_quic_config_t _config;
+    picoquic_quic_t* _quic_ctx;
+    picoquic_tp_t _local_tp_options;
+    safe_queue<std::function<void()>> _cbNotifyQueue;
 
-    safe_queue<std::function<void()>> picoquic_runner_queue;         /// Threads queue functions that picoquic will call via the pq_loop_cb call
+    safe_queue<std::function<void()>> _picoquic_runner_queue;        /// Threads queue functions that picoquic will call via the pq_loop_cb call
 
-    std::atomic<bool> stop;
+    std::atomic<bool> _stop;
     std::mutex _state_mutex;                                        /// Used for stream/context/state updates
-    std::atomic<TransportStatus> transportStatus;
-    std::thread picoQuicThread;
-    std::thread cbNotifyThread;
+    std::atomic<TransportStatus> _transportStatus;
+    std::thread _picoQuicThread;
+    std::thread _cbNotifyThread;
 
-    TransportRemote serverInfo;
-    TransportDelegate& delegate;
-    TransportConfig tconfig;
+    TransportRemote _serverInfo;
+    TransportDelegate& _delegate;
+    TransportConfig _tconfig;
 
-    std::map<TransportConnId, ConnectionContext> conn_context;
+    std::map<TransportConnId, ConnectionContext> _conn_context;
     std::shared_ptr<tick_service> _tick_service;
 };
 

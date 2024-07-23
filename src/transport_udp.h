@@ -111,8 +111,8 @@ namespace qtransport {
         void fd_reader();
         void fd_writer();
 
-        std::atomic<bool> stop;
-        std::vector<std::thread> running_threads;
+        std::atomic<bool> _stop;
+        std::vector<std::thread> _running_threads;
 
         struct Addr {
             socklen_t addr_len;
@@ -265,23 +265,23 @@ namespace qtransport {
          */
         bool send_report(ConnectionContext& conn);
 
-        cantina::LoggerPointer logger;
-        int fd; // UDP socket
-        bool isServerMode;
+        cantina::LoggerPointer _logger;
+        int _fd; // UDP socket
+        bool _isServerMode;
 
-        std::atomic<TransportStatus> clientStatus {TransportStatus::Disconnected };
+        std::atomic<TransportStatus> _clientStatus {TransportStatus::Disconnected };
 
-        TransportRemote serverInfo;
-        Addr serverAddr;
-        TransportConfig tconfig;
+        TransportRemote _serverInfo;
+        Addr _serverAddr;
+        TransportConfig _tconfig;
 
-        TransportDelegate &delegate;
+        TransportDelegate &_delegate;
         std::mutex _writer_mutex;                              /// Mutex for writer
         std::mutex _reader_mutex;                              /// Mutex for reader
 
-        TransportConnId last_conn_id{0};
-        std::map<TransportConnId, std::shared_ptr<ConnectionContext>> conn_contexts;
-        std::map<AddrId, std::shared_ptr<ConnectionContext>> addr_conn_contexts;
+        TransportConnId _last_conn_id{0};
+        std::map<TransportConnId, std::shared_ptr<ConnectionContext>> _conn_contexts;
+        std::map<AddrId, std::shared_ptr<ConnectionContext>> _addr_conn_contexts;
 
         std::shared_ptr<tick_service> _tick_service;
     };

@@ -28,13 +28,17 @@ jobs:
         submodules: recursive
 
     - name: Install Packages
-      run: brew install pkg-config go
+      run: brew install pkg-config go llvm
       if: matrix.os != 'ubuntu-latest'
+    
+    - name: Install clang-tidy
+      run: ln -s "$(brew --prefix llvm)/bin/clang-tidy" "/usr/local/bin/clang-tidy"
+      if: matrix.os == 'macos-latest'
 
     - name: Configure CMake
       # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
       # See https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html?highlight=cmake_build_type
-      run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DBUILD_TESTING=ON -DQTRANSPORT_BUILD_TESTS=ON
+      run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DBUILD_TESTING=ON -DQTRANSPORT_BUILD_TESTS=ON -DLINT=ON
 
     - name: Build
       # Build your program with the given configuration
