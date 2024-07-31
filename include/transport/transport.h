@@ -1,17 +1,14 @@
 #pragma once
 
 #include <memory>
-#include <mutex>
 #include <optional>
-#include <queue>
-#include <array>
 #include <vector>
 #include <chrono>
-#include <sys/socket.h>
+#include <sys/socket.h> // IWYU pragma: keep
 #include <string>
+#include <cstdint>
 
 #include <cantina/logger.h>
-#include <transport/uintvar.h>
 #include <transport/safe_queue.h>
 #include <transport/transport_metrics.h>
 #include <transport/stream_buffer.h>

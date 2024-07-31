@@ -1,0 +1,5 @@
+[
+	{ "include": ["<__fwd/sstream.h>", "private", "<sstream>", "public"] },
+	{ "include": ["<sys/_select.h>", "private", "<sys/select.h>", "public"] }
+]
+

@@ -72,10 +72,12 @@ set_target_properties(quicr-transport
 if (LINT)
   set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
   find_program(CLANG_TIDY_EXE clang-tidy REQUIRED)
+  find_program(IWYU_EXE include-what-you-use REQUIRED)
   set_target_properties(quicr-transport
     PROPERTIES
       CXX_CLANG_TIDY "${CLANG_TIDY_EXE}"
-      CXX_CLANG_TIDY_EXPORT_FIXES_DIR "clang-tidy-fixes")
+      CXX_CLANG_TIDY_EXPORT_FIXES_DIR "clang-tidy-fixes"
+      CXX_INCLUDE_WHAT_YOU_USE "${IWYU_EXE};-Xiwyu;--mapping_file=${CMAKE_CURRENT_SOURCE_DIR}/iwyu.imp")
 endif (LINT)
 
 target_compile_options(quicr-transport

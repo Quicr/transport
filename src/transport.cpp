@@ -4,6 +4,8 @@
   #include <transport_picoquic.h>
 #endif
 #include <cantina/logger.h>
+#include <ostream>
+#include <stdexcept>
 
 namespace qtransport {
 

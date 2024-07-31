@@ -1,26 +1,28 @@
 #include "transport_picoquic.h"
 
+#include <picoquic.h>
+#include <picoquic_config.h>
+#include <picosocks.h>
 #include <picoquic_internal.h>
 #include <autoqlog.h>
 #include <picoquic_utils.h>
+#include <picoquic_packet_loop.h>
 
 #include <arpa/inet.h>
-#include <cassert>
 #include <cstring>
-#include <ctime>
 #include <iostream>
 #include <thread>
-#include <unistd.h>
+#include <sstream>
+#include <span>
+#include <utility>
+#include <cantina/logger.h>
+#include <cantina/logger_macros.h>
 
-#include <arpa/inet.h>
-#include <sys/select.h>
-#include <netdb.h>
 #if defined(__linux__)
 #include <net/ethernet.h>
 #include <netpacket/packet.h>
-#elif defined(__APPLE__)
-#include <net/if_dl.h>
 #endif
+#include <netinet/in.h>
 
 using namespace qtransport;
 
