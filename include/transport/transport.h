@@ -273,8 +273,8 @@ public:
    *
    * @return TransportContextId: identifying the connection
    */
-   virtual TransportConnId start(std::shared_ptr<safe_queue<MetricsConnSample>> metrics_conn_samples,
-                                 std::shared_ptr<safe_queue<MetricsDataSample>> metrics_data_samples) = 0;
+   virtual TransportConnId start(std::shared_ptr<SafeQueue<MetricsConnSample>> metrics_conn_samples,
+                                 std::shared_ptr<SafeQueue<MetricsDataSample>> metrics_data_samples) = 0;
 
   /**
    * @brief Create a data context
@@ -417,8 +417,8 @@ public:
   virtual std::shared_ptr<StreamBuffer<uint8_t>> getStreamBuffer(TransportConnId conn_id, uint64_t stream_id) = 0;
 
    /// Metrics samples to be written to TSDB. When full the buffer will remove the oldest
-   std::shared_ptr<safe_queue<MetricsConnSample>> metrics_conn_samples;
-   std::shared_ptr<safe_queue<MetricsDataSample>> metrics_data_samples;
+   std::shared_ptr<SafeQueue<MetricsConnSample>> metrics_conn_samples;
+   std::shared_ptr<SafeQueue<MetricsDataSample>> metrics_data_samples;
 };
 
 } // namespace qtransport

@@ -23,10 +23,10 @@ namespace qtransport {
      * @tparam PMAX       Max priorities to allow - Range becomes 0 - PMAX
      */
     template<typename DataType, uint8_t PMAX = 32>
-    class priority_queue
+    class PriorityQueue
     {
         using timeType = std::chrono::milliseconds;
-        using timeQueue = time_queue<DataType, timeType>;
+        using timeQueue = TimeQueue<DataType, timeType>;
 
         struct Exception : public std::runtime_error
         {
@@ -39,15 +39,15 @@ namespace qtransport {
         };
 
       public:
-        ~priority_queue() {
+        ~PriorityQueue() {
         }
 
         /**
          * Construct a priority queue
          * @param tick_service Shared pointer to tick_service service
          */
-        priority_queue(const std::shared_ptr<tick_service>& tick_service)
-          : priority_queue(1000, 1, _tick_service, 1000)
+        PriorityQueue(const std::shared_ptr<TickService>& tick_service)
+          : PriorityQueue(1000, 1, _tick_service, 1000)
         {
         }
 
@@ -59,9 +59,9 @@ namespace qtransport {
          * @param tick_service          Shared pointer to tick_service service
          * @param initial_queue_size    Number of default fifo queue size (reserve)
          */
-        priority_queue(size_t duration,
+        PriorityQueue(size_t duration,
                        size_t interval,
-                       const std::shared_ptr<tick_service>& tick_service,
+                       const std::shared_ptr<TickService>& tick_service,
                        size_t initial_queue_size)
           : _tick_service(tick_service)
         {
@@ -216,6 +216,6 @@ namespace qtransport {
         size_t _interval_ms;
 
         std::array<std::unique_ptr<timeQueue>, PMAX> _queue;
-        std::shared_ptr<tick_service> _tick_service;
+        std::shared_ptr<TickService> _tick_service;
     };
 }; // end of namespace qtransport

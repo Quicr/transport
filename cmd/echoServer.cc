@@ -113,8 +113,8 @@ main()
         serverIp.port = atoi(envVar);
 
     auto server = ITransport::make_server_transport(serverIp, tconfig, d, logger);
-    auto metrics_conn_samples = std::make_shared<safe_queue<MetricsConnSample>>(10);
-    auto metrics_data_samples = std::make_shared<safe_queue<MetricsDataSample>>(10);
+    auto metrics_conn_samples = std::make_shared<SafeQueue<MetricsConnSample>>(10);
+    auto metrics_data_samples = std::make_shared<SafeQueue<MetricsDataSample>>(10);
     server->start(metrics_conn_samples, metrics_data_samples);
 
     d.setServerTransport(server);
