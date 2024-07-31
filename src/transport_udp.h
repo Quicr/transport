@@ -187,6 +187,8 @@ namespace qtransport {
 
             double bytes_per_us {6.4};     // Default to 50Mbps
 
+            // TODO: Tighten up unit prefixes.
+            // NOLINTBEGIN(readability-identifier-naming)
             bool set_KBps(uint32_t KBps, bool max_of= false) {
                 if (KBps < UDP_MIN_KBPS) return false;
 
@@ -198,6 +200,7 @@ namespace qtransport {
 
                 return false;
             }
+            // NOLINTEND(readability-identifier-naming)
         };
 
         /* Protocol methods */

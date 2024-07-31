@@ -1355,7 +1355,7 @@ void PicoQuicTransport::on_recv_stream_bytes(ConnectionContext* conn_ctx,
 
     auto rx_buf_it = conn_ctx->rx_stream_buffer.find(stream_id);
     if (rx_buf_it == conn_ctx->rx_stream_buffer.end()) {
-        std::lock_guard<std::mutex> _l(_state_mutex);
+        std::lock_guard<std::mutex> lock(_state_mutex);
 
         logger->debug << "Adding received conn_id: " << conn_ctx->conn_id
                      << " stream_id: " << stream_id

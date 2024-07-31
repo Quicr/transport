@@ -266,7 +266,7 @@ bool UDPTransport::send_connect(const TransportConnId conn_id, const Addr& addr)
 
     chdr.idle_timeout = 20;
 
-    int numSent = sendto(_fd,
+    int num_sent = sendto(_fd,
                          (uint8_t *)&chdr,
                          sizeof(chdr),
                          0 /*flags*/,
@@ -274,16 +274,16 @@ bool UDPTransport::send_connect(const TransportConnId conn_id, const Addr& addr)
                          addr.addr_len);
 
 
-    if (numSent < 0) {
+    if (num_sent < 0) {
         _logger->error << "conn_id: " << conn_id
                       << " Error sending CONNECT to UDP socket: " << strerror(errno)
                       << std::flush;
 
         return false;
 
-    } else if (numSent != sizeof(chdr)) {
+    } else if (num_sent != sizeof(chdr)) {
         _logger->info << "conn_id: " << conn_id
-                     << " Failed to send CONNECT message, sent: " << numSent
+                     << " Failed to send CONNECT message, sent: " << num_sent
                      << std::flush;
         return false;
     }
@@ -294,7 +294,7 @@ bool UDPTransport::send_connect(const TransportConnId conn_id, const Addr& addr)
 bool UDPTransport::send_connect_ok(const TransportConnId conn_id, const Addr& addr) {
     UdpProtocol::ConnectOkMsg hdr {};
 
-    int numSent = sendto(_fd,
+    int num_sent = sendto(_fd,
                          (uint8_t *)&hdr,
                          sizeof(hdr),
                          0 /*flags*/,
@@ -302,16 +302,16 @@ bool UDPTransport::send_connect_ok(const TransportConnId conn_id, const Addr& ad
                          addr.addr_len);
 
 
-    if (numSent < 0) {
+    if (num_sent < 0) {
         _logger->error << "conn_id: " << conn_id
                       << " Error sending CONNECT OK to UDP socket: " << strerror(errno)
                       << std::flush;
 
         return false;
 
-    } else if (numSent != sizeof(hdr)) {
+    } else if (num_sent != sizeof(hdr)) {
         _logger->info << "conn_id: " << conn_id
-                     << " Failed to send CONNECT OK message, sent: " << numSent
+                     << " Failed to send CONNECT OK message, sent: " << num_sent
                      << std::flush;
         return false;
     }
@@ -322,7 +322,7 @@ bool UDPTransport::send_connect_ok(const TransportConnId conn_id, const Addr& ad
 bool UDPTransport::send_disconnect(const TransportConnId conn_id, const Addr& addr) {
     UdpProtocol::DisconnectMsg dhdr {};
 
-    int numSent = sendto(_fd,
+    int num_sent = sendto(_fd,
                          (uint8_t *)&dhdr,
                          sizeof(dhdr),
                          0 /*flags*/,
@@ -330,16 +330,16 @@ bool UDPTransport::send_disconnect(const TransportConnId conn_id, const Addr& ad
                          addr.addr_len);
 
 
-    if (numSent < 0) {
+    if (num_sent < 0) {
         _logger->error << "conn_id: " << conn_id
                       << " Error sending DISCONNECT to UDP socket: " << strerror(errno)
                       << std::flush;
 
         return false;
 
-    } else if (numSent != sizeof(dhdr)) {
+    } else if (num_sent != sizeof(dhdr)) {
         _logger->info << "conn_id: " << conn_id
-                     << " Failed to send DISCONNECT message, sent: " << numSent
+                     << " Failed to send DISCONNECT message, sent: " << num_sent
                      << std::flush;
         return false;
     }
@@ -356,7 +356,7 @@ bool UDPTransport::send_keepalive(ConnectionContext& conn) {
     _logger->debug << "conn_id: " << conn.id
                   << " send KEEPALIVE" << std::flush;
 
-    int numSent = sendto(_fd,
+    int num_sent = sendto(_fd,
                          (uint8_t *)&khdr,
                          sizeof(khdr),
                          0 /*flags*/,
@@ -364,16 +364,16 @@ bool UDPTransport::send_keepalive(ConnectionContext& conn) {
                          conn.addr.addr_len);
 
 
-    if (numSent < 0) {
+    if (num_sent < 0) {
         _logger->error << "conn_id: " << conn.id
                       << " Error sending KEEPALIVE to UDP socket: " << strerror(errno)
                       << std::flush;
 
         return false;
 
-    } else if (numSent != sizeof(khdr)) {
+    } else if (num_sent != sizeof(khdr)) {
         _logger->info << "conn_id: " << conn.id
-                     << " Failed to send KEEPALIVE message, sent: " << numSent
+                     << " Failed to send KEEPALIVE message, sent: " << num_sent
                      << std::flush;
         return false;
     }
@@ -382,7 +382,7 @@ bool UDPTransport::send_keepalive(ConnectionContext& conn) {
 }
 
 bool UDPTransport::send_report(ConnectionContext& conn) {
-    int numSent = sendto(_fd,
+    int num_sent = sendto(_fd,
                          (uint8_t *)&conn.report,
                          sizeof(conn.report),
                          0 /*flags*/,
@@ -390,16 +390,16 @@ bool UDPTransport::send_report(ConnectionContext& conn) {
                          conn.addr.addr_len);
 
 
-    if (numSent < 0) {
+    if (num_sent < 0) {
         _logger->error << "conn_id: " << conn.id
                       << " Error sending REPORT to UDP socket: " << strerror(errno)
                       << std::flush;
 
         return false;
 
-    } else if (numSent != sizeof(conn.report)) {
+    } else if (num_sent != sizeof(conn.report)) {
         _logger->info << "conn_id: " << conn.id
-                     << " Failed to send REPORT message, sent: " << numSent
+                     << " Failed to send REPORT message, sent: " << num_sent
                      << std::flush;
         return false;
     }
@@ -465,23 +465,23 @@ bool UDPTransport::send_data(ConnectionContext& conn, DataContext& data_ctx, con
 
     memcpy(data_p, cd.data.data(), cd.data.size());
 
-    int numSent = sendto(_fd,
+    int num_sent = sendto(_fd,
                          data,
                          data_len,
                          0 /*flags*/,
                          (struct sockaddr *) &conn.addr.addr,
                          conn.addr.addr_len);
 
-    if (numSent < 0) {
+    if (num_sent < 0) {
         _logger->error << "conn_id: " << conn.id
                       << " Error sending DATA to UDP socket: " << strerror(errno)
                       << std::flush;
 
         return false;
 
-    } else if (numSent != data_len) {
+    } else if (num_sent != data_len) {
         _logger->info << "conn_id: " << conn.id
-                     << " Failed to send DATA len: " << data_len << ", sent: " << numSent
+                     << " Failed to send DATA len: " << data_len << ", sent: " << num_sent
                      << std::flush;
         return false;
     }
@@ -644,10 +644,10 @@ UDPTransport::fd_reader() {
   // TODO (Suhas): Revisit this once we have basic esp functionality working
   const int dataSize = 2048;
 #else
-  const int dataSize = UDP_MAX_PACKET_SIZE; // TODO Add config var to set this value.  Sizes
+  const int data_size = UDP_MAX_PACKET_SIZE; // TODO Add config var to set this value.  Sizes
     // larger than actual MTU require IP frags
 #endif
-    uint8_t data[dataSize];
+    uint8_t data[data_size];
 
     std::unique_lock<std::mutex> lock(_reader_mutex);
     lock.unlock();      // Will lock later in while loop
@@ -655,14 +655,14 @@ UDPTransport::fd_reader() {
     while (not _stop) {
         Addr remote_addr;
 
-        int rLen = recvfrom(_fd,
+        int r_len = recvfrom(_fd,
                             data,
-                            dataSize,
+                            data_size,
                             0 /*flags*/,
                             (struct sockaddr *) &remote_addr.addr,
                             &remote_addr.addr_len);
 
-        if (rLen < 0 || _stop) {
+        if (r_len < 0 || _stop) {
             if ((errno == EAGAIN) || (_stop)) {
                 // timeout on read or stop issued
                 continue;
@@ -674,7 +674,7 @@ UDPTransport::fd_reader() {
             }
         }
 
-        if (rLen == 0) {
+        if (r_len == 0) {
             continue;
         }
 
@@ -826,6 +826,8 @@ UDPTransport::fd_reader() {
                         continue;
                     }
 
+                    // TODO: Check unit prefixes.
+                    // NOLINTBEGIN(readability-identifier-naming)
                     const auto send_KBps = static_cast<int>(prev_report.metrics.total_bytes / prev_report.metrics.duration_ms);
                     //const auto ack_KBps = static_cast<int>(hdr.metrics.total_bytes / hdr.metrics.duration_ms);
                     const auto ack_KBps = static_cast<int>(hdr.metrics.total_bytes / hdr.metrics.duration_ms); //std::max(prev_report.metrics.duration_ms, hdr.metrics.duration_ms));
@@ -894,6 +896,7 @@ UDPTransport::fd_reader() {
                             a_conn_it->second->tx_zero_loss_count = 2;
                         }
                     }
+                    // NOLINTEND(readability-identifier-naming)
                 }
                 break;
             }
@@ -904,14 +907,14 @@ UDPTransport::fd_reader() {
                 UdpProtocol::DataMsg hdr;
                 memcpy(&hdr, data_p, sizeof(hdr));
                 data_p += sizeof(hdr);
-                rLen -= sizeof(hdr);
+                r_len -= sizeof(hdr);
 
                 const auto remote_data_ctx_id_len = uintV_size(*data_p);
-                uintV_t remote_data_ctx_V (data_p, data_p + remote_data_ctx_id_len);
+                uintV_t remote_data_ctx_v (data_p, data_p + remote_data_ctx_id_len);
                 data_p += remote_data_ctx_id_len;
-                rLen -= remote_data_ctx_id_len;
+                r_len -= remote_data_ctx_id_len;
 
-                const auto data_ctx_id = to_uint64(remote_data_ctx_V);
+                const auto data_ctx_id = to_uint64(remote_data_ctx_v);
 
                 if (a_conn_it != _addr_conn_contexts.end()) {
                     if (hdr.report_id != a_conn_it->second->report.report_id &&
@@ -930,12 +933,12 @@ UDPTransport::fd_reader() {
                         a_conn_it->second->report_rx_start_tick = current_tick;
                         a_conn_it->second->report.report_id = hdr.report_id;
                         a_conn_it->second->report.metrics.duration_ms = current_tick - a_conn_it->second->last_rx_msg_tick;
-                        a_conn_it->second->report.metrics.total_bytes = rLen;
+                        a_conn_it->second->report.metrics.total_bytes = r_len;
                         a_conn_it->second->report.metrics.total_packets = 1;
 
                     } else if (hdr.report_id == a_conn_it->second->report.report_id) {
                         a_conn_it->second->report.metrics.duration_ms += current_tick - a_conn_it->second->last_rx_msg_tick;
-                        a_conn_it->second->report.metrics.total_bytes += rLen;
+                        a_conn_it->second->report.metrics.total_bytes += r_len;
                         a_conn_it->second->report.metrics.total_packets++;
                     }
 
@@ -956,7 +959,7 @@ UDPTransport::fd_reader() {
                             continue;
                         }
 
-                        std::vector<uint8_t> buffer(data_p, data_p + rLen);
+                        std::vector<uint8_t> buffer(data_p, data_p + r_len);
 
                         std::vector<MethodTraceItem> trace;
                         const auto start_time = std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::steady_clock::now());
@@ -1132,11 +1135,11 @@ int err = 0;
     }
 
 
-    struct sockaddr_in srvAddr;
-    srvAddr.sin_family = AF_INET;
-    srvAddr.sin_addr.s_addr = htonl(INADDR_ANY);
-    srvAddr.sin_port = 0;
-    err = bind(_fd, (struct sockaddr *) &srvAddr, sizeof(srvAddr));
+    struct sockaddr_in srv_addr;
+    srv_addr.sin_family = AF_INET;
+    srv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    srv_addr.sin_port = 0;
+    err = bind(_fd, (struct sockaddr *) &srv_addr, sizeof(srv_addr));
     if (err) {
         s_log << "client_connect: Unable to bind to socket: " << strerror(errno);
         _logger->Log(cantina::LogLevel::Critical, s_log.str());
@@ -1147,13 +1150,13 @@ int err = 0;
 #endif
     }
 
-    std::string sPort = std::to_string(htons(_serverInfo.port));
+    std::string s_port = std::to_string(htons(_serverInfo.port));
     struct addrinfo hints = {}, *address_list = NULL;
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_DGRAM;
     hints.ai_protocol = IPPROTO_UDP;
     err = getaddrinfo(
-            _serverInfo.host_or_ip.c_str(), sPort.c_str(), &hints, &address_list);
+            _serverInfo.host_or_ip.c_str(), s_port.c_str(), &hints, &address_list);
     if (err) {
         strerror(1);
         s_log << "client_connect: Unable to resolve remote ip address: "
