@@ -135,13 +135,13 @@ public:
     {
     }
 
-    template<class U, size_type N, typename std::enable_if<std::is_convertible_v<U, T>, bool> = true>
+    template<class U, size_type N, typename std::enable_if_t<std::is_convertible_v<U, T>, bool> = true>
     constexpr Span(std::array<U, N>& arr) noexcept
         : Span(static_cast<pointer>(arr.data()), N)
     {
     }
 
-    template<class U, size_type N, typename std::enable_if<std::is_convertible_v<U, T>, bool> = true>
+    template<class U, size_type N, typename std::enable_if_t<std::is_convertible_v<U, T>, bool> = true>
     constexpr Span(const std::array<U, N>& arr) noexcept
         : Span(static_cast<pointer>(arr.data()), N)
     {
