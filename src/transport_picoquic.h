@@ -213,7 +213,7 @@ class PicoQuicTransport : public ITransport
     virtual bool getPeerAddrInfo(const TransportConnId& conn_id,
                                  sockaddr_storage* addr) override;
 
-    DataContextId createDataContext(const TransportConnId conn_id,
+    DataContextId createDataContext(TransportConnId conn_id,
                                     bool use_reliable_transport,
                                     uint8_t priority, bool bidir) override;
 
@@ -224,22 +224,22 @@ class PicoQuicTransport : public ITransport
                            const DataContextId& data_ctx_id,
                            std::vector<uint8_t>&& bytes,
                            std::vector<qtransport::MethodTraceItem> &&trace,
-                           const uint8_t priority,
-                           const uint32_t ttl_ms,
-                           const uint32_t delay_ms,
-                           const EnqueueFlags flags) override;
+                           uint8_t priority,
+                           uint32_t ttl_ms,
+                           uint32_t delay_ms,
+                           EnqueueFlags flags) override;
 
     std::optional<std::vector<uint8_t>> dequeue(TransportConnId conn_id,
                                                 std::optional<DataContextId> data_ctx_id) override;
 
     std::shared_ptr<StreamBuffer<uint8_t>> getStreamBuffer(TransportConnId conn_id, uint64_t stream_id) override;
 
-    void setRemoteDataCtxId(const TransportConnId conn_id,
-                            const DataContextId data_ctx_id,
-                            const DataContextId remote_data_ctx_id) override;
+    void setRemoteDataCtxId(TransportConnId conn_id,
+                            DataContextId data_ctx_id,
+                            DataContextId remote_data_ctx_id) override;
 
-    void setStreamIdDataCtxId(const TransportConnId conn_id, DataContextId data_ctx_id, uint64_t stream_id) override;
-    void setDataCtxPriority(const TransportConnId conn_id, DataContextId data_ctx_id, uint8_t priority) override;
+    void setStreamIdDataCtxId(TransportConnId conn_id, DataContextId data_ctx_id, uint64_t stream_id) override;
+    void setDataCtxPriority(TransportConnId conn_id, DataContextId data_ctx_id, uint8_t priority) override;
 
     /*
      * Internal public methods
@@ -265,10 +265,10 @@ class PicoQuicTransport : public ITransport
     void send_next_datagram(ConnectionContext* conn_ctx, uint8_t* bytes_ctx, size_t max_len);
     void send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, size_t max_len);
 
-    void on_connection_status(const TransportConnId conn_id,
-                              const TransportStatus status);
+    void on_connection_status(TransportConnId conn_id,
+                              TransportStatus status);
 
-    void on_new_connection(const TransportConnId conn_id);
+    void on_new_connection(TransportConnId conn_id);
     void on_recv_datagram(ConnectionContext* conn_ctx,
                           uint8_t* bytes, size_t length);
     void on_recv_stream_bytes(ConnectionContext *conn_ctx, DataContext* data_ctx, uint64_t stream_id,
@@ -301,7 +301,7 @@ class PicoQuicTransport : public ITransport
     void shutdown();
 
     void server();
-    void client(const TransportConnId conn_id);
+    void client(TransportConnId conn_id);
     void cbNotifier();
 
     void check_callback_delta(DataContext* data_ctx, bool tx=true);
@@ -311,14 +311,14 @@ class PicoQuicTransport : public ITransport
      * @details This method MUST only be called within the picoquic thread. Enqueue and other
      *      thread methods can call this via the pq_runner.
      */
-    void mark_stream_active(const TransportConnId conn_id, const DataContextId data_ctx_id);
+    void mark_stream_active(TransportConnId conn_id, DataContextId data_ctx_id);
 
     /**
      * @brief Mark datagram ready
      * @details This method MUST only be called within the picoquic thread. Enqueue and other
      *      thread methods can call this via the pq_runner.
      */
-    void mark_dgram_ready(const TransportConnId conn_id);
+    void mark_dgram_ready(TransportConnId conn_id);
 
     /**
      * @brief Create a new stream
@@ -337,7 +337,7 @@ class PicoQuicTransport : public ITransport
      * @param data_ctx      Data context for the stream
      * @param send_reset    Indicates if the stream should be closed by RESET, otherwise FIN
      */
-    void close_stream(ConnectionContext& conn_ctx, DataContext *data_ctx, const bool send_reset);
+    void close_stream(ConnectionContext& conn_ctx, DataContext *data_ctx, bool send_reset);
 
 
     /*
