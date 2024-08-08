@@ -1,4 +1,12 @@
-Checks: '-*,readability-identifier-naming'
+Checks: '
+          -*,
+          misc-misplaced-const,
+          readability-avoid-const-params-in-decls,
+          readability-const-return-type,
+          readability-identifier-naming,
+          readability-make-member-function-const,
+          readability-non-const-parameter,
+        '
 CheckOptions:
   - { key: readability-identifier-naming.PrivateMemberPrefix, value: _ }
 WarningsAsErrors: "*"

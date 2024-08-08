@@ -66,7 +66,7 @@ namespace qtransport {
         virtual bool getPeerAddrInfo(const TransportConnId &conn_id,
                                      sockaddr_storage *addr) override;
 
-        DataContextId createDataContext(const TransportConnId conn_id,
+        DataContextId createDataContext(TransportConnId conn_id,
                                         bool use_reliable_transport,
                                         uint8_t priority, bool bidir) override;
 
@@ -76,19 +76,19 @@ namespace qtransport {
                                const DataContextId &data_ctx_id,
                                std::vector<uint8_t> &&bytes,
                                std::vector<qtransport::MethodTraceItem> &&trace,
-                               const uint8_t priority,
-                               const uint32_t ttl_ms,
-                               const uint32_t delay_ms,
-                               const EnqueueFlags flags) override;
+                               uint8_t priority,
+                               uint32_t ttl_ms,
+                               uint32_t delay_ms,
+                               EnqueueFlags flags) override;
 
         std::optional<std::vector<uint8_t>> dequeue(TransportConnId conn_id,
                                                     std::optional<DataContextId> data_ctx_id) override;
 
         std::shared_ptr<StreamBuffer<uint8_t>> getStreamBuffer(TransportConnId conn_id, uint64_t stream_id) override { return nullptr;}
 
-        void setRemoteDataCtxId(const TransportConnId conn_id,
-                                const DataContextId data_ctx_id,
-                                const DataContextId remote_data_ctx_id) override;
+        void setRemoteDataCtxId(TransportConnId conn_id,
+                                DataContextId data_ctx_id,
+                                DataContextId remote_data_ctx_id) override;
 
         void setStreamIdDataCtxId([[maybe_unused]] const TransportConnId conn_id,
                                   [[maybe_unused]] DataContextId data_ctx_id,
@@ -209,7 +209,7 @@ namespace qtransport {
          *
          * @return True if sent, false if not sent/error
          */
-        bool send_connect(const TransportConnId conn_id, const Addr& addr);
+        bool send_connect(TransportConnId conn_id, const Addr& addr);
 
         /**
          * @brief Send UDP protocol connect OK message
@@ -219,7 +219,7 @@ namespace qtransport {
          *
          * @return True if sent, false if not sent/error
          */
-        bool send_connect_ok(const TransportConnId conn_id, const Addr& addr);
+        bool send_connect_ok(TransportConnId conn_id, const Addr& addr);
 
         /**
          * @brief Send UDP protocol disconnect message
@@ -229,7 +229,7 @@ namespace qtransport {
          *
          * @return True if sent, false if not sent/error
          */
-        bool send_disconnect(const TransportConnId conn_id, const Addr& addr);
+        bool send_disconnect(TransportConnId conn_id, const Addr& addr);
 
         /**
          * @brief Send UDP protocol keepalive message

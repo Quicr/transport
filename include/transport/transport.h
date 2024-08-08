@@ -162,7 +162,7 @@ public:
      * @param[in] status 	    Transport Status value
      */
     virtual void on_connection_status(const TransportConnId& conn_id,
-                                      const TransportStatus status) = 0;
+                                      TransportStatus status) = 0;
 
     /**
      * @brief Report arrival of a new connection
@@ -209,7 +209,7 @@ public:
     virtual void on_recv_stream(const TransportConnId& conn_id,
                                 uint64_t stream_id,
                                 std::optional<DataContextId> data_ctx_id,
-                                const bool is_bidir=false) = 0;
+                                bool is_bidir=false) = 0;
 
 
   };
@@ -289,7 +289,7 @@ public:
    *
    * @return DataContextId identifying the data context via the connection
    */
-  virtual DataContextId createDataContext(const TransportConnId conn_id,
+  virtual DataContextId createDataContext(TransportConnId conn_id,
                                           bool use_reliable_transport,
                                           uint8_t priority = 1,
                                           bool bidir = false) = 0;
@@ -330,7 +330,7 @@ public:
    * @param data_ctx_id             Local data context ID
    * @param stream_id               RX stream ID
    */
-   virtual void setStreamIdDataCtxId(const TransportConnId conn_id,
+   virtual void setStreamIdDataCtxId(TransportConnId conn_id,
                                     DataContextId data_ctx_id,
                                     uint64_t stream_id) = 0;
 
@@ -341,7 +341,7 @@ public:
    * @param data_ctx_id             Local data context ID
    * @param priority                Priority for data context stream, range should be 0 - 255
    */
-  virtual void setDataCtxPriority(const TransportConnId conn_id, DataContextId data_ctx_id, uint8_t priority) = 0;
+  virtual void setDataCtxPriority(TransportConnId conn_id, DataContextId data_ctx_id, uint8_t priority) = 0;
 
   /**
    * @brief Set the remote data context id
@@ -351,9 +351,9 @@ public:
    * @param data_ctx_id              Local data context ID
    * @param remote_data_ctx_id       Remote data context ID (learned via subscribe/publish)
    */
-  virtual void setRemoteDataCtxId(const TransportConnId conn_id,
-                                  const DataContextId data_ctx_id,
-                                  const DataContextId remote_data_ctx_id) = 0;
+  virtual void setRemoteDataCtxId(TransportConnId conn_id,
+                                  DataContextId data_ctx_id,
+                                  DataContextId remote_data_ctx_id) = 0;
 
 
   /**
@@ -388,10 +388,10 @@ public:
                                  const DataContextId& data_ctx_id,
                                  std::vector<uint8_t>&& bytes,
                                  std::vector<MethodTraceItem> &&trace = { MethodTraceItem{} },
-                                 const uint8_t priority = 1,
-                                 const uint32_t ttl_ms=350,
-                                 const uint32_t delay_ms=0,
-                                 const EnqueueFlags flags={true, false, false, false}) = 0;
+                                 uint8_t priority = 1,
+                                 uint32_t ttl_ms=350,
+                                 uint32_t delay_ms=0,
+                                 EnqueueFlags flags={true, false, false, false}) = 0;
 
   /**
    * @brief Dequeue datagram application data from transport buffer
