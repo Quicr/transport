@@ -933,7 +933,11 @@ PicoQuicTransport::DataContext* PicoQuicTransport::createDataContextBiDirRecv(Tr
 
         data_ctx_it->second.current_stream_id = stream_id;
 
+#if __cplusplus >= 202002L
         _cbNotifyQueue.push([=, data_ctx_id = data_ctx_it->second.data_ctx_id, this]() {
+#else
+        _cbNotifyQueue.push([=, data_ctx_id = data_ctx_it->second.data_ctx_id]() {
+#endif
             _delegate.on_new_data_context(conn_id, data_ctx_id); });
 
         logger->info << "Created new bidir data context conn_id: " << conn_id
@@ -1278,7 +1282,11 @@ PicoQuicTransport::on_connection_status(const TransportConnId conn_id, const Tra
 
     }
 
+#if __cplusplus >= 202002L
     _cbNotifyQueue.push([=, this]() { _delegate.on_connection_status(conn_id, status); });
+#else
+    _cbNotifyQueue.push([=]() { _delegate.on_connection_status(conn_id, status); });
+#endif
 }
 
 void
@@ -1304,7 +1312,11 @@ PicoQuicTransport::on_new_connection(const TransportConnId conn_id)
         picoquic_set_priority_limit_for_bypass(conn_ctx->pq_cnx, _tconfig.quic_priority_limit);
     }
 
+#if __cplusplus >= 202002L
     _cbNotifyQueue.push([=, this]() { _delegate.on_new_connection(conn_id, remote); });
+#else
+    _cbNotifyQueue.push([=]() { _delegate.on_new_connection(conn_id, remote); });
+#endif
 }
 
 void
@@ -1333,7 +1345,11 @@ PicoQuicTransport::on_recv_datagram(ConnectionContext* conn_ctx, uint8_t* bytes,
                      << _cbNotifyQueue.size() << std::flush;
     }
 
+#if __cplusplus >= 202002L
     if (conn_ctx->dgram_rx_data.size() < 10 && !_cbNotifyQueue.push([=, this]() {
+#else
+    if (conn_ctx->dgram_rx_data.size() < 10 && !_cbNotifyQueue.push([=]() {
+#endif
             _delegate.on_recv_dgram(conn_ctx->conn_id,std::nullopt);
         })) {
 
@@ -1365,7 +1381,7 @@ void PicoQuicTransport::on_recv_stream_bytes(ConnectionContext* conn_ctx,
         rx_buf_it = it;
     }
 
-    std::span<uint8_t> bytes_a(bytes, length);
+    Span<uint8_t> bytes_a(bytes, length);
     auto &rx_buf = rx_buf_it->second;
 
     rx_buf.buf->push(bytes_a);
@@ -1374,7 +1390,11 @@ void PicoQuicTransport::on_recv_stream_bytes(ConnectionContext* conn_ctx,
         data_ctx->metrics.rx_stream_cb++;
         data_ctx->metrics.rx_stream_bytes += length;
 
+#if __cplusplus >= 202002L
         if (!_cbNotifyQueue.push([=, this]() {
+#else
+        if (!_cbNotifyQueue.push([=]() {
+#endif
                 _delegate.on_recv_stream(conn_ctx->conn_id, stream_id, data_ctx->data_ctx_id, data_ctx->is_bidir);
             })) {
 
@@ -1384,7 +1404,11 @@ void PicoQuicTransport::on_recv_stream_bytes(ConnectionContext* conn_ctx,
         }
 
     } else {
+#if __cplusplus >= 202002L
         if (!_cbNotifyQueue.push([=, this]() {
+#else
+        if (!_cbNotifyQueue.push([=]() {
+#endif
                 _delegate.on_recv_stream(conn_ctx->conn_id, stream_id, std::nullopt);
             })) {
 
