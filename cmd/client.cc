@@ -121,8 +121,8 @@ main()
     d.setClientTransport(client);
     logger->info << "after set client transport client use_count: " << client.use_count() << std::flush;
 
-    auto metrics_conn_samples = std::make_shared<safe_queue<MetricsConnSample>>(10);
-    auto metrics_data_samples = std::make_shared<safe_queue<MetricsDataSample>>(10);
+    auto metrics_conn_samples = std::make_shared<SafeQueue<MetricsConnSample>>(10);
+    auto metrics_data_samples = std::make_shared<SafeQueue<MetricsDataSample>>(10);
 
     auto conn_id = client->start(metrics_conn_samples, metrics_data_samples);
 

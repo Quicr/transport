@@ -40,7 +40,7 @@ class PicoQuicTransport : public ITransport
     const char* QUICR_ALPN = "moq-00";
 
     using bytes_t = std::vector<uint8_t>;
-    using timeQueue = time_queue<bytes_t, std::chrono::milliseconds>;
+    using timeQueue = TimeQueue<bytes_t, std::chrono::milliseconds>;
     using DataContextId = uint64_t;
 
     /**
@@ -70,7 +70,7 @@ class PicoQuicTransport : public ITransport
 
         uint64_t in_data_cb_skip_count {0};                  /// Number of times callback was skipped due to size
 
-        std::unique_ptr<priority_queue<ConnData>> tx_data;    /// Pending objects to be written to the network
+        std::unique_ptr<PriorityQueue<ConnData>> tx_data;    /// Pending objects to be written to the network
 
         uint8_t* stream_tx_object {nullptr};                 /// Current object that is being sent as a byte stream
         size_t stream_tx_object_size {0};                    /// Size of the tx object
@@ -122,8 +122,8 @@ class PicoQuicTransport : public ITransport
         DataContextId next_data_ctx_id {1};                   /// Next data context ID; zero is reserved for default context
 
 
-        std::unique_ptr<priority_queue<ConnData>> dgram_tx_data;  /// Datagram pending objects to be written to the network
-        safe_queue<bytes_t> dgram_rx_data;                        /// Buffered datagrams received from the network
+        std::unique_ptr<PriorityQueue<ConnData>> dgram_tx_data;  /// Datagram pending objects to be written to the network
+        SafeQueue<bytes_t> dgram_rx_data;                        /// Buffered datagrams received from the network
 
         /**
          * Active stream buffers for received unidirectional streams
@@ -206,8 +206,8 @@ class PicoQuicTransport : public ITransport
     virtual ~PicoQuicTransport();
 
     TransportStatus status() const override;
-    TransportConnId start(std::shared_ptr<safe_queue<MetricsConnSample>> metrics_conn_samples,
-                          std::shared_ptr<safe_queue<MetricsDataSample>> metrics_data_samples) override;
+    TransportConnId start(std::shared_ptr<SafeQueue<MetricsConnSample>> metrics_conn_samples,
+                          std::shared_ptr<SafeQueue<MetricsDataSample>> metrics_data_samples) override;
     void close(const TransportConnId& conn_id, uint64_t app_reason_code=0) override;
 
     virtual bool getPeerAddrInfo(const TransportConnId& conn_id,
@@ -346,9 +346,9 @@ class PicoQuicTransport : public ITransport
     picoquic_quic_config_t _config;
     picoquic_quic_t* _quic_ctx;
     picoquic_tp_t _local_tp_options;
-    safe_queue<std::function<void()>> _cbNotifyQueue;
+    SafeQueue<std::function<void()>> _cbNotifyQueue;
 
-    safe_queue<std::function<void()>> _picoquic_runner_queue;        /// Threads queue functions that picoquic will call via the pq_loop_cb call
+    SafeQueue<std::function<void()>> _picoquic_runner_queue;        /// Threads queue functions that picoquic will call via the pq_loop_cb call
 
     std::atomic<bool> _stop;
     std::mutex _state_mutex;                                        /// Used for stream/context/state updates
@@ -361,7 +361,7 @@ class PicoQuicTransport : public ITransport
     TransportConfig _tconfig;
 
     std::map<TransportConnId, ConnectionContext> _conn_context;
-    std::shared_ptr<tick_service> _tick_service;
+    std::shared_ptr<TickService> _tick_service;
 };
 
 } // namespace qtransport

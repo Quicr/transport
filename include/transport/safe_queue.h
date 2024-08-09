@@ -22,7 +22,7 @@ namespace qtransport {
  * @todo Implement any operators or methods needed
  */
 template<typename T>
-class safe_queue
+class SafeQueue
 {
 public:
   /**
@@ -31,13 +31,13 @@ public:
    * @param limit     Limit number of messages in queue before push blocks. Zero
    *                  is unlimited.
    */
-  safe_queue(uint32_t limit = 1000)
+  SafeQueue(uint32_t limit = 1000)
     : _stop_waiting{ false }
     , _limit{ limit }
   {
   }
 
-  ~safe_queue() { stop_waiting(); }
+  ~SafeQueue() { stop_waiting(); }
 
   /**
    * @brief inserts element at the end of queue

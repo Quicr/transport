@@ -38,7 +38,7 @@ namespace qtransport {
     /**
      * Interface for services that calculate ticks.
      */
-    struct tick_service
+    struct TickService
     {
         using tick_type = size_t;
         using duration_type = std::chrono::microseconds;
@@ -61,32 +61,32 @@ namespace qtransport {
      *          precision 500us or greater, which results in the tick interval
      *          being >= 500us.
      */
-    class threaded_tick_service : public tick_service
+    class ThreadedTickService : public TickService
     {
         using clock_type = std::chrono::steady_clock;
 
       public:
-        threaded_tick_service() { _tick_thread = std::thread(&threaded_tick_service::tick_loop, this); }
+        ThreadedTickService() { _tick_thread = std::thread(&ThreadedTickService::tick_loop, this); }
 
-        threaded_tick_service(const threaded_tick_service& other)
+        ThreadedTickService(const ThreadedTickService& other)
           : _ticks{ other._ticks }
           , _stop{ other._stop.load() }
         {
-            _tick_thread = std::thread(&threaded_tick_service::tick_loop, this);
+            _tick_thread = std::thread(&ThreadedTickService::tick_loop, this);
         }
 
-        ~threaded_tick_service()
+        ~ThreadedTickService()
         {
             _stop = true;
             if (_tick_thread.joinable())
                 _tick_thread.join();
         }
 
-        threaded_tick_service& operator=(const threaded_tick_service& other)
+        ThreadedTickService& operator=(const ThreadedTickService& other)
         {
             _ticks = other._ticks;
             _stop = other._stop.load();
-            _tick_thread = std::thread(&threaded_tick_service::tick_loop, this);
+            _tick_thread = std::thread(&ThreadedTickService::tick_loop, this);
             return *this;
         }
 
@@ -134,33 +134,33 @@ namespace qtransport {
      *                      the unit for ticks and all associated variables to be millisecond.
      */
     template<typename T, typename Duration_t>
-    class time_queue
+    class TimeQueue
     {
         /*=======================================================================*/
         // Time queue type assertions
         /*=======================================================================*/
 
         template<typename>
-        struct is_chrono_duration : std::false_type
+        struct IsChronoDuration : std::false_type
         {};
 
         template<typename Rep, typename Period>
-        struct is_chrono_duration<std::chrono::duration<Rep, Period>> : std::true_type
+        struct IsChronoDuration<std::chrono::duration<Rep, Period>> : std::true_type
         {};
 
-        static_assert(is_chrono_duration<Duration_t>::value);
+        static_assert(IsChronoDuration<Duration_t>::value);
 
         /*=======================================================================*/
         // Internal type definitions
         /*=======================================================================*/
 
-        using tick_type = tick_service::tick_type;
+        using tick_type = TickService::tick_type;
         using bucket_type = std::vector<T>;
         using index_type = std::uint32_t;
 
-        struct queue_value_type
+        struct QueueValueType
         {
-            queue_value_type(bucket_type& bucket, index_type value_index, tick_type expiry_tick, tick_type wait_for_tick)
+            QueueValueType(bucket_type& bucket, index_type value_index, tick_type expiry_tick, tick_type wait_for_tick)
               : _bucket{ bucket }
               , _value_index{ value_index }
               , _expiry_tick(expiry_tick)
@@ -174,7 +174,7 @@ namespace qtransport {
             tick_type _wait_for_tick;
         };
 
-        using queue_type = std::vector<queue_value_type>;
+        using queue_type = std::vector<QueueValueType>;
 
       public:
         /**
@@ -187,7 +187,7 @@ namespace qtransport {
          * @throws std::invalid_argument    If the duration or interval do not meet requirements or If the tick_service
          * is null.
          */
-        time_queue(size_t duration, size_t interval, const std::shared_ptr<tick_service>& tick_service)
+        TimeQueue(size_t duration, size_t interval, const std::shared_ptr<TickService>& tick_service)
           : _duration{ duration }
           , _interval{ interval }
           , _total_buckets{ _duration / _interval }
@@ -217,21 +217,21 @@ namespace qtransport {
          * @throws std::invalid_argument If the duration or interval do not meet requirements or the tick_service is
          * null.
          */
-        time_queue(size_t duration,
+        TimeQueue(size_t duration,
                    size_t interval,
-                   const std::shared_ptr<tick_service>& tick_service,
+                   const std::shared_ptr<TickService>& tick_service,
                    size_t initial_queue_size)
-          : time_queue(duration, interval, tick_service)
+          : TimeQueue(duration, interval, tick_service)
         {
             _queue.reserve(initial_queue_size);
         }
 
-        time_queue() = delete;
-        time_queue(const time_queue&) = default;
-        time_queue(time_queue&&) = default;
+        TimeQueue() = delete;
+        TimeQueue(const TimeQueue&) = default;
+        TimeQueue(TimeQueue&&) = default;
 
-        time_queue& operator=(const time_queue&) = default;
-        time_queue& operator=(time_queue&&) = default;
+        TimeQueue& operator=(const TimeQueue&) = default;
+        TimeQueue& operator=(TimeQueue&&) = default;
 
         /**
          * @brief Pushes a new value onto the queue with a time-to-live.
@@ -435,7 +435,7 @@ namespace qtransport {
         queue_type _queue;
 
         /// Tick service for calculating new tick and jumps in time.
-        std::shared_ptr<tick_service> _tick_service;
+        std::shared_ptr<TickService> _tick_service;
     };
 
 }; // namespace qtransport
