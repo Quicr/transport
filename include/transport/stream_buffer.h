@@ -4,7 +4,7 @@
 #include <deque>
 #include <mutex>
 #include <optional>
-#include <span>
+#include <transport/span.h>
 
 #include <transport/uintvar.h>
 
@@ -183,7 +183,7 @@ namespace qtransport {
             _buffer.push_back(std::move(value));
         }
 
-        void push(const std::span<const T>& value)
+        void push(const Span<const T>& value)
         {
             std::lock_guard<std::mutex> _(_rwLock);
             _buffer.insert(_buffer.end(), value.begin(), value.end());
@@ -195,7 +195,7 @@ namespace qtransport {
             _buffer.insert(_buffer.end(), value.begin(), value.end());
         }
 
-        void push_lv(const std::span<const T>& value)
+        void push_lv(const Span<const T>& value)
         {
             std::lock_guard<std::mutex> _(_rwLock);
             const auto len = to_uintV(static_cast<uint64_t>(value.size()));
