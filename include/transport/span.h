@@ -20,10 +20,10 @@ class Span
     static constexpr std::size_t dynamic_extent = std::numeric_limits<std::size_t>::max();
 
     template<typename Ptr>
-    class iterator_impl : public std::iterator_traits<Ptr>
+    class IteratorImpl : public std::iterator_traits<Ptr>
     {
         using it_traits = std::iterator_traits<Ptr>;
-        using it_impl   = iterator_impl;
+        using it_impl   = IteratorImpl;
 
     public:
         using value_type        = typename it_traits::value_type;
@@ -32,14 +32,14 @@ class Span
         using difference_type   = typename it_traits::difference_type;
         using iterator_category = typename it_traits::iterator_category;
 
-        constexpr iterator_impl() noexcept : _ptr(Ptr()) {}
-        constexpr iterator_impl(const pointer& ptr) noexcept : _ptr(ptr) {}
-        constexpr iterator_impl(const iterator_impl&) = default;
+        constexpr IteratorImpl() noexcept : _ptr(Ptr()) {}
+        constexpr IteratorImpl(const pointer& ptr) noexcept : _ptr(ptr) {}
+        constexpr IteratorImpl(const IteratorImpl&) = default;
 
         template<typename OtherIt>
-        iterator_impl(const iterator_impl<OtherIt>& other) : _ptr(other.base()) {}
+        IteratorImpl(const IteratorImpl<OtherIt>& other) : _ptr(other.base()) {}
 
-        iterator_impl& operator=(const iterator_impl&) = default;
+        IteratorImpl& operator=(const IteratorImpl&) = default;
 
         constexpr reference operator*() const noexcept { return *_ptr; }
         constexpr pointer operator->() const noexcept { return _ptr; }
@@ -96,8 +96,8 @@ public:
     using const_pointer             = const T*;
     using reference                 = T&;
     using const_reference           = const T&;
-    using iterator                  = iterator_impl<pointer>;
-    using const_iterator            = iterator_impl<const_pointer>;
+    using iterator                  = IteratorImpl<pointer>;
+    using const_iterator            = IteratorImpl<const_pointer>;
     using reverse_iterator          = std::reverse_iterator<iterator>;
     using const_reverse_iterator    = std::reverse_iterator<const_iterator>;
 
