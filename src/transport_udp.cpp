@@ -227,7 +227,7 @@ AddrId UDPTransport::create_addr_id(const sockaddr_storage &addr) {
         }
     }
 
-    return std::move(id);
+    return id;
 }
 
 TransportRemote UDPTransport::create_addr_remote(const sockaddr_storage &addr) {
@@ -741,7 +741,7 @@ UDPTransport::fd_reader() {
                                       << " port: " << remote.port << std::flush;
 
                         // Notify caller that there is a new connection
-                        _delegate.on_new_connection(_last_conn_id, std::move(remote));
+                        _delegate.on_new_connection(_last_conn_id, remote);
                         continue;
 
                     } else {

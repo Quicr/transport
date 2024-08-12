@@ -326,7 +326,7 @@ int pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode, void
     int ret = 0;
 
     if (transport == NULL) {
-        std::cerr << "picoquic transport was called with NULL transport" << std::endl;
+        std::cerr << "picoquic transport was called with NULL transport" << '\n';
         return PICOQUIC_ERROR_UNEXPECTED_ERROR;
 
     } else if (transport->status() == TransportStatus::Disconnected) {
@@ -1336,7 +1336,7 @@ PicoQuicTransport::on_recv_datagram(ConnectionContext* conn_ctx, uint8_t* bytes,
 
     std::vector<uint8_t> data(bytes, bytes + length);
 
-    conn_ctx->dgram_rx_data.push(std::move(data));
+    conn_ctx->dgram_rx_data.push(data);
     conn_ctx->metrics.rx_dgrams++;
     conn_ctx->metrics.rx_dgrams_bytes += length;
 
@@ -1680,7 +1680,7 @@ TransportConnId PicoQuicTransport::createClient()
         logger->info << "Setting priority bypass limit to " << static_cast<int>(_tconfig.quic_priority_limit) << std::flush;
         picoquic_set_priority_limit_for_bypass(cnx, _tconfig.quic_priority_limit);
     } else {
-        logger->info << "No priority bypass" << std::endl;
+        logger->info << "No priority bypass" << '\n';
     }
 
 //    picoquic_subscribe_pacing_rate_updates(cnx, tconfig.pacing_decrease_threshold_Bps,

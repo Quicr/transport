@@ -52,7 +52,7 @@ enum class TransportError : uint8_t
 /**
  * Transport Protocol to use
  */
-enum class TransportProtocol
+enum class TransportProtocol: uint8_t
 {
   UDP = 0,
   QUIC
@@ -108,7 +108,7 @@ struct MethodTraceItem {
         delta(0) {
     }
 
-    MethodTraceItem(const std::string method, const time_stamp_us start_time) :
+    MethodTraceItem(const std::string& method, const time_stamp_us start_time) :
             method(method),
             start_time(start_time) {
         delta = (std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::steady_clock::now()) -
