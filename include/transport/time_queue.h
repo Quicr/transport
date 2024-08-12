@@ -228,10 +228,10 @@ namespace qtransport {
 
         TimeQueue() = delete;
         TimeQueue(const TimeQueue&) = default;
-        TimeQueue(TimeQueue&&) = default;
+        TimeQueue(TimeQueue&&) noexcept = default;
 
         TimeQueue& operator=(const TimeQueue&) = default;
-        TimeQueue& operator=(TimeQueue&&) = default;
+        TimeQueue& operator=(TimeQueue&&) noexcept = default;
 
         /**
          * @brief Pushes a new value onto the queue with a time-to-live.
