@@ -49,6 +49,9 @@ and
 RELAY_HOST=localhost RELAY_PORT=1234 build/cmd/client
 ```
 
+## Development
+
+This project generally follows Google's C++ styling, specifically enforced for naming and formatting: https://google.github.io/styleguide/cppguide.html
 
 # Notes
 
