@@ -9,9 +9,10 @@
 	path = dependencies/picoquic
 	url = https://github.com/quicr/picoquic
 	branch = master
-[submodule "dependencies/logger"]
-	path = dependencies/logger
-	url = https://github.com/Quicr/logger.git
 [submodule "dependencies/mbedtls"]
 	path = dependencies/mbedtls
 	url = https://github.com/Mbed-TLS/mbedtls.git
+[submodule "dependencies/logger"]
+	path = dependencies/logger
+	url = https://github.com/gabime/spdlog.git
+	tag = v1.14.1
