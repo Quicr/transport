@@ -791,12 +791,13 @@ UDPTransport::fd_reader() {
                         continue;
                     }
 
+                    const auto& report_id = hdr.report_id;
                     const auto& prev_report = a_conn_it->second->tx_prev_reports[(hdr.report_id % a_conn_it->second->tx_prev_reports.size())];
                     if (prev_report.report_id != hdr.report_id) {
                         LOGGER_WARN(
                           _logger,
                           "Received report id: {0} is not previous id: {1} sizeof array: {2} prev_index: {3}",
-                          hdr.report_id,
+                          report_id,
                           prev_report.report_id,
                           sizeof(a_conn_it->second->tx_prev_reports),
                           (hdr.report_id % a_conn_it->second->tx_prev_reports.size()));

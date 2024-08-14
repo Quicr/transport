@@ -1252,12 +1252,13 @@ void
 PicoQuicTransport::on_new_connection(const TransportConnId conn_id)
 {
     auto conn_ctx = getConnContext(conn_id);
-    LOGGER_INFO(logger, "New Connection {0} port: {1} conn_id: {2}", conn_ctx->peer_addr_text, conn_ctx->peer_port, conn_id);
+    std::string peer_addr_text = conn_ctx->peer_addr_text;
+    LOGGER_INFO(logger, "New Connection {0} port: {1} conn_id: {2}", peer_addr_text, conn_ctx->peer_port, conn_id);
 
 //    picoquic_subscribe_pacing_rate_updates(conn_ctx->pq_cnx, tconfig.pacing_decrease_threshold_Bps,
 //                                           tconfig.pacing_increase_threshold_Bps);
 
-    TransportRemote remote{ .host_or_ip = conn_ctx->peer_addr_text,
+    TransportRemote remote{ .host_or_ip = peer_addr_text,
                             .port = conn_ctx->peer_port,
                             .proto = TransportProtocol::QUIC };
 
