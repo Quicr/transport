@@ -13,6 +13,7 @@
 #include <iostream>
 #include <thread>
 #include <unistd.h>
+#include <sstream>
 
 #include <arpa/inet.h>
 #include <sys/select.h>
@@ -1094,8 +1095,6 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
                 data_ctx->metrics.tx_buffer_drops++;
             }
 
-            const auto existing_stream_id = *data_ctx->current_stream_id;
-
             close_stream(*conn_ctx, data_ctx, true);
 
             LOGGER_DEBUG(logger,
@@ -1103,7 +1102,7 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
                                 "write buf drops: {3} tx_queue_discards: {4}",
                                 data_ctx->conn_id,
                                 data_ctx->data_ctx_id,
-                                existing_stream_id,
+                                *data_ctx->current_stream_id,
                                 data_ctx->metrics.tx_buffer_drops,
                                 data_ctx->metrics.tx_queue_discards);
 

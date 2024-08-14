@@ -2,6 +2,7 @@
 #include <cstring> // memcpy
 #include <iostream>
 #include <thread>
+#include <sstream>
 #include <unistd.h>
 
 #include <sys/socket.h>
