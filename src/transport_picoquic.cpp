@@ -1252,7 +1252,7 @@ void
 PicoQuicTransport::on_new_connection(const TransportConnId conn_id)
 {
     auto conn_ctx = getConnContext(conn_id);
-    std::string peer_addr_text = conn_ctx->peer_addr_text;
+    std::string peer_addr_text = conn_ctx ? conn_ctx->peer_addr_text : "";
     LOGGER_INFO(logger, "New Connection {0} port: {1} conn_id: {2}", peer_addr_text, conn_ctx->peer_port, conn_id);
 
 //    picoquic_subscribe_pacing_rate_updates(conn_ctx->pq_cnx, tconfig.pacing_decrease_threshold_Bps,

@@ -786,12 +786,13 @@ UDPTransport::fd_reader() {
                     UdpProtocol::ReportMessage hdr;
                     memcpy(&hdr, data, sizeof(hdr));
 
+                    const auto& report_id = hdr.report_id;
+
                     if (hdr.metrics.total_bytes == 0 || hdr.metrics.duration_ms == 0) {
                         lock.unlock();
                         continue;
                     }
 
-                    const auto& report_id = hdr.report_id;
                     const auto& prev_report = a_conn_it->second->tx_prev_reports[(hdr.report_id % a_conn_it->second->tx_prev_reports.size())];
                     if (prev_report.report_id != hdr.report_id) {
                         LOGGER_WARN(
@@ -818,7 +819,7 @@ UDPTransport::fd_reader() {
                                            "({3}) total_bytes: {4} ({5}) total_packets: {6} ({7}) send/ack Kbps: {8} / "
                                            "{9} prev_Kbps: {10} Loss: {11}% TX-OTT: {12}ms RX-OTT: {13}ms",
                                            a_conn_it->second->id,
-                                           hdr.report_id,
+                                           report_id,
                                            hdr.metrics.duration_ms,
                                            prev_report.metrics.duration_ms,
                                            hdr.metrics.total_bytes,
@@ -850,7 +851,7 @@ UDPTransport::fd_reader() {
                               "{10} prev_Kbps: {11} Loss: {12}% TX-OTT: {13}ms RX-OTT: {14}ms",
                               a_conn_it->second->id,
                               a_conn_it->second->tx_report_id - 1,
-                              hdr.report_id,
+                              report_id,
                               hdr.metrics.duration_ms,
                               prev_report.metrics.duration_ms,
                               hdr.metrics.total_bytes,
@@ -895,6 +896,7 @@ UDPTransport::fd_reader() {
                 data_p += sizeof(hdr);
                 rLen -= sizeof(hdr);
 
+                const auto& report_id = hdr.report_id;
                 const auto remote_data_ctx_id_len = uintV_size(*data_p);
                 uintV_t remote_data_ctx_V (data_p, data_p + remote_data_ctx_id_len);
                 data_p += remote_data_ctx_id_len;
@@ -903,9 +905,9 @@ UDPTransport::fd_reader() {
                 const auto data_ctx_id = to_uint64(remote_data_ctx_V);
 
                 if (a_conn_it != _addr_conn_contexts.end()) {
-                    if (hdr.report_id != a_conn_it->second->report.report_id &&
-                            (hdr.report_id > a_conn_it->second->report.report_id
-                             || hdr.report_id == 0 || a_conn_it->second->report.report_id - hdr.report_id > 1)) {
+                    if (report_id != a_conn_it->second->report.report_id &&
+                            (report_id > a_conn_it->second->report.report_id
+                             || report_id == 0 || a_conn_it->second->report.report_id - hdr.report_id > 1)) {
 
                         int rx_tick = current_tick - (a_conn_it->second->report_rx_start_tick + a_conn_it->second->last_rx_hdr_tick);
                         if (rx_tick >= 0) {
