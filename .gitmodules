@@ -12,7 +12,7 @@
 [submodule "dependencies/mbedtls"]
 	path = dependencies/mbedtls
 	url = https://github.com/Mbed-TLS/mbedtls.git
-[submodule "dependencies/logger"]
-	path = dependencies/logger
+[submodule "dependencies/spdlog"]
+	path = dependencies/spdlog
 	url = https://github.com/gabime/spdlog.git
 	tag = v1.14.1

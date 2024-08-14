@@ -16,6 +16,7 @@
 #include <sys/types.h>
 
 #include <transport/transport.h>
+#include <spdlog/spdlog.h>
 
 #include "transport_udp_protocol.h"
 #include "transport/priority_queue.h"
@@ -51,8 +52,7 @@ namespace qtransport {
         UDPTransport(const TransportRemote &server,
                      const TransportConfig &tcfg,
                      TransportDelegate &delegate,
-                     bool isServerMode,
-                     const cantina::LoggerPointer &logger);
+                     bool isServerMode);
 
         virtual ~UDPTransport();
 
@@ -97,6 +97,8 @@ namespace qtransport {
         void setDataCtxPriority([[maybe_unused]] const TransportConnId conn_id,
                                 [[maybe_unused]] DataContextId data_ctx_id,
                                 [[maybe_unused]] uint8_t priority) override {}
+
+        void enableLogging(int level = 0) override;
 
     private:
         TransportConnId connect_client();
@@ -265,7 +267,7 @@ namespace qtransport {
          */
         bool send_report(ConnectionContext& conn);
 
-        cantina::LoggerPointer _logger;
+        std::shared_ptr<spdlog::logger> _logger;
         int _fd; // UDP socket
         bool _isServerMode;
 

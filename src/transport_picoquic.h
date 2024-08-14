@@ -21,6 +21,7 @@
 #include <picoquic_config.h>
 #include <picoquic_packet_loop.h>
 #include <transport/transport.h>
+#include <spdlog/spdlog.h>
 
 #include "transport/priority_queue.h"
 #include "transport/safe_queue.h"
@@ -189,10 +190,10 @@ class PicoQuicTransport : public ITransport
 
     static void PicoQuicLogging(const char *message, void *argp)
     {
-      auto instance = reinterpret_cast<PicoQuicTransport *>(argp);
-      if (!instance->_stop && instance->picoquic_logger)
+      auto instance = reinterpret_cast<PicoQuicTransport*>(argp);
+      if (!instance->_stop && instance->logger)
       {
-        instance->picoquic_logger->Log(message);
+        instance->logger->info(message);
       }
     }
 
@@ -200,8 +201,7 @@ class PicoQuicTransport : public ITransport
     PicoQuicTransport(const TransportRemote& server,
                       const TransportConfig& tcfg,
                       TransportDelegate& delegate,
-                      bool _is_server_mode,
-                      const cantina::LoggerPointer& logger);
+                      bool _is_server_mode);
 
     virtual ~PicoQuicTransport();
 
@@ -240,6 +240,8 @@ class PicoQuicTransport : public ITransport
 
     void setStreamIdDataCtxId(TransportConnId conn_id, DataContextId data_ctx_id, uint64_t stream_id) override;
     void setDataCtxPriority(TransportConnId conn_id, DataContextId data_ctx_id, uint8_t priority) override;
+
+    void enableLogging(int level = 0) override;
 
     /*
      * Internal public methods
@@ -290,8 +292,7 @@ class PicoQuicTransport : public ITransport
     /*
      * Internal Public Variables
      */
-    cantina::LoggerPointer logger;
-    cantina::LoggerPointer picoquic_logger;
+    std::shared_ptr<spdlog::logger> logger;
     bool _is_server_mode;
     bool _is_unidirectional{ false };
     bool debug {false};

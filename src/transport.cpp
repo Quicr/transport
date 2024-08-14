@@ -3,32 +3,28 @@
 #if not defined(PLATFORM_ESP)
   #include <transport_picoquic.h>
 #endif
-#include <cantina/logger.h>
+
+#include <spdlog/spdlog.h>
 
 namespace qtransport {
 
 std::shared_ptr<ITransport>
 ITransport::make_client_transport(const TransportRemote& server,
                                   const TransportConfig& tcfg,
-                                  TransportDelegate& delegate,
-                                  const cantina::LoggerPointer& logger)
+                                  TransportDelegate& delegate)
 {
-
   switch (server.proto) {
     case TransportProtocol::UDP:
-      return std::make_shared<UDPTransport>(server, tcfg, delegate, false, logger);
-#if not defined(PLATFORM_ESP)
+      return std::make_shared<UDPTransport>(server, tcfg, delegate, false);
+#ifndef PLATFORM_ESP
     case TransportProtocol::QUIC:
       return std::make_shared<PicoQuicTransport>(server,
                                                  tcfg,
                                                  delegate,
-                                                 false,
-                                                 logger);
+                                                 false);
 #endif
     default:
-      logger->error << "Protocol not implemented" << std::flush;
-      throw std::runtime_error(
-        "make_client_transport: Protocol not implemented");
+      throw std::runtime_error("make_client_transport: Protocol not implemented");
       break;
   }
 
@@ -38,25 +34,21 @@ ITransport::make_client_transport(const TransportRemote& server,
 std::shared_ptr<ITransport>
 ITransport::make_server_transport(const TransportRemote& server,
                                   const TransportConfig& tcfg,
-                                  TransportDelegate& delegate,
-                                  const cantina::LoggerPointer& logger)
+                                  TransportDelegate& delegate)
 {
   switch (server.proto) {
     case TransportProtocol::UDP:
-      return std::make_shared<UDPTransport>(server, tcfg, delegate, true, logger);
-      
-#if not defined(PLATFORM_ESP)
+      return std::make_shared<UDPTransport>(server, tcfg, delegate, true);
+
+#ifndef PLATFORM_ESP
     case TransportProtocol::QUIC:
       return std::make_shared<PicoQuicTransport>(server,
                                                  tcfg,
                                                  delegate,
-                                                 true, logger);
+                                                 true);
 #endif
     default:
-      logger->error << "Protocol not implemented" << std::flush;
-
-      throw std::runtime_error(
-        "make_server_transport: Protocol not implemented");
+      throw std::runtime_error("make_server_transport: Protocol not implemented");
       break;
   }
 

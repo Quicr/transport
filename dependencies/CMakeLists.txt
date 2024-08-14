@@ -1,7 +1,10 @@
 # ----------------------------------------------------
 # Submodules
 # ----------------------------------------------------
-add_subdirectory(logger)
+
+if (NOT TARGET spdlog)
+    add_subdirectory(spdlog)
+endif()
 
 if (NOT PLATFORM_ESP_IDF)
     set(BUILD_SHARED_LIBS OFF)
