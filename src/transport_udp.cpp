@@ -787,8 +787,9 @@ UDPTransport::fd_reader() {
                     memcpy(&hdr, data, sizeof(hdr));
 
                     const auto& report_id = hdr.report_id;
+                    const auto& metrics = hdr.metrics;
 
-                    if (hdr.metrics.total_bytes == 0 || hdr.metrics.duration_ms == 0) {
+                    if (metrics.total_bytes == 0 || metrics.duration_ms == 0) {
                         lock.unlock();
                         continue;
                     }
@@ -807,36 +808,36 @@ UDPTransport::fd_reader() {
                     }
 
                     const auto send_KBps = static_cast<int>(prev_report.metrics.total_bytes / prev_report.metrics.duration_ms);
-                    //const auto ack_KBps = static_cast<int>(hdr.metrics.total_bytes / hdr.metrics.duration_ms);
-                    const auto ack_KBps = static_cast<int>(hdr.metrics.total_bytes / hdr.metrics.duration_ms); //std::max(prev_report.metrics.duration_ms, hdr.metrics.duration_ms));
+                    //const auto ack_KBps = static_cast<int>(metrics.total_bytes / metrics.duration_ms);
+                    const auto ack_KBps = static_cast<int>(metrics.total_bytes / metrics.duration_ms); //std::max(prev_report.metrics.duration_ms, metrics.duration_ms));
                     const auto prev_KBps = (a_conn_it->second->bytes_per_us * 1'000'000 / 1024);
-                    const auto loss_pct = 1.0 - static_cast<double>(hdr.metrics.total_packets) / prev_report.metrics.total_packets;
-                    a_conn_it->second->tx_report_ott = hdr.metrics.recv_ott_ms;
+                    const auto loss_pct = 1.0 - static_cast<double>(metrics.total_packets) / prev_report.metrics.total_packets;
+                    a_conn_it->second->tx_report_ott = metrics.recv_ott_ms;
 
-                    if (loss_pct >= 0.01 && hdr.metrics.total_packets > 10) {
+                    if (loss_pct >= 0.01 && metrics.total_packets > 10) {
                         LOGGER_INFO(_logger,
                                            "Received REPORT (decrease) conn_id: {0} tx_report_id: {1} duration_ms: {2} "
                                            "({3}) total_bytes: {4} ({5}) total_packets: {6} ({7}) send/ack Kbps: {8} / "
                                            "{9} prev_Kbps: {10} Loss: {11}% TX-OTT: {12}ms RX-OTT: {13}ms",
                                            a_conn_it->second->id,
                                            report_id,
-                                           hdr.metrics.duration_ms,
+                                           metrics.duration_ms,
                                            prev_report.metrics.duration_ms,
-                                           hdr.metrics.total_bytes,
+                                           metrics.total_bytes,
                                            prev_report.metrics.total_bytes,
-                                           hdr.metrics.total_packets,
+                                           metrics.total_packets,
                                            prev_report.metrics.total_packets,
                                            send_KBps * 8,
                                            ack_KBps * 8,
                                            prev_KBps * 8,
                                            loss_pct,
-                                           hdr.metrics.recv_ott_ms,
+                                           metrics.recv_ott_ms,
                                            a_conn_it->second->rx_report_ott);
 
                         a_conn_it->second->tx_zero_loss_count = 0;
                         a_conn_it->second->set_KBps(ack_KBps * .95);
 
-                    } else if (hdr.metrics.total_packets > 10 && loss_pct == 0) {
+                    } else if (metrics.total_packets > 10 && loss_pct == 0) {
                         a_conn_it->second->tx_zero_loss_count++;
 
                         // Only increase bandwidth if there is no loss for a little while
@@ -852,17 +853,17 @@ UDPTransport::fd_reader() {
                               a_conn_it->second->id,
                               a_conn_it->second->tx_report_id - 1,
                               report_id,
-                              hdr.metrics.duration_ms,
+                              metrics.duration_ms,
                               prev_report.metrics.duration_ms,
-                              hdr.metrics.total_bytes,
+                              metrics.total_bytes,
                               prev_report.metrics.total_bytes,
-                              hdr.metrics.total_packets,
+                              metrics.total_packets,
                               prev_report.metrics.total_packets,
                               send_KBps * 8,
                               ack_KBps * 8,
                               prev_KBps * 8,
                               loss_pct,
-                              hdr.metrics.recv_ott_ms,
+                              metrics.recv_ott_ms,
                               a_conn_it->second->rx_report_ott);
 
                             // Add some data discard packets to measure if increase is okay
