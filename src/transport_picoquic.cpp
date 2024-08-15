@@ -1,25 +1,47 @@
 #include "transport_picoquic.h"
 
+// PicoQuic.
+#include <picoquic.h>
 #include <picoquic_internal.h>
+#include <picoquic_packet_loop.h>
 #include <autoqlog.h>
 #include <picoquic_utils.h>
+#include <picoquic_config.h>
+#include <picosocks.h>
 
+// Transport.
+#include "transport/transport.h"
+#include "transport/transport_metrics.h"
+#include "transport/safe_queue.h"
+#include "transport/stream_buffer.h"
+#include "transport/priority_queue.h"
+#include "transport/span.h"
+#include "transport/time_queue.h"
+#include <cantina/logger.h>
+#include <cantina/logger_macros.h>
+
+// System.
 #include <arpa/inet.h>
+#include <sys/socket.h>
 #include <cassert>
 #include <cstring>
 #include <ctime>
 #include <iostream>
 #include <thread>
-#include <unistd.h>
+#include <cstdint>
+#include <optional>
+#include <utility>
+#include <memory>
+#include <mutex>
+#include <vector>
+#include <string>
+#include <chrono>
+#include <sstream>
+#include <stdexcept>
 
-#include <arpa/inet.h>
-#include <sys/select.h>
-#include <netdb.h>
 #if defined(__linux__)
 #include <net/ethernet.h>
 #include <netpacket/packet.h>
-#elif defined(__APPLE__)
-#include <net/if_dl.h>
 #endif
 
 using namespace qtransport;
@@ -836,7 +858,7 @@ PicoQuicTransport::ConnectionContext& PicoQuicTransport::createConnContext(picoq
                             /*(const void*)(&((struct sockaddr_in*)addr)->sin_addr),*/
                             conn_ctx.peer_addr_text,
                             sizeof(conn_ctx.peer_addr_text));
-            conn_ctx.peer_port = ntohs(((struct sockaddr_in*)addr)->sin_port);
+            conn_ctx.peer_port = ntohs(((struct sockaddr_in*)addr)->sin_port); // NOLINT (include)
             break;
 
         case AF_INET6:

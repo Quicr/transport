@@ -3,21 +3,40 @@
 #include <iostream>
 #include <thread>
 #include <unistd.h>
+#include <optional>
+#include <memory>
+#include <cstdint>
+#include <mutex>
+#include <utility>
+#include <vector>
+#include <chrono>
+#include <string>
+#include <sstream>
+#include <stdexcept>
 
+#include <netinet/in.h>
 #include <sys/socket.h>
+#include <sys/select.h> // IWYU pragma: keep
+#include <sys/time.h> // IWYU pragma: keep
 #include <arpa/inet.h>
 #include <netdb.h>
+#include <errno.h>
 
 #if defined(__linux__)
 #include <net/ethernet.h>
 #include <netpacket/packet.h>
-#elif defined(__APPLE__)
-
-#include <net/if_dl.h>
-
 #endif
 
 #include "transport_udp.h"
+#include "transport_udp_protocol.h"
+
+#include "transport/transport.h"
+#include "transport/time_queue.h"
+#include "transport/transport_metrics.h"
+#include "transport/uintvar.h"
+#include "transport/priority_queue.h"
+#include <cantina/logger.h>
+
 
 #if defined(PLATFORM_ESP)
 #include <lwip/netdb.h>
@@ -503,7 +522,7 @@ bool UDPTransport::send_data(ConnectionContext& conn, DataContext& data_ctx, con
  *  - loop reads data from fd_write_queue and writes it to the socket
  */
 void UDPTransport::fd_writer() {
-    timeval to;
+    timeval to; // NOLINT (include).
     to.tv_usec = 1000;
     to.tv_sec = 0;
 
@@ -614,7 +633,7 @@ void UDPTransport::fd_writer() {
             if (all_empty_count > 5) {
                 all_empty_count = 1;
                 to.tv_usec = 300;
-                select(0, NULL, NULL, NULL, &to);
+                select(0, NULL, NULL, NULL, &to); // NOLINT (include).
             }
         }
 
@@ -1134,7 +1153,7 @@ int err = 0;
 
     struct sockaddr_in srvAddr;
     srvAddr.sin_family = AF_INET;
-    srvAddr.sin_addr.s_addr = htonl(INADDR_ANY);
+    srvAddr.sin_addr.s_addr = htonl(INADDR_ANY); // NOLINT (include).
     srvAddr.sin_port = 0;
     err = bind(_fd, (struct sockaddr *) &srvAddr, sizeof(srvAddr));
     if (err) {
@@ -1147,7 +1166,7 @@ int err = 0;
 #endif
     }
 
-    std::string sPort = std::to_string(htons(_serverInfo.port));
+    std::string sPort = std::to_string(htons(_serverInfo.port)); // NOLINT (include).
     struct addrinfo hints = {}, *address_list = NULL;
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_DGRAM;
