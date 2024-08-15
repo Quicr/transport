@@ -3,6 +3,10 @@
 #if not defined(PLATFORM_ESP)
   #include <transport_picoquic.h>
 #endif
+#include <memory>
+#include <stdexcept>
+#include <spdlog/logger.h>
+#include <utility>
 
 namespace qtransport {
 

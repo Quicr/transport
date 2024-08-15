@@ -1,6 +1,7 @@
 Checks: '
           -*,
           clang-analyzer-*,
+          misc-include-cleaner,
           misc-misplaced-const,
           performance-*,
           readability-avoid-const-params-in-decls,
