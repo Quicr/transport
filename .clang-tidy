@@ -2,11 +2,13 @@ Checks: '
           -*,
           clang-analyzer-*,
           misc-include-cleaner,
+          misc-const-correctness,
           misc-misplaced-const,
           performance-*,
           readability-avoid-const-params-in-decls,
           readability-const-return-type,
           readability-identifier-naming,
+          readability-isolate-declaration,
           readability-make-member-function-const,
           readability-non-const-parameter,
         '

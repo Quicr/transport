@@ -285,12 +285,12 @@ bool UDPTransport::send_connect(const TransportConnId conn_id, const Addr& addr)
 
     chdr.idle_timeout = 20;
 
-    int numSent = sendto(_fd,
-                         (uint8_t *)&chdr,
-                         sizeof(chdr),
-                         0 /*flags*/,
-                         (struct sockaddr *) &addr.addr,
-                         addr.addr_len);
+    const int numSent = sendto(_fd,
+                               (uint8_t *)&chdr,
+                               sizeof(chdr),
+                               0 /*flags*/,
+                               (struct sockaddr *) &addr.addr,
+                               addr.addr_len);
 
 
     if (numSent < 0) {
@@ -313,12 +313,12 @@ bool UDPTransport::send_connect(const TransportConnId conn_id, const Addr& addr)
 bool UDPTransport::send_connect_ok(const TransportConnId conn_id, const Addr& addr) {
     UdpProtocol::ConnectOkMsg hdr {};
 
-    int numSent = sendto(_fd,
-                         (uint8_t *)&hdr,
-                         sizeof(hdr),
-                         0 /*flags*/,
-                         (struct sockaddr *) &addr.addr,
-                         addr.addr_len);
+    const int numSent = sendto(_fd,
+                               (uint8_t *)&hdr,
+                               sizeof(hdr),
+                               0 /*flags*/,
+                               (struct sockaddr *) &addr.addr,
+                               addr.addr_len);
 
 
     if (numSent < 0) {
@@ -341,12 +341,12 @@ bool UDPTransport::send_connect_ok(const TransportConnId conn_id, const Addr& ad
 bool UDPTransport::send_disconnect(const TransportConnId conn_id, const Addr& addr) {
     UdpProtocol::DisconnectMsg dhdr {};
 
-    int numSent = sendto(_fd,
-                         (uint8_t *)&dhdr,
-                         sizeof(dhdr),
-                         0 /*flags*/,
-                         (struct sockaddr *) &addr.addr,
-                         addr.addr_len);
+    const int numSent = sendto(_fd,
+                               (uint8_t *)&dhdr,
+                               sizeof(dhdr),
+                               0 /*flags*/,
+                               (struct sockaddr *) &addr.addr,
+                               addr.addr_len);
 
 
     if (numSent < 0) {
@@ -375,12 +375,12 @@ bool UDPTransport::send_keepalive(ConnectionContext& conn) {
     _logger->debug << "conn_id: " << conn.id
                   << " send KEEPALIVE" << std::flush;
 
-    int numSent = sendto(_fd,
-                         (uint8_t *)&khdr,
-                         sizeof(khdr),
-                         0 /*flags*/,
-                         (struct sockaddr *) &conn.addr.addr,
-                         conn.addr.addr_len);
+    const int numSent = sendto(_fd,
+                               (uint8_t *)&khdr,
+                               sizeof(khdr),
+                               0 /*flags*/,
+                               (struct sockaddr *) &conn.addr.addr,
+                               conn.addr.addr_len);
 
 
     if (numSent < 0) {
@@ -401,12 +401,12 @@ bool UDPTransport::send_keepalive(ConnectionContext& conn) {
 }
 
 bool UDPTransport::send_report(ConnectionContext& conn) {
-    int numSent = sendto(_fd,
-                         (uint8_t *)&conn.report,
-                         sizeof(conn.report),
-                         0 /*flags*/,
-                         (struct sockaddr *) &conn.addr.addr,
-                         conn.addr.addr_len);
+    const int numSent = sendto(_fd,
+                               (uint8_t *)&conn.report,
+                               sizeof(conn.report),
+                               0 /*flags*/,
+                               (struct sockaddr *) &conn.addr.addr,
+                               conn.addr.addr_len);
 
 
     if (numSent < 0) {
@@ -484,12 +484,12 @@ bool UDPTransport::send_data(ConnectionContext& conn, DataContext& data_ctx, con
 
     memcpy(data_p, cd.data.data(), cd.data.size());
 
-    int numSent = sendto(_fd,
-                         data,
-                         data_len,
-                         0 /*flags*/,
-                         (struct sockaddr *) &conn.addr.addr,
-                         conn.addr.addr_len);
+    const int numSent = sendto(_fd,
+                               data,
+                               data_len,
+                               0 /*flags*/,
+                               (struct sockaddr *) &conn.addr.addr,
+                               conn.addr.addr_len);
 
     if (numSent < 0) {
         _logger->error << "conn_id: " << conn.id
@@ -899,7 +899,7 @@ UDPTransport::fd_reader() {
                             const auto start_time = std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::steady_clock::now());
 
                             trace.push_back({"transport_udp:recv_data", start_time});
-                            std::vector<uint8_t> discard_data(100);
+                            const std::vector<uint8_t> discard_data(100);
 
                             // Number of objects to send is a burst of 5ms of date based on new rate spread over 100 byte objects
                             const auto send_count = (a_conn_it->second->bytes_per_us * 1000) * 5 / 100;
@@ -926,7 +926,7 @@ UDPTransport::fd_reader() {
                 rLen -= sizeof(hdr);
 
                 const auto remote_data_ctx_id_len = uintV_size(*data_p);
-                uintV_t remote_data_ctx_V (data_p, data_p + remote_data_ctx_id_len);
+                const uintV_t remote_data_ctx_V (data_p, data_p + remote_data_ctx_id_len);
                 data_p += remote_data_ctx_id_len;
                 rLen -= remote_data_ctx_id_len;
 
@@ -937,7 +937,7 @@ UDPTransport::fd_reader() {
                             (hdr.report_id > a_conn_it->second->report.report_id
                              || hdr.report_id == 0 || a_conn_it->second->report.report_id - hdr.report_id > 1)) {
 
-                        int rx_tick = current_tick - (a_conn_it->second->report_rx_start_tick + a_conn_it->second->last_rx_hdr_tick);
+                        const int rx_tick = current_tick - (a_conn_it->second->report_rx_start_tick + a_conn_it->second->last_rx_hdr_tick);
                         if (rx_tick >= 0) {
                             a_conn_it->second->report.metrics.recv_ott_ms = rx_tick;
                             a_conn_it->second->rx_report_ott = a_conn_it->second->report.metrics.recv_ott_ms;
@@ -1025,7 +1025,7 @@ TransportError UDPTransport::enqueue(const TransportConnId &conn_id,
 
     trace.push_back({"transport_udp:enqueue", trace.front().start_time});
 
-    std::lock_guard<std::mutex> _(_writer_mutex);
+    const std::lock_guard<std::mutex> _(_writer_mutex);
 
     trace.push_back({"transport_udp:enqueue:afterLock", trace.front().start_time});
 
@@ -1061,7 +1061,7 @@ std::optional<std::vector<uint8_t>> UDPTransport::dequeue(TransportConnId conn_i
 
     if (!data_ctx_id) return std::nullopt;
 
-    std::lock_guard<std::mutex> _(_reader_mutex);
+    const std::lock_guard<std::mutex> _(_reader_mutex);
 
     const auto conn_it = _conn_contexts.find(conn_id);
     if (conn_it == _conn_contexts.end()) {
@@ -1167,7 +1167,8 @@ int err = 0;
     }
 
     std::string sPort = std::to_string(htons(_serverInfo.port)); // NOLINT (include).
-    struct addrinfo hints = {}, *address_list = NULL;
+    struct addrinfo hints = {};
+    struct addrinfo *address_list = nullptr;
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_DGRAM;
     hints.ai_protocol = IPPROTO_UDP;
@@ -1185,7 +1186,8 @@ int err = 0;
 #endif
     }
 
-    struct addrinfo *item = nullptr, *found_addr = nullptr;
+    struct addrinfo *item = nullptr;
+    struct addrinfo *found_addr = nullptr;
     for (item = address_list; item != nullptr; item = item->ai_next) {
         if (item->ai_family == AF_INET && item->ai_socktype == SOCK_DGRAM &&
             item->ai_protocol == IPPROTO_UDP) {

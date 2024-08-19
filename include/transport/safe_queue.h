@@ -55,7 +55,7 @@ public:
   {
     bool rval = true;
 
-    std::lock_guard<std::mutex> _(_mutex);
+    const std::lock_guard<std::mutex> _(_mutex);
 
     if (_queue.empty()) {
         _cv.notify_one();
@@ -79,7 +79,7 @@ public:
    */
   std::optional<T> pop()
   {
-    std::lock_guard<std::mutex> _(_mutex);
+    const std::lock_guard<std::mutex> _(_mutex);
     return pop_internal();
   }
 
@@ -90,7 +90,7 @@ public:
     */
   std::optional<T> front()
   {
-    std::lock_guard<std::mutex> _(_mutex);
+    const std::lock_guard<std::mutex> _(_mutex);
 
     if (_queue.empty()) {
       return std::nullopt;
@@ -105,7 +105,7 @@ public:
   */
   void pop_front()
   {
-    std::lock_guard<std::mutex> _(_mutex);
+    const std::lock_guard<std::mutex> _(_mutex);
 
     pop_front_internal();
   }
@@ -139,7 +139,7 @@ public:
    */
   size_t size()
   {
-    std::lock_guard<std::mutex> _(_mutex);
+    const std::lock_guard<std::mutex> _(_mutex);
     return _queue.size();
   }
 
@@ -147,7 +147,7 @@ public:
    * @brief Clear the queue
    */
   void clear() {
-    std::lock_guard<std::mutex> _(_mutex);
+    const std::lock_guard<std::mutex> _(_mutex);
     std::queue<T> empty;
     std::swap(_queue, empty);
   }
@@ -166,14 +166,14 @@ public:
    */
   void stop_waiting()
   {
-    std::lock_guard<std::mutex> _(_mutex);
+    const std::lock_guard<std::mutex> _(_mutex);
     _stop_waiting = true;
     _cv.notify_all();
   }
 
   void set_limit(uint32_t limit)
   {
-    std::lock_guard<std::mutex> _(_mutex);
+    const std::lock_guard<std::mutex> _(_mutex);
     _limit = limit;
   }
 

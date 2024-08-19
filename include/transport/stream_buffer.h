@@ -185,7 +185,7 @@ namespace qtransport {
 
         void push(const Span<const T>& value)
         {
-            std::lock_guard<std::mutex> _(_rwLock);
+            const std::lock_guard<std::mutex> _(_rwLock);
             _buffer.insert(_buffer.end(), value.begin(), value.end());
         }
 

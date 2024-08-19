@@ -345,7 +345,7 @@ int pq_event_cb(picoquic_cnx_t* pq_cnx,
 int pq_loop_cb(picoquic_quic_t* quic, picoquic_packet_loop_cb_enum cb_mode, void* callback_ctx, void* callback_arg)
 {
     PicoQuicTransport* transport = static_cast<PicoQuicTransport*>(callback_ctx);
-    int ret = 0;
+    const int ret = 0;
 
     if (transport == NULL) {
         std::cerr << "picoquic transport was called with NULL transport" << '\n';
@@ -467,7 +467,7 @@ PicoQuicTransport::start(std::shared_ptr<SafeQueue<MetricsConnSample>> metrics_c
     this->metrics_conn_samples = std::move(metrics_conn_samples);
     this->metrics_data_samples = std::move(metrics_data_samples);
 
-    uint64_t current_time = picoquic_current_time();
+    const uint64_t current_time = picoquic_current_time();
 
     if (debug) {
         picoquic_logger = std::make_shared<cantina::Logger>("PQIC", logger);
@@ -526,7 +526,7 @@ PicoQuicTransport::start(std::shared_ptr<SafeQueue<MetricsConnSample>> metrics_c
     _cbNotifyThread = std::thread(&PicoQuicTransport::cbNotifier, this);
 
     TransportConnId cid = 0;
-    std::ostringstream log_msg;
+    const std::ostringstream log_msg;
 
     if (_is_server_mode) {
 
@@ -555,7 +555,7 @@ PicoQuicTransport::start(std::shared_ptr<SafeQueue<MetricsConnSample>> metrics_c
 bool PicoQuicTransport::getPeerAddrInfo(const TransportConnId& conn_id,
                                    sockaddr_storage* addr)
 {
-    std::lock_guard<std::mutex> _(_state_mutex);
+    const std::lock_guard<std::mutex> _(_state_mutex);
 
     // Locate the specified transport connection context
     auto it = _conn_context.find(conn_id);
@@ -588,7 +588,7 @@ PicoQuicTransport::enqueue(const TransportConnId& conn_id,
 
     trace.push_back({"transport_quic:enqueue", trace.front().start_time});
 
-    std::lock_guard<std::mutex> _(_state_mutex);
+    const std::lock_guard<std::mutex> _(_state_mutex);
 
     trace.push_back({"transport_quic:enqueue:afterLock", trace.front().start_time});
 
@@ -652,7 +652,7 @@ PicoQuicTransport::enqueue(const TransportConnId& conn_id,
 std::shared_ptr<StreamBuffer<uint8_t>>
 PicoQuicTransport::getStreamBuffer(TransportConnId conn_id, uint64_t stream_id)
 {
-    std::lock_guard<std::mutex> _(_state_mutex);
+    const std::lock_guard<std::mutex> _(_state_mutex);
 
     const auto conn_ctx_it = _conn_context.find(conn_id);
     if (conn_ctx_it == _conn_context.end()) {
@@ -670,7 +670,7 @@ std::optional<std::vector<uint8_t>>
 PicoQuicTransport::dequeue(TransportConnId conn_id,
                            [[maybe_unused]] std::optional<DataContextId> data_ctx_id)
 {
-    std::lock_guard<std::mutex> _(_state_mutex);
+    const std::lock_guard<std::mutex> _(_state_mutex);
 
     const auto conn_ctx_it = _conn_context.find(conn_id);
     if (conn_ctx_it == _conn_context.end()) {
@@ -685,7 +685,7 @@ PicoQuicTransport::createDataContext(const TransportConnId conn_id,
                                      bool use_reliable_transport,
                                      uint8_t priority, bool bidir)
 {
-    std::lock_guard<std::mutex> _(_state_mutex);
+    const std::lock_guard<std::mutex> _(_state_mutex);
 
     if (priority > 127) {
         /*
@@ -729,7 +729,7 @@ PicoQuicTransport::createDataContext(const TransportConnId conn_id,
 void
 PicoQuicTransport::close(const TransportConnId& conn_id, uint64_t app_reason_code)
 {
-    std::lock_guard<std::mutex> _(_state_mutex);
+    const std::lock_guard<std::mutex> _(_state_mutex);
 
     const auto conn_it = _conn_context.find(conn_id);
 
@@ -766,7 +766,7 @@ void PicoQuicTransport::setRemoteDataCtxId([[maybe_unused]] const TransportConnI
 
 void PicoQuicTransport::setDataCtxPriority(const TransportConnId conn_id, DataContextId data_ctx_id, uint8_t priority)
 {
-    std::lock_guard<std::mutex> _(_state_mutex);
+    const std::lock_guard<std::mutex> _(_state_mutex);
 
     const auto conn_it = _conn_context.find(conn_id);
 
@@ -794,7 +794,7 @@ void PicoQuicTransport::setStreamIdDataCtxId(const TransportConnId conn_id,
                   << " stream_id: " << stream_id
                   << std::flush;
 
-    std::lock_guard<std::mutex> _(_state_mutex);
+    const std::lock_guard<std::mutex> _(_state_mutex);
 
 
     const auto conn_it = _conn_context.find(conn_id);
@@ -929,7 +929,7 @@ PicoQuicTransport::setStatus(TransportStatus status)
 
 PicoQuicTransport::DataContext* PicoQuicTransport::createDataContextBiDirRecv(TransportConnId conn_id, uint64_t stream_id)
 {
-    std::lock_guard<std::mutex> _(_state_mutex);
+    const std::lock_guard<std::mutex> _(_state_mutex);
 
     const auto conn_it = _conn_context.find(conn_id);
     if (conn_it == _conn_context.end()) {
@@ -1133,7 +1133,7 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
         case DataContext::StreamAction::REPLACE_STREAM_USE_RESET: {
             data_ctx->uses_reset_wait = true;
 
-            std::lock_guard<std::mutex> _(_state_mutex);
+            const std::lock_guard<std::mutex> _(_state_mutex);
             const auto conn_ctx = getConnContext(data_ctx->conn_id);
 
             // Keep stream in discard mode if still congested
@@ -1177,7 +1177,7 @@ PicoQuicTransport::send_stream_bytes(DataContext* data_ctx, uint8_t* bytes_ctx, 
             logger->info << "Replacing stream using FIN; conn_id: " << data_ctx->conn_id
                          << " existing_stream: " << *data_ctx->current_stream_id << std::flush;
 
-            std::lock_guard<std::mutex> _(_state_mutex);
+            const std::lock_guard<std::mutex> _(_state_mutex);
 
             const auto conn_ctx = getConnContext(data_ctx->conn_id);
             close_stream(*conn_ctx, data_ctx, false);
@@ -1322,9 +1322,9 @@ PicoQuicTransport::on_new_connection(const TransportConnId conn_id)
 //    picoquic_subscribe_pacing_rate_updates(conn_ctx->pq_cnx, tconfig.pacing_decrease_threshold_Bps,
 //                                           tconfig.pacing_increase_threshold_Bps);
 
-    TransportRemote remote{ .host_or_ip = conn_ctx->peer_addr_text,
-                            .port = conn_ctx->peer_port,
-                            .proto = TransportProtocol::QUIC };
+    const TransportRemote remote{ .host_or_ip = conn_ctx->peer_addr_text,
+                                  .port = conn_ctx->peer_port,
+                                  .proto = TransportProtocol::QUIC };
 
     picoquic_enable_keep_alive(conn_ctx->pq_cnx, _tconfig.idle_timeout_ms * 500);
     picoquic_set_feedback_loss_notification(conn_ctx->pq_cnx, 1);
@@ -1356,7 +1356,7 @@ PicoQuicTransport::on_recv_datagram(ConnectionContext* conn_ctx, uint8_t* bytes,
         return;
     }
 
-    std::vector<uint8_t> data(bytes, bytes + length);
+    const std::vector<uint8_t> data(bytes, bytes + length);
 
     conn_ctx->dgram_rx_data.push(data);
     conn_ctx->metrics.rx_dgrams++;
@@ -1393,7 +1393,7 @@ void PicoQuicTransport::on_recv_stream_bytes(ConnectionContext* conn_ctx,
 
     auto rx_buf_it = conn_ctx->rx_stream_buffer.find(stream_id);
     if (rx_buf_it == conn_ctx->rx_stream_buffer.end()) {
-        std::lock_guard<std::mutex> _l(_state_mutex);
+        const std::lock_guard<std::mutex> _l(_state_mutex);
 
         logger->debug << "Adding received conn_id: " << conn_ctx->conn_id
                      << " stream_id: " << stream_id
@@ -1403,7 +1403,7 @@ void PicoQuicTransport::on_recv_stream_bytes(ConnectionContext* conn_ctx,
         rx_buf_it = it;
     }
 
-    Span<uint8_t> bytes_a(bytes, length);
+    const Span<uint8_t> bytes_a(bytes, length);
     auto &rx_buf = rx_buf_it->second;
 
     rx_buf.buf->push(bytes_a);
@@ -1463,9 +1463,9 @@ void PicoQuicTransport::emit_metrics()
 }
 
 void PicoQuicTransport::remove_closed_streams() {
-    std::lock_guard<std::mutex> _(_state_mutex);
+    const std::lock_guard<std::mutex> _(_state_mutex);
 
-    std::vector<uint64_t> closed_streams;
+    const std::vector<uint64_t> closed_streams;
     for (auto& [conn_id, conn_ctx] : _conn_context) {
         std::vector<uint64_t> closed_streams;
 
@@ -1484,7 +1484,7 @@ void PicoQuicTransport::remove_closed_streams() {
 
 void PicoQuicTransport::check_conns_for_congestion()
 {
-    std::lock_guard<std::mutex> _(_state_mutex);
+    const std::lock_guard<std::mutex> _(_state_mutex);
 
     /*
      * A sign of congestion is when transmit queues are not being serviced (e.g., have a backlog).
@@ -1495,7 +1495,7 @@ void PicoQuicTransport::check_conns_for_congestion()
 
     for (auto& [conn_id, conn_ctx] : _conn_context) {
         int congested_count { 0 };
-        uint16_t cwin_congested_count = conn_ctx.metrics.cwin_congested - conn_ctx.metrics._prev_cwin_congested;
+        const uint16_t cwin_congested_count = conn_ctx.metrics.cwin_congested - conn_ctx.metrics._prev_cwin_congested;
 
         picoquic_path_quality_t path_quality;
         picoquic_get_path_quality(conn_ctx.pq_cnx, conn_ctx.pq_cnx->path[0]->unique_path_id, &path_quality);
@@ -1641,7 +1641,7 @@ void PicoQuicTransport::check_conns_for_congestion()
  */
 void PicoQuicTransport::server()
 {
-    int ret = picoquic_packet_loop(_quic_ctx, _serverInfo.port, PF_UNSPEC, 0, 2000000, 0, pq_loop_cb, this);
+    const int ret = picoquic_packet_loop(_quic_ctx, _serverInfo.port, PF_UNSPEC, 0, 2000000, 0, pq_loop_cb, this);
 
     if (_quic_ctx != NULL) {
         picoquic_free(_quic_ctx);
@@ -1677,7 +1677,7 @@ TransportConnId PicoQuicTransport::createClient()
         picoquic_set_default_congestion_algorithm(_quic_ctx, picoquic_newreno_algorithm);
     }
 
-    uint64_t current_time = picoquic_current_time();
+    const uint64_t current_time = picoquic_current_time();
 
     picoquic_cnx_t* cnx = picoquic_create_cnx(_quic_ctx,
                                               picoquic_null_connection_id,
@@ -1902,7 +1902,7 @@ void PicoQuicTransport::close_stream(ConnectionContext& conn_ctx, DataContext* d
                      << std::flush;
 
         picoquic_reset_stream_ctx(conn_ctx.pq_cnx, *data_ctx->current_stream_id);
-        uint8_t empty {0};
+        const uint8_t empty {0};
         picoquic_add_to_stream(conn_ctx.pq_cnx, *data_ctx->current_stream_id, &empty, 0, 1);
     }
 
@@ -1911,7 +1911,7 @@ void PicoQuicTransport::close_stream(ConnectionContext& conn_ctx, DataContext* d
     if (data_ctx->current_stream_id) {
         const auto rx_buf_it = conn_ctx.rx_stream_buffer.find(*data_ctx->current_stream_id);
         if (rx_buf_it != conn_ctx.rx_stream_buffer.end()) {
-            std::lock_guard<std::mutex> _(_state_mutex);
+            const std::lock_guard<std::mutex> _(_state_mutex);
             conn_ctx.rx_stream_buffer.erase(rx_buf_it);
         }
     }
@@ -1920,7 +1920,7 @@ void PicoQuicTransport::close_stream(ConnectionContext& conn_ctx, DataContext* d
 }
 
 void PicoQuicTransport::mark_stream_active(const TransportConnId conn_id, const DataContextId data_ctx_id) {
-    std::lock_guard<std::mutex> _(_state_mutex);
+    const std::lock_guard<std::mutex> _(_state_mutex);
 
     const auto conn_it = _conn_context.find(conn_id);
     if (conn_it == _conn_context.end()) {
@@ -1945,7 +1945,7 @@ void PicoQuicTransport::mark_stream_active(const TransportConnId conn_id, const 
 }
 
 void PicoQuicTransport::mark_dgram_ready(const TransportConnId conn_id) {
-    std::lock_guard<std::mutex> _(_state_mutex);
+    const std::lock_guard<std::mutex> _(_state_mutex);
 
     const auto conn_it = _conn_context.find(conn_id);
     if (conn_it == _conn_context.end()) {

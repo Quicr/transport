@@ -85,7 +85,7 @@ namespace qtransport {
          */
         void push(DataType& value, uint32_t ttl, uint8_t priority = 0, uint32_t delay_ttl=0)
         {
-            std::lock_guard<std::mutex> _(_mutex);
+            const std::lock_guard<std::mutex> _(_mutex);
 
             auto& queue = get_queue_by_priority(priority);
             queue->push(value, ttl, delay_ttl);
@@ -100,7 +100,7 @@ namespace qtransport {
          * @param delay_ttl Delay POP by this ttl value in milliseconds
          */
         void push(DataType&& value, uint32_t ttl, uint8_t priority = 0, uint32_t delay_ttl=0) {
-            std::lock_guard<std::mutex> _(_mutex);
+            const std::lock_guard<std::mutex> _(_mutex);
 
             auto& queue = get_queue_by_priority(priority);
             queue->push(std::move(value), ttl, delay_ttl);
@@ -113,7 +113,7 @@ namespace qtransport {
          */
         TimeQueueElement<DataType> front()
         {
-            std::lock_guard<std::mutex> _(_mutex);
+            const std::lock_guard<std::mutex> _(_mutex);
 
             for (auto& tqueue : _queue) {
                 if (!tqueue || tqueue->empty())
@@ -132,7 +132,7 @@ namespace qtransport {
          */
         TimeQueueElement<DataType> pop_front()
         {
-            std::lock_guard<std::mutex> _(_mutex);
+            const std::lock_guard<std::mutex> _(_mutex);
 
             for (auto& tqueue : _queue) {
                 if (!tqueue || tqueue->empty())
@@ -149,7 +149,7 @@ namespace qtransport {
          */
         void pop()
         {
-            std::lock_guard<std::mutex> _(_mutex);
+            const std::lock_guard<std::mutex> _(_mutex);
 
             for (auto& tqueue : _queue) {
                 if (tqueue && !tqueue->empty())
@@ -162,7 +162,7 @@ namespace qtransport {
          */
          void clear()
         {
-            std::lock_guard<std::mutex> _(_mutex);
+            const std::lock_guard<std::mutex> _(_mutex);
 
             for (auto& tqueue : _queue) {
                 if (tqueue && !tqueue->empty())
