@@ -52,7 +52,8 @@ namespace qtransport {
         UDPTransport(const TransportRemote &server,
                      const TransportConfig &tcfg,
                      TransportDelegate &delegate,
-                     bool isServerMode);
+                     bool isServerMode,
+                     std::shared_ptr<spdlog::logger> logger);
 
         virtual ~UDPTransport();
 
@@ -97,8 +98,6 @@ namespace qtransport {
         void setDataCtxPriority([[maybe_unused]] const TransportConnId conn_id,
                                 [[maybe_unused]] DataContextId data_ctx_id,
                                 [[maybe_unused]] uint8_t priority) override {}
-
-        void enableLogging(int level = 0) override;
 
     private:
         TransportConnId connect_client();

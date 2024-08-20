@@ -19,7 +19,6 @@
 #endif
 
 #include "transport_udp.h"
-#include <spdlog/sinks/stdout_color_sinks.h>
 
 #if defined(PLATFORM_ESP)
 #include <lwip/netdb.h>
@@ -74,8 +73,10 @@ UDPTransport::~UDPTransport() {
 UDPTransport::UDPTransport(const TransportRemote &server,
                            const TransportConfig& tcfg,
                            TransportDelegate &delegate,
-                           bool isServerMode)
+                           bool isServerMode,
+                           std::shared_ptr<spdlog::logger> logger)
         : _stop(false),
+    _logger(std::move(logger)),
     _tconfig(tcfg),
     _fd(-1),
     _isServerMode(isServerMode),
@@ -1337,15 +1338,4 @@ TransportConnId UDPTransport::connect_server() {
     _running_threads.emplace_back(&UDPTransport::fd_writer, this);
 
     return _last_conn_id;
-}
-
-void UDPTransport::enableLogging(int level)
-{
-    if (level > spdlog::level::n_levels || level < 0)
-    {
-        throw std::invalid_argument("logging level is not valid");
-    }
-
-    _logger = spdlog::stderr_color_mt("UDP");
-    _logger->set_level(static_cast<spdlog::level::level_enum>(level));
 }

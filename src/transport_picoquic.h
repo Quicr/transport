@@ -201,7 +201,8 @@ class PicoQuicTransport : public ITransport
     PicoQuicTransport(const TransportRemote& server,
                       const TransportConfig& tcfg,
                       TransportDelegate& delegate,
-                      bool _is_server_mode);
+                      bool _is_server_mode,
+                      std::shared_ptr<spdlog::logger> logger);
 
     virtual ~PicoQuicTransport();
 
@@ -240,8 +241,6 @@ class PicoQuicTransport : public ITransport
 
     void setStreamIdDataCtxId(TransportConnId conn_id, DataContextId data_ctx_id, uint64_t stream_id) override;
     void setDataCtxPriority(TransportConnId conn_id, DataContextId data_ctx_id, uint8_t priority) override;
-
-    void enableLogging(int level = 0) override;
 
     /*
      * Internal public methods

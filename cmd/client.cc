@@ -114,8 +114,7 @@ main()
     if (getenv("RELAY_UNIDIR"))
         bidir = false;
 
-    auto client = ITransport::make_client_transport(server, tconfig, d);
-    client->enableLogging(spdlog::level::debug);
+    auto client = ITransport::make_client_transport(server, tconfig, d, logger);
 
     SPDLOG_LOGGER_INFO(logger, "bidir is {0}", (bidir ? "True" : "False"));
     SPDLOG_LOGGER_INFO(logger, "client use_count: {0}", client.use_count());

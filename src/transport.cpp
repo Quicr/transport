@@ -4,24 +4,24 @@
   #include <transport_picoquic.h>
 #endif
 
-#include <spdlog/spdlog.h>
-
 namespace qtransport {
 
 std::shared_ptr<ITransport>
 ITransport::make_client_transport(const TransportRemote& server,
                                   const TransportConfig& tcfg,
-                                  TransportDelegate& delegate)
+                                  TransportDelegate& delegate,
+                                  std::shared_ptr<spdlog::logger> logger)
 {
   switch (server.proto) {
     case TransportProtocol::UDP:
-      return std::make_shared<UDPTransport>(server, tcfg, delegate, false);
+      return std::make_shared<UDPTransport>(server, tcfg, delegate, false, std::move(logger));
 #ifndef PLATFORM_ESP
     case TransportProtocol::QUIC:
       return std::make_shared<PicoQuicTransport>(server,
                                                  tcfg,
                                                  delegate,
-                                                 false);
+                                                 false,
+                                                 std::move(logger));
 #endif
     default:
       throw std::runtime_error("make_client_transport: Protocol not implemented");
@@ -34,18 +34,20 @@ ITransport::make_client_transport(const TransportRemote& server,
 std::shared_ptr<ITransport>
 ITransport::make_server_transport(const TransportRemote& server,
                                   const TransportConfig& tcfg,
-                                  TransportDelegate& delegate)
+                                  TransportDelegate& delegate,
+                                  std::shared_ptr<spdlog::logger> logger)
 {
   switch (server.proto) {
     case TransportProtocol::UDP:
-      return std::make_shared<UDPTransport>(server, tcfg, delegate, true);
+      return std::make_shared<UDPTransport>(server, tcfg, delegate, true, std::move(logger));
 
 #ifndef PLATFORM_ESP
     case TransportProtocol::QUIC:
       return std::make_shared<PicoQuicTransport>(server,
                                                  tcfg,
                                                  delegate,
-                                                 true);
+                                                 true,
+                                                 std::move(logger));
 #endif
     default:
       throw std::runtime_error("make_server_transport: Protocol not implemented");

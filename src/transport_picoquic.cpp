@@ -4,7 +4,6 @@
 #include <autoqlog.h>
 #include <picoquic_utils.h>
 #include <spdlog/spdlog.h>
-#include <spdlog/sinks/stdout_color_sinks.h>
 
 #include <arpa/inet.h>
 #include <cassert>
@@ -851,8 +850,10 @@ PicoQuicTransport::ConnectionContext& PicoQuicTransport::createConnContext(picoq
 PicoQuicTransport::PicoQuicTransport(const TransportRemote& server,
                                      const TransportConfig& tcfg,
                                      TransportDelegate& delegate,
-                                     bool _is_server_mode)
-  : _is_server_mode(_is_server_mode)
+                                     bool _is_server_mode,
+                                     std::shared_ptr<spdlog::logger> logger)
+  : logger(std::move(logger))
+  , _is_server_mode(_is_server_mode)
   , _stop(false)
   , _transportStatus(TransportStatus::Connecting)
   , _serverInfo(server)
@@ -1877,15 +1878,4 @@ void PicoQuicTransport::mark_dgram_ready(const TransportConnId conn_id) {
     picoquic_mark_datagram_ready(conn_it->second.pq_cnx, 1);
 
     conn_it->second.mark_dgram_ready = false;
-}
-
-void PicoQuicTransport::enableLogging(int level)
-{
-    if (level > spdlog::level::n_levels || level < 0)
-    {
-        throw std::invalid_argument("logging level is not valid");
-    }
-
-    logger = spdlog::stderr_color_mt("QUIC");
-    logger->set_level(static_cast<spdlog::level::level_enum>(level));
 }

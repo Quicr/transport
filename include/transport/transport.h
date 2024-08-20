@@ -14,6 +14,7 @@
 #include <transport/safe_queue.h>
 #include <transport/transport_metrics.h>
 #include <transport/stream_buffer.h>
+#include <spdlog/spdlog.h>
 
 namespace qtransport {
 
@@ -218,31 +219,35 @@ public:
   /**
    * @brief Create a new client transport based on the remote (server) host/ip
    *
-   * @param[in] server			Transport remote server information
-   * @param[in] tcfg                    Transport configuration
-   * @param[in] delegate		Implemented callback methods
+   * @param[in] server      Transport remote server information
+   * @param[in] tcfg        Transport configuration
+   * @param[in] delegate    Implemented callback methods
+   * @param[in] logger      Shared pointer to logger
    *
    * @return shared_ptr for the under lining transport.
    */
   static std::shared_ptr<ITransport> make_client_transport(
     const TransportRemote& server,
     const TransportConfig &tcfg,
-    TransportDelegate& delegate);
+    TransportDelegate& delegate,
+    std::shared_ptr<spdlog::logger> logger);
 
   /**
    * @brief Create a new server transport based on the remote (server) ip and
    * port
    *
-   * @param[in] server			Transport remote server information
-   * @param[in] tcfg                    Transport configuration
-   * @param[in] delegate		Implemented callback methods
+   * @param[in] server      Transport remote server information
+   * @param[in] tcfg        Transport configuration
+   * @param[in] delegate    Implemented callback methods
+   * @param[in] logger      Shared pointer to logger
    *
    * @return shared_ptr for the under lining transport.
    */
   static std::shared_ptr<ITransport> make_server_transport(
     const TransportRemote& server,
     const TransportConfig &tcfg,
-    TransportDelegate& delegate);
+    TransportDelegate& delegate,
+    std::shared_ptr<spdlog::logger> logger);
 
 public:
   virtual ~ITransport() = default;
@@ -410,13 +415,6 @@ public:
    * @param[in] stream_id               Stream ID of stream buffer
    */
   virtual std::shared_ptr<StreamBuffer<uint8_t>> getStreamBuffer(TransportConnId conn_id, uint64_t stream_id) = 0;
-
-  /**
-   * @brief Creates and initialises loggers for outputting to console.
-   *
-   * @param[in] level The logging level, a value between 0 and 6 (trace = 0 and critical = 6).
-   */
-  virtual void enableLogging(int level = 0) = 0;
 
    /// Metrics samples to be written to TSDB. When full the buffer will remove the oldest
    std::shared_ptr<SafeQueue<MetricsConnSample>> metrics_conn_samples;

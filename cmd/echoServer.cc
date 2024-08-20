@@ -113,8 +113,7 @@ main()
     if ((envVar = getenv("RELAY_PORT")))
         serverIp.port = atoi(envVar);
 
-    auto server = ITransport::make_server_transport(serverIp, tconfig, d);
-    server->enableLogging();
+    auto server = ITransport::make_server_transport(serverIp, tconfig, d, logger);
 
     auto metrics_conn_samples = std::make_shared<SafeQueue<MetricsConnSample>>(10);
     auto metrics_data_samples = std::make_shared<SafeQueue<MetricsDataSample>>(10);

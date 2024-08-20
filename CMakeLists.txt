@@ -47,7 +47,7 @@ endif()
 add_library(quicr-transport ${sources})
 
 target_link_libraries(quicr-transport
-    PRIVATE
+    PUBLIC
     spdlog
 )
 
