@@ -1,20 +1,22 @@
 #pragma once
 
 #include <transport/transport.h>
+#include <spdlog/spdlog.h>
+#include <spdlog/sinks/stdout_color_sinks.h>
 
 using namespace qtransport;
 
 class Object
 {
   public:
-    Object(const cantina::LoggerPointer& logger) :
-      logger(std::make_shared<cantina::Logger>("OBJ", logger)) {}
+    Object(std::shared_ptr<spdlog::logger> log) :
+      logger(std::move(log)) {}
 
     void process(TransportConnId conn_id, std::optional<DataContextId> data_ctx_id, std::vector<uint8_t>& obj);
     std::vector<uint8_t> encode();
 
   private:
-    cantina::LoggerPointer logger;
+    std::shared_ptr<spdlog::logger> logger;
 
     uint64_t msgcount{ 0 };
     uint64_t prev_msgcount{ 0 };

@@ -16,6 +16,7 @@
 #include <sys/types.h>
 
 #include <transport/transport.h>
+#include <spdlog/spdlog.h>
 
 #include "transport_udp_protocol.h"
 #include "transport/priority_queue.h"
@@ -52,7 +53,7 @@ namespace qtransport {
                      const TransportConfig &tcfg,
                      TransportDelegate &delegate,
                      bool isServerMode,
-                     const cantina::LoggerPointer &logger);
+                     std::shared_ptr<spdlog::logger> logger);
 
         virtual ~UDPTransport();
 
@@ -265,7 +266,7 @@ namespace qtransport {
          */
         bool send_report(ConnectionContext& conn);
 
-        cantina::LoggerPointer _logger;
+        std::shared_ptr<spdlog::logger> _logger;
         int _fd; // UDP socket
         bool _isServerMode;
 

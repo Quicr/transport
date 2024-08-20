@@ -48,7 +48,7 @@ add_library(quicr-transport ${sources})
 
 target_link_libraries(quicr-transport
     PUBLIC
-    cantina::logger
+    spdlog
 )
 
 if (NOT PLATFORM_ESP_IDF)

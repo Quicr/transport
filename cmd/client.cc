@@ -4,8 +4,9 @@
 #include <thread>
 
 #include <transport/transport.h>
+#include <spdlog/spdlog.h>
+#include <spdlog/sinks/stdout_color_sinks.h>
 
-#include <cantina/logger.h>
 #include "object.h"
 
 using namespace qtransport;
@@ -18,12 +19,12 @@ struct Delegate : public ITransport::TransportDelegate
   private:
     std::shared_ptr<ITransport> client;
     TransportConnId conn_id;
-    cantina::LoggerPointer logger;
-    Object _rx_object { logger };
+    std::shared_ptr<spdlog::logger> logger;
+    Object _rx_object{logger};
 
   public:
-    Delegate(const cantina::LoggerPointer& logger)
-      : logger(std::make_shared<cantina::Logger>("CLIENT", logger))
+    Delegate()
+      : logger(spdlog::stderr_color_mt("CDLG"))
     {
         conn_id = 0;
     }
@@ -38,7 +39,7 @@ struct Delegate : public ITransport::TransportDelegate
 
     void on_connection_status(const TransportConnId& conn_id, const TransportStatus status)
     {
-        logger->info << "Connection state change conn_id: " << conn_id << ", " << int(status) << std::flush;
+        SPDLOG_LOGGER_INFO(logger, "Connection state change conn_id: {0}, {1}", conn_id, int(status));
     }
 
     void on_new_connection(const TransportConnId& , const TransportRemote&) {}
@@ -84,15 +85,15 @@ struct Delegate : public ITransport::TransportDelegate
     void on_new_data_context(const TransportConnId&, const DataContextId&) {}
 };
 
-cantina::LoggerPointer logger = std::make_shared<cantina::Logger>();
-Delegate d(logger);
+auto logger = spdlog::stderr_color_mt("CLIENT");
+Delegate d;
 
 int
 main()
 {
     char* envVar;
 
-    logger->SetLogLevel("DEBUG");
+    logger->set_level(spdlog::level::debug);
 
     TransportRemote server = TransportRemote{ "127.0.0.1", 1234, TransportProtocol::QUIC };
 
@@ -115,11 +116,11 @@ main()
 
     auto client = ITransport::make_client_transport(server, tconfig, d, logger);
 
-    logger->info << "bidir is " << (bidir ? "True" : "False") << std::flush;
-    logger->info << "client use_count: " << client.use_count() << std::flush;
+    SPDLOG_LOGGER_INFO(logger, "bidir is {0}", (bidir ? "True" : "False"));
+    SPDLOG_LOGGER_INFO(logger, "client use_count: {0}", client.use_count());
 
     d.setClientTransport(client);
-    logger->info << "after set client transport client use_count: " << client.use_count() << std::flush;
+    SPDLOG_LOGGER_INFO(logger, "after set client transport client use_count: {0}", client.use_count());
 
     auto metrics_conn_samples = std::make_shared<SafeQueue<MetricsConnSample>>(10);
     auto metrics_data_samples = std::make_shared<SafeQueue<MetricsDataSample>>(10);
@@ -127,7 +128,7 @@ main()
     auto conn_id = client->start(metrics_conn_samples, metrics_data_samples);
 
     while (client->status() != TransportStatus::Ready) {
-        logger->Log("Waiting for client to be ready");
+        SPDLOG_LOGGER_INFO(logger, "Waiting for client to be ready");
         std::this_thread::sleep_for(std::chrono::milliseconds(250));
     }
 
@@ -184,8 +185,8 @@ main()
 
     client->deleteDataContext(conn_id, data_ctx_id);
 
-    logger->Log("Done with transport, closing");
+    SPDLOG_LOGGER_INFO(logger, "Done with transport, closing");
     client.reset();
     d.stop();
-    logger->Log("Program done");
+    SPDLOG_LOGGER_INFO(logger, "Program done");
 }

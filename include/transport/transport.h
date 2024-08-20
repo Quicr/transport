@@ -10,11 +10,11 @@
 #include <sys/socket.h>
 #include <string>
 
-#include <cantina/logger.h>
 #include <transport/uintvar.h>
 #include <transport/safe_queue.h>
 #include <transport/transport_metrics.h>
 #include <transport/stream_buffer.h>
+#include <spdlog/spdlog.h>
 
 namespace qtransport {
 
@@ -219,10 +219,10 @@ public:
   /**
    * @brief Create a new client transport based on the remote (server) host/ip
    *
-   * @param[in] server			Transport remote server information
-   * @param[in] tcfg                    Transport configuration
-   * @param[in] delegate		Implemented callback methods
-   * @param[in] logger			Shared pointer to logger
+   * @param[in] server      Transport remote server information
+   * @param[in] tcfg        Transport configuration
+   * @param[in] delegate    Implemented callback methods
+   * @param[in] logger      Shared pointer to logger
    *
    * @return shared_ptr for the under lining transport.
    */
@@ -230,16 +230,16 @@ public:
     const TransportRemote& server,
     const TransportConfig &tcfg,
     TransportDelegate& delegate,
-    const cantina::LoggerPointer& logger);
+    std::shared_ptr<spdlog::logger> logger);
 
   /**
    * @brief Create a new server transport based on the remote (server) ip and
    * port
    *
-   * @param[in] server			Transport remote server information
-   * @param[in] tcfg                    Transport configuration
-   * @param[in] delegate		Implemented callback methods
-   * @param[in] logger			Shared pointer to logger
+   * @param[in] server      Transport remote server information
+   * @param[in] tcfg        Transport configuration
+   * @param[in] delegate    Implemented callback methods
+   * @param[in] logger      Shared pointer to logger
    *
    * @return shared_ptr for the under lining transport.
    */
@@ -247,7 +247,7 @@ public:
     const TransportRemote& server,
     const TransportConfig &tcfg,
     TransportDelegate& delegate,
-    const cantina::LoggerPointer& logger);
+    std::shared_ptr<spdlog::logger> logger);
 
 public:
   virtual ~ITransport() = default;
