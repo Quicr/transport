@@ -70,12 +70,8 @@ set_target_properties(quicr-transport
 
 # linting
 if (LINT)
-  set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-  find_program(CLANG_TIDY_EXE clang-tidy REQUIRED)
-  set_target_properties(quicr-transport
-    PROPERTIES
-      CXX_CLANG_TIDY "${CLANG_TIDY_EXE}"
-      CXX_CLANG_TIDY_EXPORT_FIXES_DIR "clang-tidy-fixes")
+  include(Lint)
+  lint(quicr-transport)
 endif (LINT)
 
 target_compile_options(quicr-transport
