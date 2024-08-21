@@ -13,25 +13,25 @@
  */
 
 namespace qtransport {
-    namespace UdpProtocol {
+    namespace udp_protocol {
         /* ------------------------------------------------------------------------
          * Wire messages
          * ------------------------------------------------------------------------
          */
-        constexpr uint8_t PROTOCOL_VERSION = 1;
+        constexpr uint8_t kProtocolVersion = 1;
 
         /**
          * @brief UDP Protocol Types
          * @details Each UDP packet is encoded with a common header, which includes a type.
          */
         enum class ProtocolType : uint8_t {
-            CONNECT = 0,
-            CONNECT_OK = 1,
-            DISCONNECT = 2,
-            REPORT = 3,
-            KEEPALIVE = 4,
+            kConnect = 0,
+            kConnectOk = 1,
+            kDisconnect = 2,
+            kReport = 3,
+            kKeepalive = 4,
 
-            DATA = 10,
+            kData = 10,
         };
 
         /**
@@ -39,7 +39,7 @@ namespace qtransport {
          * @brief Every UDP packet starts with this common header. The data that follows is defined by the type
          */
         struct CommonHeader {
-            uint8_t version {PROTOCOL_VERSION};       /// Protocol version
+            uint8_t version {kProtocolVersion};       /// Protocol version
             ProtocolType type;                        /// Indicates this is a peering message
         };
 
@@ -50,7 +50,7 @@ namespace qtransport {
          *      until the new connection sends a connect message.
          */
         struct ConnectMsg : CommonHeader {
-            ConnectMsg() { type = ProtocolType::CONNECT; }
+            ConnectMsg() { type = ProtocolType::kConnect; }
 
             uint16_t idle_timeout { 120 };            /// Idle timeout in seconds. Must not be zero
 
@@ -60,7 +60,7 @@ namespace qtransport {
          * @brief Connect OK Message
          */
         struct ConnectOkMsg : CommonHeader {
-            ConnectOkMsg() { type = ProtocolType::CONNECT_OK; }
+            ConnectOkMsg() { type = ProtocolType::kConnectOk; }
         } __attribute__((__packed__, aligned(1)));
 
         /**
@@ -69,7 +69,7 @@ namespace qtransport {
          * @details Disconnect notification. Remote will immediately purge/close the active connection
          */
         struct DisconnectMsg : CommonHeader {
-            DisconnectMsg() { type = ProtocolType::DISCONNECT; }
+            DisconnectMsg() { type = ProtocolType::kDisconnect; }
         } __attribute__((__packed__, aligned(1)));
 
         /**
@@ -78,7 +78,7 @@ namespace qtransport {
          * @details Keepalive message. Sent only when no other messages have been sent in idle_timeout / 3.
          */
         struct KeepaliveMsg : CommonHeader {
-            KeepaliveMsg() { type = ProtocolType::KEEPALIVE; }
+            KeepaliveMsg() { type = ProtocolType::kKeepalive; }
 
             uint16_t ticks_ms { 0 };            /// Senders Tick millisecond value from start of report period, reset to zero on new report
 
@@ -92,7 +92,7 @@ namespace qtransport {
          * @note Can be either type of DATA
          */
         struct DataMsg : CommonHeader {
-            DataMsg() { type = ProtocolType::DATA; }
+            DataMsg() { type = ProtocolType::kData; }
 
             struct {
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
@@ -132,7 +132,7 @@ namespace qtransport {
          * @details Report message. The remote will send a report message upon
          */
         struct ReportMessage : CommonHeader {
-            ReportMessage() { type = ProtocolType::REPORT; }
+            ReportMessage() { type = ProtocolType::kReport; }
 
             uint16_t report_id { 0 };           /// Report ID of this report
             ReportMetrics metrics;

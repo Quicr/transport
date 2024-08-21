@@ -11,16 +11,16 @@
 namespace qtransport {
 
 std::shared_ptr<ITransport>
-ITransport::make_client_transport(const TransportRemote& server,
+ITransport::MakeClientTransport(const TransportRemote& server,
                                   const TransportConfig& tcfg,
                                   TransportDelegate& delegate,
                                   std::shared_ptr<spdlog::logger> logger)
 {
   switch (server.proto) {
-    case TransportProtocol::UDP:
+    case TransportProtocol::kUdp:
       return std::make_shared<UDPTransport>(server, tcfg, delegate, false, std::move(logger));
 #ifndef PLATFORM_ESP
-    case TransportProtocol::QUIC:
+    case TransportProtocol::kQuic:
       return std::make_shared<PicoQuicTransport>(server,
                                                  tcfg,
                                                  delegate,
@@ -36,17 +36,17 @@ ITransport::make_client_transport(const TransportRemote& server,
 }
 
 std::shared_ptr<ITransport>
-ITransport::make_server_transport(const TransportRemote& server,
+ITransport::MakeServerTransport(const TransportRemote& server,
                                   const TransportConfig& tcfg,
                                   TransportDelegate& delegate,
                                   std::shared_ptr<spdlog::logger> logger)
 {
   switch (server.proto) {
-    case TransportProtocol::UDP:
+    case TransportProtocol::kUdp:
       return std::make_shared<UDPTransport>(server, tcfg, delegate, true, std::move(logger));
 
 #ifndef PLATFORM_ESP
-    case TransportProtocol::QUIC:
+    case TransportProtocol::kQuic:
       return std::make_shared<PicoQuicTransport>(server,
                                                  tcfg,
                                                  delegate,
