@@ -1,19 +1,19 @@
 #pragma once
 
-#include <transport/span.h>
-#include <transport/uintvar.h>
-
 #include <algorithm>
 #include <any>
 #include <deque>
 #include <mutex>
 #include <optional>
+#include <transport/span.h>
+
+#include <transport/uintvar.h>
 
 namespace qtransport {
     template<typename T, class Allocator = std::allocator<T>>
     class StreamBuffer
     {
-        using BufferT = std::deque<T, Allocator>;
+        using buffer_t = std::deque<T, Allocator>;
 
       public:
         StreamBuffer() = default;
@@ -26,15 +26,15 @@ namespace qtransport {
          * @tparam D              Data type for value
          */
         template<typename D>
-        void InitAny()
+        void initAny()
         {
-            parsed_data_.emplace<D>();
+            _parsed_data.emplace<D>();
         }
 
         template<typename D>
-        void InitAnyB()
+        void initAnyB()
         {
-            parsed_dataB_.emplace<D>();
+            _parsed_dataB.emplace<D>();
         }
 
         /**
@@ -43,10 +43,10 @@ namespace qtransport {
          * @param type            user defined type value for the parsed data any object
          */
         template<typename D>
-        void InitAny(uint64_t type)
+        void initAny(uint64_t type)
         {
-            parsed_data_.emplace<D>();
-            parsed_data_type_ = type;
+            _parsed_data.emplace<D>();
+            _parsed_data_type = type;
         }
 
         /**
@@ -58,55 +58,55 @@ namespace qtransport {
          * @tparam D              Data type of value
          */
         template<typename D>
-        D& GetAny()
+        D& getAny()
         {
-            return std::any_cast<D&>(parsed_data_);
+            return std::any_cast<D&>(_parsed_data);
         }
 
         template<typename D>
-        D& GetAnyB()
+        D& getAnyB()
         {
-            return std::any_cast<D&>(parsed_dataB_);
+            return std::any_cast<D&>(_parsed_dataB);
         }
 
         /**
          * @brief Get the user defined parsed type value
          * @return Parsed data type value that was set via initAny(). nullopt if not set
          */
-        std::optional<uint64_t> GetAnyType() { return parsed_data_type_; }
+        std::optional<uint64_t> getAnyType() { return _parsed_data_type; }
 
         /**
          * @brief Set the user-defined parsed data type value
          * @param type          User defined value for the data type
          */
-        void SetAnyType(uint64_t type) { parsed_data_type_ = type; }
+        void setAnyType(uint64_t type) { _parsed_data_type = type; }
 
-        void ResetAny()
+        void resetAny()
         {
-            parsed_data_.reset();
-            parsed_dataB_.reset();
-            parsed_data_type_ = std::nullopt;
+            _parsed_data.reset();
+            _parsed_dataB.reset();
+            _parsed_data_type = std::nullopt;
         }
 
-        void ResetAnyB() { parsed_dataB_.reset(); }
+        void resetAnyB() { _parsed_dataB.reset(); }
 
-        bool AnyHasValue() { return parsed_data_.has_value(); }
+        bool anyHasValue() { return _parsed_data.has_value(); }
 
-        bool AnyHasValueB() { return parsed_dataB_.has_value(); }
+        bool anyHasValueB() { return _parsed_dataB.has_value(); }
 
-        bool Empty() const noexcept { return buffer_.empty(); }
+        bool empty() const noexcept { return _buffer.empty(); }
 
-        size_t Size() noexcept { return buffer_.size(); }
+        size_t size() noexcept { return _buffer.size(); }
 
         /**
          * @brief Get the first data byte in stream buffer
          * @returns data byt or nullopt if no data
          */
-        std::optional<T> Front() noexcept
+        std::optional<T> front() noexcept
         {
-            if (buffer_.size()) {
-                std::lock_guard<std::mutex> _(rwLock_);
-                return buffer_.front();
+            if (_buffer.size()) {
+                std::lock_guard<std::mutex> _(_rwLock);
+                return _buffer.front();
             }
 
             return std::nullopt;
@@ -119,37 +119,38 @@ namespace qtransport {
          *
          * @returns data vector of bytes or nullopt if no data
          */
-        std::vector<T> Front(std::uint32_t length) noexcept
+        std::vector<T> front(std::uint32_t length) noexcept
         {
-            if (!buffer_.empty()) {
-                std::lock_guard<std::mutex> _(rwLock_);
+
+            if (!_buffer.empty()) {
+                std::lock_guard<std::mutex> _(_rwLock);
 
                 std::vector<T> result(length);
-                std::copy_n(buffer_.begin(), length, result.begin());
+                std::copy_n(_buffer.begin(), length, result.begin());
                 return result;
             }
             return std::vector<T>();
         }
 
-        void Pop()
+        void pop()
         {
-            if (buffer_.size()) {
-                std::lock_guard<std::mutex> _(rwLock_);
-                buffer_.pop_front();
+            if (_buffer.size()) {
+                std::lock_guard<std::mutex> _(_rwLock);
+                _buffer.pop_front();
             }
         }
 
-        void Pop(std::uint32_t length)
+        void pop(std::uint32_t length)
         {
-            if (!length || buffer_.empty())
+            if (!length || _buffer.empty())
                 return;
 
-            std::lock_guard<std::mutex> _(rwLock_);
+            std::lock_guard<std::mutex> _(_rwLock);
 
-            if (length >= buffer_.size()) {
-                buffer_.clear();
+            if (length >= _buffer.size()) {
+                _buffer.clear();
             } else {
-                buffer_.erase(buffer_.begin(), buffer_.begin() + length);
+                _buffer.erase(_buffer.begin(), _buffer.begin() + length);
             }
         }
 
@@ -160,38 +161,38 @@ namespace qtransport {
          *
          * @return True if data length is available, false if not.
          */
-        bool Available(std::uint32_t length) const noexcept { return buffer_.size() >= length; }
+        bool available(std::uint32_t length) const noexcept { return _buffer.size() >= length; }
 
-        void Push(const T& value)
+        void push(const T& value)
         {
-            std::lock_guard<std::mutex> _(rwLock_);
-            buffer_.push_back(value);
+            std::lock_guard<std::mutex> _(_rwLock);
+            _buffer.push_back(value);
         }
 
-        void Push(T&& value)
+        void push(T&& value)
         {
-            std::lock_guard<std::mutex> _(rwLock_);
-            buffer_.push_back(std::move(value));
+            std::lock_guard<std::mutex> _(_rwLock);
+            _buffer.push_back(std::move(value));
         }
 
-        void Push(const Span<const T>& value)
+        void push(const Span<const T>& value)
         {
-            std::lock_guard<std::mutex> _(rwLock_);
-            buffer_.insert(buffer_.end(), value.begin(), value.end());
+            std::lock_guard<std::mutex> _(_rwLock);
+            _buffer.insert(_buffer.end(), value.begin(), value.end());
         }
 
-        void Push(std::initializer_list<T> value)
+        void push(std::initializer_list<T> value)
         {
-            std::lock_guard<std::mutex> _(rwLock_);
-            buffer_.insert(buffer_.end(), value.begin(), value.end());
+            std::lock_guard<std::mutex> _(_rwLock);
+            _buffer.insert(_buffer.end(), value.begin(), value.end());
         }
 
-        void PushLv(const Span<const T>& value)
+        void push_lv(const Span<const T>& value)
         {
-            std::lock_guard<std::mutex> _(rwLock_);
-            const auto len = ToUintV(static_cast<uint64_t>(value.size()));
-            buffer_.insert(buffer_.end(), len.begin(), len.end());
-            buffer_.insert(buffer_.end(), value.begin(), value.end());
+            std::lock_guard<std::mutex> _(_rwLock);
+            const auto len = to_uintV(static_cast<uint64_t>(value.size()));
+            _buffer.insert(_buffer.end(), len.begin(), len.end());
+            _buffer.insert(_buffer.end(), value.begin(), value.end());
         }
 
         /**
@@ -204,14 +205,14 @@ namespace qtransport {
          *
          * @return Returns uint64 decoded value or nullopt if not enough bytes are available
          */
-        std::optional<uint64_t> DecodeUintV()
+        std::optional<uint64_t> decode_uintV()
         {
-            if (const auto uv_msb = Front()) {
-                if (Available(uintV_size(*uv_msb))) {
+            if (const auto uv_msb = front()) {
+                if (available(uintV_size(*uv_msb))) {
                     uint64_t uv_len = uintV_size(*uv_msb);
-                    auto val = to_uint64(Front(uv_len));
+                    auto val = to_uint64(front(uv_len));
 
-                    Pop(uv_len);
+                    pop(uv_len);
 
                     return val;
                 }
@@ -230,15 +231,15 @@ namespace qtransport {
 
          * @return Returns vector<uint8_t> or nullopt if not enough bytes are available
          */
-        std::optional<std::vector<uint8_t>> DecodeBytes()
+        std::optional<std::vector<uint8_t>> decode_bytes()
         {
-            if (const auto uv_msb = Front()) {
-                if (Available(uintV_size(*uv_msb))) {
+            if (const auto uv_msb = front()) {
+                if (available(uintV_size(*uv_msb))) {
                     uint64_t uv_len = uintV_size(*uv_msb);
-                    auto len = to_uint64(Front(uv_len));
+                    auto len = to_uint64(front(uv_len));
 
-                    if (buffer_.size() >= uv_len + len) {
-                        Pop(uv_len);
+                    if (_buffer.size() >= uv_len + len) {
+                        pop(uv_len);
                         auto v = front(len);
                         pop(len);
 
@@ -251,10 +252,10 @@ namespace qtransport {
         }
 
       private:
-        BufferT buffer_;
-        std::mutex rwLock_;
-        std::any parsed_data_;                     /// Working buffer for parsed data
-        std::any parsed_dataB_;                    /// Second Working buffer for parsed data
-        std::optional<uint64_t> parsed_data_type_; /// working buffer type value
+        buffer_t _buffer;
+        std::mutex _rwLock;
+        std::any _parsed_data;                     /// Working buffer for parsed data
+        std::any _parsed_dataB;                    /// Second Working buffer for parsed data
+        std::optional<uint64_t> _parsed_data_type; /// working buffer type value
     };
-} // namespace qtransport
+}

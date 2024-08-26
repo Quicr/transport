@@ -3,14 +3,13 @@
  */
 #pragma once
 
-#include <unistd.h>
-
 #include <atomic>
 #include <condition_variable>
 #include <iostream>
 #include <mutex>
 #include <optional>
 #include <queue>
+#include <unistd.h>
 
 namespace qtransport {
 
@@ -33,12 +32,12 @@ namespace qtransport {
          *                  is unlimited.
          */
         SafeQueue(uint32_t limit = 1000)
-          : stop_waiting_{ false }
-          , limit_{ limit }
+          : _stop_waiting{ false }
+          , _limit{ limit }
         {
         }
 
-        ~SafeQueue() { StopWaiting(); }
+        ~SafeQueue() { stop_waiting(); }
 
         /**
          * @brief inserts element at the end of queue
@@ -52,23 +51,23 @@ namespace qtransport {
          * @return True if successfully pushed, false if not.  The cause for false is
          * that the queue is full.
          */
-        bool Push(T const& elem)
+        bool push(T const& elem)
         {
             bool rval = true;
 
-            std::lock_guard<std::mutex> _(mutex_);
+            std::lock_guard<std::mutex> _(_mutex);
 
-            if (queue_.empty()) {
-                cv_.notify_one();
-                empty_ = false;
+            if (_queue.empty()) {
+                _cv.notify_one();
+                _empty = false;
             }
 
-            else if (queue_.size() >= limit_) { // Make room by removing first element
-                queue_.pop();
+            else if (_queue.size() >= _limit) { // Make room by removing first element
+                _queue.pop();
                 rval = false;
             }
 
-            queue_.push(elem);
+            _queue.push(elem);
 
             return rval;
         }
@@ -78,10 +77,10 @@ namespace qtransport {
          *
          * @return std::nullopt if queue is empty, otherwise reference to object
          */
-        std::optional<T> Pop()
+        std::optional<T> pop()
         {
-            std::lock_guard<std::mutex> _(mutex_);
-            return PopInternal();
+            std::lock_guard<std::mutex> _(_mutex);
+            return pop_internal();
         }
 
         /**
@@ -89,26 +88,26 @@ namespace qtransport {
          *
          * @return std::nullopt if queue is empty, otherwise reference to object
          */
-        std::optional<T> Front()
+        std::optional<T> front()
         {
-            std::lock_guard<std::mutex> _(mutex_);
+            std::lock_guard<std::mutex> _(_mutex);
 
-            if (queue_.empty()) {
+            if (_queue.empty()) {
                 return std::nullopt;
             }
 
-            return queue_.front();
+            return _queue.front();
         }
 
         /**
          * @brief Remove (aka pop) the first object from queue
          *
          */
-        void PopFront()
+        void pop_front()
         {
-            std::lock_guard<std::mutex> _(mutex_);
+            std::lock_guard<std::mutex> _(_mutex);
 
-            PopFrontInternal();
+            pop_front_internal();
         }
 
         /**
@@ -121,16 +120,16 @@ namespace qtransport {
          *
          * @return std::nullopt if queue is empty, otherwise reference to object
          */
-        std::optional<T> BlockPop()
+        std::optional<T> block_pop()
         {
-            std::unique_lock<std::mutex> lock(mutex_);
-            cv_.wait(lock, [&]() { return (stop_waiting_ || (queue_.size() > 0)); });
+            std::unique_lock<std::mutex> lock(_mutex);
+            _cv.wait(lock, [&]() { return (_stop_waiting || (_queue.size() > 0)); });
 
-            if (stop_waiting_) {
+            if (_stop_waiting) {
                 return std::nullopt;
             }
 
-            return PopInternal();
+            return pop_internal();
         }
 
         /**
@@ -138,20 +137,20 @@ namespace qtransport {
          *
          * @return size of the queue
          */
-        size_t Size()
+        size_t size()
         {
-            std::lock_guard<std::mutex> _(mutex_);
-            return queue_.size();
+            std::lock_guard<std::mutex> _(_mutex);
+            return _queue.size();
         }
 
         /**
          * @brief Clear the queue
          */
-        void Clear()
+        void clear()
         {
-            std::lock_guard<std::mutex> _(mutex_);
+            std::lock_guard<std::mutex> _(_mutex);
             std::queue<T> empty;
-            std::swap(queue_, empty);
+            std::swap(_queue, empty);
         }
 
         /**
@@ -159,24 +158,24 @@ namespace qtransport {
          *
          * @returns True if empty, false if not
          */
-        bool Empty() const { return empty_; }
+        bool empty() const { return _empty; }
 
         /**
          * @brief Put the queue in a state such that threads will not wait
          *
          * @return Nothing
          */
-        void StopWaiting()
+        void stop_waiting()
         {
-            std::lock_guard<std::mutex> _(mutex_);
-            stop_waiting_ = true;
-            cv_.notify_all();
+            std::lock_guard<std::mutex> _(_mutex);
+            _stop_waiting = true;
+            _cv.notify_all();
         }
 
-        void SetLimit(uint32_t limit)
+        void set_limit(uint32_t limit)
         {
-            std::lock_guard<std::mutex> _(mutex_);
-            limit_ = limit;
+            std::lock_guard<std::mutex> _(_mutex);
+            _limit = limit;
         }
 
       private:
@@ -187,18 +186,18 @@ namespace qtransport {
          *
          * @details The mutex must be locked by the caller
          */
-        std::optional<T> PopInternal()
+        std::optional<T> pop_internal()
         {
-            if (queue_.empty()) {
-                empty_ = true;
+            if (_queue.empty()) {
+                _empty = true;
                 return std::nullopt;
             }
 
-            auto elem = queue_.front();
-            queue_.pop();
+            auto elem = _queue.front();
+            _queue.pop();
 
-            if (queue_.empty()) {
-                empty_ = true;
+            if (_queue.empty()) {
+                _empty = true;
             }
 
             return elem;
@@ -209,26 +208,26 @@ namespace qtransport {
          *
          * @details The mutex must be locked by the caller
          */
-        void PopFrontInternal()
+        void pop_front_internal()
         {
-            if (queue_.empty()) {
-                empty_ = true;
+            if (_queue.empty()) {
+                _empty = true;
                 return;
             }
 
-            queue_.pop();
+            _queue.pop();
 
-            if (queue_.empty()) {
-                empty_ = true;
+            if (_queue.empty()) {
+                _empty = true;
             }
         }
 
-        std::atomic<bool> empty_{ true };
-        bool stop_waiting_;          // Instruct threads to stop waiting
-        uint32_t limit_;             // Limit of number of messages in queue
-        std::condition_variable cv_; // Signaling for thread syncronization
-        std::mutex mutex_;           // read/write lock
-        std::queue<T> queue_;        // Queue
+        std::atomic<bool> _empty{ true };
+        bool _stop_waiting;          // Instruct threads to stop waiting
+        uint32_t _limit;             // Limit of number of messages in queue
+        std::condition_variable _cv; // Signaling for thread syncronization
+        std::mutex _mutex;           // read/write lock
+        std::queue<T> _queue;        // Queue
     };
 
 } /* namespace qtransport */

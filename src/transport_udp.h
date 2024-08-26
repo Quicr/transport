@@ -1,12 +1,6 @@
 
 #pragma once
 
-#include <netinet/in.h>
-#include <spdlog/spdlog.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <transport/transport.h>
-
 #include <array>
 #include <cassert>
 #include <cstdint>
@@ -17,14 +11,21 @@
 #include <thread>
 #include <vector>
 
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+
+#include <spdlog/spdlog.h>
+#include <transport/transport.h>
+
 #include "transport/priority_queue.h"
 #include "transport/safe_queue.h"
 #include "transport/transport_metrics.h"
 #include "transport_udp_protocol.h"
 
 namespace qtransport {
-    constexpr size_t kUdpMaxPacketSize = 64000;
-    constexpr size_t kUdpMinKbps = 62; /// Minimum KB bytes per second 62 = 500Kbps
+    constexpr size_t UDP_MAX_PACKET_SIZE = 64000;
+    constexpr size_t UDP_MIN_KBPS = 62; /// Minimum KB bytes per second 62 = 500Kbps
 
     struct AddrId
     {
@@ -53,28 +54,28 @@ namespace qtransport {
         UDPTransport(const TransportRemote& server,
                      const TransportConfig& tcfg,
                      TransportDelegate& delegate,
-                     bool is_server_mode,
+                     bool isServerMode,
                      std::shared_ptr<spdlog::logger> logger);
 
         virtual ~UDPTransport();
 
-        TransportStatus Status() const override;
+        TransportStatus status() const override;
 
-        TransportConnId Start(std::shared_ptr<SafeQueue<MetricsConnSample>> metrics_conn_samples,
+        TransportConnId start(std::shared_ptr<SafeQueue<MetricsConnSample>> metrics_conn_samples,
                               std::shared_ptr<SafeQueue<MetricsDataSample>> metrics_data_samples) override;
 
-        void Close(const TransportConnId& conn_id, uint64_t app_reason_code = 0) override;
+        void close(const TransportConnId& conn_id, uint64_t app_reason_code = 0) override;
 
-        virtual bool GetPeerAddrInfo(const TransportConnId& conn_id, sockaddr_storage* addr) override;
+        virtual bool getPeerAddrInfo(const TransportConnId& conn_id, sockaddr_storage* addr) override;
 
-        DataContextId CreateDataContext(TransportConnId conn_id,
+        DataContextId createDataContext(TransportConnId conn_id,
                                         bool use_reliable_transport,
                                         uint8_t priority,
                                         bool bidir) override;
 
-        void DeleteDataContext(const TransportConnId& conn_id, DataContextId data_ctx_id) override;
+        void deleteDataContext(const TransportConnId& conn_id, DataContextId data_ctx_id) override;
 
-        TransportError Enqueue(const TransportConnId& conn_id,
+        TransportError enqueue(const TransportConnId& conn_id,
                                const DataContextId& data_ctx_id,
                                std::vector<uint8_t>&& bytes,
                                std::vector<qtransport::MethodTraceItem>&& trace,
@@ -83,43 +84,43 @@ namespace qtransport {
                                uint32_t delay_ms,
                                EnqueueFlags flags) override;
 
-        std::optional<std::vector<uint8_t>> Dequeue(TransportConnId conn_id,
+        std::optional<std::vector<uint8_t>> dequeue(TransportConnId conn_id,
                                                     std::optional<DataContextId> data_ctx_id) override;
 
-        std::shared_ptr<StreamBuffer<uint8_t>> GetStreamBuffer(TransportConnId conn_id, uint64_t stream_id) override
+        std::shared_ptr<StreamBuffer<uint8_t>> getStreamBuffer(TransportConnId conn_id, uint64_t stream_id) override
         {
             return nullptr;
         }
 
-        void SetRemoteDataCtxId(TransportConnId conn_id,
+        void setRemoteDataCtxId(TransportConnId conn_id,
                                 DataContextId data_ctx_id,
                                 DataContextId remote_data_ctx_id) override;
 
-        void SetStreamIdDataCtxId([[maybe_unused]] const TransportConnId conn_id,
+        void setStreamIdDataCtxId([[maybe_unused]] const TransportConnId conn_id,
                                   [[maybe_unused]] DataContextId data_ctx_id,
                                   [[maybe_unused]] uint64_t stream_id) override
         {
         }
 
-        void SetDataCtxPriority([[maybe_unused]] const TransportConnId conn_id,
+        void setDataCtxPriority([[maybe_unused]] const TransportConnId conn_id,
                                 [[maybe_unused]] DataContextId data_ctx_id,
                                 [[maybe_unused]] uint8_t priority) override
         {
         }
 
       private:
-        TransportConnId ConnectClient();
-        TransportConnId ConnectServer();
+        TransportConnId connect_client();
+        TransportConnId connect_server();
 
-        TransportRemote CreateAddrRemote(const sockaddr_storage& addr);
-        AddrId CreateAddrId(const sockaddr_storage& addr);
+        TransportRemote create_addr_remote(const sockaddr_storage& addr);
+        AddrId create_addr_id(const sockaddr_storage& addr);
 
         /* Threads */
-        void FdReader();
-        void FdWriter();
+        void fd_reader();
+        void fd_writer();
 
-        std::atomic<bool> stop_;
-        std::vector<std::thread> running_threads_;
+        std::atomic<bool> _stop;
+        std::vector<std::thread> _running_threads;
 
         struct Addr
         {
@@ -140,7 +141,7 @@ namespace qtransport {
             uint8_t priority{ 10 };
 
             DataContextId remote_data_ctx_id{ 0 }; /// Remote data context ID to use for this context
-            UintVT remote_data_ctx_id_v{ 0 };      /// Remote data context ID as variable length integer
+            uintV_t remote_data_ctx_id_V{ 0 };     /// Remote data context ID as variable length integer
 
             UdpDataContextMetrics metrics;
 
@@ -158,7 +159,7 @@ namespace qtransport {
 
             UdpConnectionMetrics metrics;
 
-            TransportStatus status{ TransportStatus::kDisconnected };
+            TransportStatus status{ TransportStatus::Disconnected };
             std::unique_ptr<PriorityQueue<ConnData>> tx_data; // TX priority queue
 
             uint64_t last_rx_msg_tick{ 0 }; /// Tick value (ms) when last message was received
@@ -184,11 +185,11 @@ namespace qtransport {
             uint64_t tx_report_start_tick{ 0 };    // Tick value on report change (new report interval)
             uint64_t tx_next_report_tick{ 0 };     // Tick value to start a new report ID
 
-            udp_protocol::ReportMessage report; // Report to be sent back to sender upon received tx_report_id change
+            UdpProtocol::ReportMessage report;  // Report to be sent back to sender upon received tx_report_id change
             uint64_t report_rx_start_tick{ 0 }; // Tick value at start of the RX report interval
 
-            udp_protocol::ReportMetrics tx_report_metrics;
-            std::array<udp_protocol::ReportMessage, 5> tx_prev_reports;
+            UdpProtocol::ReportMetrics tx_report_metrics;
+            std::array<UdpProtocol::ReportMessage, 5> tx_prev_reports;
 
             /*
              * Shaping variables
@@ -200,14 +201,14 @@ namespace qtransport {
 
             double bytes_per_us{ 6.4 }; // Default to 50Mbps
 
-            bool SetKBps(uint32_t k_bps, bool max_of = false)
+            bool set_KBps(uint32_t KBps, bool max_of = false)
             {
-                if (k_bps < kUdpMinKbps)
+                if (KBps < UDP_MIN_KBPS)
                     return false;
 
-                const auto bp_us = (k_bps * 1024) / 1'000'000.0 /* 1 second double value */;
-                if (!max_of || bp_us > bytes_per_us) {
-                    bytes_per_us = bp_us;
+                const auto bpUs = (KBps * 1024) / 1'000'000.0 /* 1 second double value */;
+                if (!max_of || bpUs > bytes_per_us) {
+                    bytes_per_us = bpUs;
                     return true;
                 }
 
@@ -224,7 +225,7 @@ namespace qtransport {
          *
          * @return True if sent, false if not sent/error
          */
-        bool SendConnect(TransportConnId conn_id, const Addr& addr);
+        bool send_connect(TransportConnId conn_id, const Addr& addr);
 
         /**
          * @brief Send UDP protocol connect OK message
@@ -234,7 +235,7 @@ namespace qtransport {
          *
          * @return True if sent, false if not sent/error
          */
-        bool SendConnectOk(TransportConnId conn_id, const Addr& addr);
+        bool send_connect_ok(TransportConnId conn_id, const Addr& addr);
 
         /**
          * @brief Send UDP protocol disconnect message
@@ -244,7 +245,7 @@ namespace qtransport {
          *
          * @return True if sent, false if not sent/error
          */
-        bool SendDisconnect(TransportConnId conn_id, const Addr& addr);
+        bool send_disconnect(TransportConnId conn_id, const Addr& addr);
 
         /**
          * @brief Send UDP protocol keepalive message
@@ -253,7 +254,7 @@ namespace qtransport {
          *
          * @return True if sent, false if not sent/error
          */
-        bool SendKeepalive(ConnectionContext& conn);
+        bool send_keepalive(ConnectionContext& conn);
 
         /**
          * @brief Send UDP protocol data message
@@ -267,7 +268,7 @@ namespace qtransport {
          *
          * @return True if sent, false if not sent/error
          */
-        bool SendData(ConnectionContext& conn, DataContext& data_ctx, const ConnData& cd, bool discard = false);
+        bool send_data(ConnectionContext& conn, DataContext& data_ctx, const ConnData& cd, bool discard = false);
 
         /**
          * @brief Send UDP protocol report message
@@ -278,27 +279,27 @@ namespace qtransport {
          *
          * @return True if sent, false if not sent/error
          */
-        bool SendReport(ConnectionContext& conn);
+        bool send_report(ConnectionContext& conn);
 
-        std::shared_ptr<spdlog::logger> logger_;
-        int fd_; // UDP socket
-        bool isServerMode_;
+        std::shared_ptr<spdlog::logger> _logger;
+        int _fd; // UDP socket
+        bool _isServerMode;
 
-        std::atomic<TransportStatus> clientStatus_{ TransportStatus::kDisconnected };
+        std::atomic<TransportStatus> _clientStatus{ TransportStatus::Disconnected };
 
-        TransportRemote serverInfo_;
-        Addr serverAddr_;
-        TransportConfig tconfig_;
+        TransportRemote _serverInfo;
+        Addr _serverAddr;
+        TransportConfig _tconfig;
 
-        TransportDelegate& delegate_;
-        std::mutex writer_mutex_; /// Mutex for writer
-        std::mutex reader_mutex_; /// Mutex for reader
+        TransportDelegate& _delegate;
+        std::mutex _writer_mutex; /// Mutex for writer
+        std::mutex _reader_mutex; /// Mutex for reader
 
-        TransportConnId last_conn_id_{ 0 };
-        std::map<TransportConnId, std::shared_ptr<ConnectionContext>> conn_contexts_;
-        std::map<AddrId, std::shared_ptr<ConnectionContext>> addr_conn_contexts_;
+        TransportConnId _last_conn_id{ 0 };
+        std::map<TransportConnId, std::shared_ptr<ConnectionContext>> _conn_contexts;
+        std::map<AddrId, std::shared_ptr<ConnectionContext>> _addr_conn_contexts;
 
-        std::shared_ptr<TickService> tick_service_;
+        std::shared_ptr<TickService> _tick_service;
     };
 
 } // namespace qtransport

@@ -1,12 +1,5 @@
 #pragma once
 
-#include <spdlog/spdlog.h>
-#include <sys/socket.h>
-#include <transport/safe_queue.h>
-#include <transport/stream_buffer.h>
-#include <transport/transport_metrics.h>
-#include <transport/uintvar.h>
-
 #include <array>
 #include <chrono>
 #include <memory>
@@ -14,7 +7,14 @@
 #include <optional>
 #include <queue>
 #include <string>
+#include <sys/socket.h>
 #include <vector>
+
+#include <spdlog/spdlog.h>
+#include <transport/safe_queue.h>
+#include <transport/stream_buffer.h>
+#include <transport/transport_metrics.h>
+#include <transport/uintvar.h>
 
 namespace qtransport {
 
@@ -25,11 +25,11 @@ namespace qtransport {
      */
     enum class TransportStatus : uint8_t
     {
-        kReady = 0,
-        kConnecting,
-        kRemoteRequestClose,
-        kDisconnected,
-        kShutdown
+        Ready = 0,
+        Connecting,
+        RemoteRequestClose,
+        Disconnected,
+        Shutdown
     };
 
     /**
@@ -37,16 +37,16 @@ namespace qtransport {
      */
     enum class TransportError : uint8_t
     {
-        kNone = 0,
-        kQueueFull,
-        kUnknownError,
-        kPeerDisconnected,
-        kPeerUnreachable,
-        kCannotResolveHostname,
-        kInvalidConnContextId,
-        kInvalidDataContextId,
-        kInvalidIpv4Address,
-        kInvalidIpv6Address
+        None = 0,
+        QueueFull,
+        UnknownError,
+        PeerDisconnected,
+        PeerUnreachable,
+        CannotResolveHostname,
+        InvalidConnContextId,
+        InvalidDataContextId,
+        InvalidIpv4Address,
+        InvalidIpv6Address
     };
 
     /**
@@ -54,8 +54,8 @@ namespace qtransport {
      */
     enum class TransportProtocol : uint8_t
     {
-        kUdp = 0,
-        kQuic
+        UDP = 0,
+        QUIC
     };
 
     /**
@@ -85,8 +85,8 @@ namespace qtransport {
         uint64_t quic_cwin_minimum{ 131072 };        /// QUIC congestion control minimum size (default is 128k)
         uint32_t quic_wifi_shadow_rtt_us{ 20000 };   /// QUIC wifi shadow RTT in microseconds
 
-        uint64_t pacing_decrease_threshold_bps{ 16000 }; /// QUIC pacing rate decrease threshold for notification in Bps
-        uint64_t pacing_increase_threshold_bps{ 16000 }; /// QUIC pacing rate increase threshold for notification in Bps
+        uint64_t pacing_decrease_threshold_Bps{ 16000 }; /// QUIC pacing rate decrease threshold for notification in Bps
+        uint64_t pacing_increase_threshold_Bps{ 16000 }; /// QUIC pacing rate increase threshold for notification in Bps
 
         uint64_t idle_timeout_ms{ 30000 };     /// Idle timeout for transport connection(s) in milliseconds
         bool use_reset_wait_strategy{ false }; /// Use Reset and wait strategy for congestion control
@@ -95,13 +95,13 @@ namespace qtransport {
         uint8_t quic_priority_limit{ 0 };      /// Lowest priority that will not be bypassed from pacing/CC in picoquic
     };
 
-    using TimeStampUs = std::chrono::time_point<std::chrono::steady_clock, std::chrono::microseconds>;
+    using time_stamp_us = std::chrono::time_point<std::chrono::steady_clock, std::chrono::microseconds>;
 
     struct MethodTraceItem
     {
-        std::string method;     /// Name of the method
-        TimeStampUs start_time; /// Original start time of the call
-        uint32_t delta;         /// Delta is calculated based on start_time and now time of constructor
+        std::string method;       /// Name of the method
+        time_stamp_us start_time; /// Original start time of the call
+        uint32_t delta;           /// Delta is calculated based on start_time and now time of constructor
 
         MethodTraceItem()
           : method("root")
@@ -110,7 +110,7 @@ namespace qtransport {
         {
         }
 
-        MethodTraceItem(const std::string& method, const TimeStampUs start_time)
+        MethodTraceItem(const std::string& method, const time_stamp_us start_time)
           : method(method)
           , start_time(start_time)
         {
@@ -166,7 +166,7 @@ namespace qtransport {
              * @param[in] conn_id           Transport context Id
              * @param[in] status 	    Transport Status value
              */
-            virtual void OnConnectionStatus(const TransportConnId& conn_id, TransportStatus status) = 0;
+            virtual void on_connection_status(const TransportConnId& conn_id, TransportStatus status) = 0;
 
             /**
              * @brief Report arrival of a new connection
@@ -177,7 +177,7 @@ namespace qtransport {
              * @param[in] conn_id	Transport context identifier mapped to the connection
              * @param[in] remote	Transport information for the connection
              */
-            virtual void OnNewConnection(const TransportConnId& conn_id, const TransportRemote& remote) = 0;
+            virtual void on_new_connection(const TransportConnId& conn_id, const TransportRemote& remote) = 0;
 
             /**
              * @brief Report a new data context created
@@ -189,7 +189,7 @@ namespace qtransport {
              * @param[in] conn_id	Transport context identifier mapped to the connection
              * @param[in] data_ctx_id	Data context id for a new data context received by the transport
              */
-            virtual void OnNewDataContext(const TransportConnId& conn_id, const DataContextId& data_ctx_id) = 0;
+            virtual void on_new_data_context(const TransportConnId& conn_id, const DataContextId& data_ctx_id) = 0;
 
             /**
              * @brief callback notification that data has been received and should be processed
@@ -197,7 +197,7 @@ namespace qtransport {
              * @param[in] conn_id 	Transport context identifier mapped to the connection
              * @param[in] data_ctx_id	If known, Data context id that the data was received on
              */
-            virtual void OnRecvDgram(const TransportConnId& conn_id, std::optional<DataContextId> data_ctx_id) = 0;
+            virtual void on_recv_dgram(const TransportConnId& conn_id, std::optional<DataContextId> data_ctx_id) = 0;
 
             /**
              * @brief callback notification that data has been received and should be processed
@@ -207,10 +207,10 @@ namespace qtransport {
              * @param[in] data_ctx_id	If known, Data context id that the data was received on
              * @param[in] is_bidir      True if the message is from a bidirectional stream
              */
-            virtual void OnRecvStream(const TransportConnId& conn_id,
-                                      uint64_t stream_id,
-                                      std::optional<DataContextId> data_ctx_id,
-                                      bool is_bidir = false) = 0;
+            virtual void on_recv_stream(const TransportConnId& conn_id,
+                                        uint64_t stream_id,
+                                        std::optional<DataContextId> data_ctx_id,
+                                        bool is_bidir = false) = 0;
         };
 
         /* Factory APIs */
@@ -225,10 +225,10 @@ namespace qtransport {
          *
          * @return shared_ptr for the under lining transport.
          */
-        static std::shared_ptr<ITransport> MakeClientTransport(const TransportRemote& server,
-                                                               const TransportConfig& tcfg,
-                                                               TransportDelegate& delegate,
-                                                               std::shared_ptr<spdlog::logger> logger);
+        static std::shared_ptr<ITransport> make_client_transport(const TransportRemote& server,
+                                                                 const TransportConfig& tcfg,
+                                                                 TransportDelegate& delegate,
+                                                                 std::shared_ptr<spdlog::logger> logger);
 
         /**
          * @brief Create a new server transport based on the remote (server) ip and
@@ -241,10 +241,10 @@ namespace qtransport {
          *
          * @return shared_ptr for the under lining transport.
          */
-        static std::shared_ptr<ITransport> MakeServerTransport(const TransportRemote& server,
-                                                               const TransportConfig& tcfg,
-                                                               TransportDelegate& delegate,
-                                                               std::shared_ptr<spdlog::logger> logger);
+        static std::shared_ptr<ITransport> make_server_transport(const TransportRemote& server,
+                                                                 const TransportConfig& tcfg,
+                                                                 TransportDelegate& delegate,
+                                                                 std::shared_ptr<spdlog::logger> logger);
 
       public:
         virtual ~ITransport() = default;
@@ -256,7 +256,7 @@ namespace qtransport {
          * will reflect the status of the listening socket. In client mode it will
          * reflect the status of the server connection.
          */
-        virtual TransportStatus Status() const = 0;
+        virtual TransportStatus status() const = 0;
 
         /**
          * @brief Setup the transport connection
@@ -270,7 +270,7 @@ namespace qtransport {
          *
          * @return TransportContextId: identifying the connection
          */
-        virtual TransportConnId Start(std::shared_ptr<SafeQueue<MetricsConnSample>> metrics_conn_samples,
+        virtual TransportConnId start(std::shared_ptr<SafeQueue<MetricsConnSample>> metrics_conn_samples,
                                       std::shared_ptr<SafeQueue<MetricsDataSample>> metrics_data_samples) = 0;
 
         /**
@@ -286,7 +286,7 @@ namespace qtransport {
          *
          * @return DataContextId identifying the data context via the connection
          */
-        virtual DataContextId CreateDataContext(TransportConnId conn_id,
+        virtual DataContextId createDataContext(TransportConnId conn_id,
                                                 bool use_reliable_transport,
                                                 uint8_t priority = 1,
                                                 bool bidir = false) = 0;
@@ -297,7 +297,7 @@ namespace qtransport {
          * @param conn_id           Connection ID to close
          * @param app_reason_code   Application reason code to use when closing QUIC connnection
          */
-        virtual void Close(const TransportConnId& conn_id, uint64_t app_reason_code = 0) = 0;
+        virtual void close(const TransportConnId& conn_id, uint64_t app_reason_code = 0) = 0;
 
         /**
          * @brief Delete data context
@@ -307,7 +307,7 @@ namespace qtransport {
          * @param[in] conn_id                 Connection ID to create data context
          * @param[in] data_ctx_id             Data context ID to delete
          */
-        virtual void DeleteDataContext(const TransportConnId& conn_id, DataContextId data_ctx_id) = 0;
+        virtual void deleteDataContext(const TransportConnId& conn_id, DataContextId data_ctx_id) = 0;
 
         /**
          * @brief Get the peer IP address and port associated with the stream
@@ -317,7 +317,7 @@ namespace qtransport {
          *
          * @returns True if the address was successfully returned, false otherwise
          */
-        virtual bool GetPeerAddrInfo(const TransportConnId& context_id, sockaddr_storage* addr) = 0;
+        virtual bool getPeerAddrInfo(const TransportConnId& context_id, sockaddr_storage* addr) = 0;
 
         /**
          * @brief Set the data context id for RX unidir stream id
@@ -326,7 +326,7 @@ namespace qtransport {
          * @param data_ctx_id             Local data context ID
          * @param stream_id               RX stream ID
          */
-        virtual void SetStreamIdDataCtxId(TransportConnId conn_id, DataContextId data_ctx_id, uint64_t stream_id) = 0;
+        virtual void setStreamIdDataCtxId(TransportConnId conn_id, DataContextId data_ctx_id, uint64_t stream_id) = 0;
 
         /**
          * @brief Set/update prioirty for the data context
@@ -335,7 +335,7 @@ namespace qtransport {
          * @param data_ctx_id             Local data context ID
          * @param priority                Priority for data context stream, range should be 0 - 255
          */
-        virtual void SetDataCtxPriority(TransportConnId conn_id, DataContextId data_ctx_id, uint8_t priority) = 0;
+        virtual void setDataCtxPriority(TransportConnId conn_id, DataContextId data_ctx_id, uint8_t priority) = 0;
 
         /**
          * @brief Set the remote data context id
@@ -345,7 +345,7 @@ namespace qtransport {
          * @param data_ctx_id              Local data context ID
          * @param remote_data_ctx_id       Remote data context ID (learned via subscribe/publish)
          */
-        virtual void SetRemoteDataCtxId(TransportConnId conn_id,
+        virtual void setRemoteDataCtxId(TransportConnId conn_id,
                                         DataContextId data_ctx_id,
                                         DataContextId remote_data_ctx_id) = 0;
 
@@ -377,7 +377,7 @@ namespace qtransport {
          *
          * @returns TransportError is returned indicating status of the operation
          */
-        virtual TransportError Enqueue(const TransportConnId& context_id,
+        virtual TransportError enqueue(const TransportConnId& context_id,
                                        const DataContextId& data_ctx_id,
                                        std::vector<uint8_t>&& bytes,
                                        std::vector<MethodTraceItem>&& trace = { MethodTraceItem{} },
@@ -397,7 +397,7 @@ namespace qtransport {
          *
          * @returns std::nullopt if there is no data
          */
-        virtual std::optional<std::vector<uint8_t>> Dequeue(TransportConnId conn_id,
+        virtual std::optional<std::vector<uint8_t>> dequeue(TransportConnId conn_id,
                                                             std::optional<DataContextId> data_ctx_id) = 0;
 
         /**
@@ -406,7 +406,7 @@ namespace qtransport {
          * @param[in] conn_id		        Identifying the connection
          * @param[in] stream_id               Stream ID of stream buffer
          */
-        virtual std::shared_ptr<StreamBuffer<uint8_t>> GetStreamBuffer(TransportConnId conn_id, uint64_t stream_id) = 0;
+        virtual std::shared_ptr<StreamBuffer<uint8_t>> getStreamBuffer(TransportConnId conn_id, uint64_t stream_id) = 0;
 
         /// Metrics samples to be written to TSDB. When full the buffer will remove the oldest
         std::shared_ptr<SafeQueue<MetricsConnSample>> metrics_conn_samples;

@@ -16,17 +16,17 @@ Object::process(TransportConnId conn_id, std::optional<DataContextId> data_ctx_i
         return;
 
     if (prev_msg_num && ((*msg_num - prev_msg_num) > 1 || (*msg_num - prev_msg_num) < 0)) {
-        SPDLOG_LOGGER_INFO(logger,
-                           "GAP: conn_id: {0} data_ctx_id: {1} msg_len: {2} length: {3} RecvMsg ({4}) msg_num: {5} "
-                           "prev_num: {6} ({7})",
-                           conn_id,
-                           (data_ctx_id ? *data_ctx_id : 0),
-                           *msg_len,
-                           obj.size(),
-                           msgcount,
-                           *msg_num,
-                           prev_msg_num,
-                           *msg_num - prev_msg_num);
+        SPDLOG_LOGGER_INFO(
+          logger,
+          "GAP: conn_id: {0} data_ctx_id: {1} msg_len: {2} length: {3} RecvMsg ({4}) msg_num: {5} prev_num: {6} ({7})",
+          conn_id,
+          (data_ctx_id ? *data_ctx_id : 0),
+          *msg_len,
+          obj.size(),
+          msgcount,
+          *msg_num,
+          prev_msg_num,
+          *msg_num - prev_msg_num);
     }
 
     if (*msg_num % 2000 == 0) {
