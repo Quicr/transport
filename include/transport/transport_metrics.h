@@ -14,15 +14,15 @@ namespace qtransport {
         uint64_t max{ 0 }; /// Maximum value in period
         uint64_t avg{ 0 }; /// Average value in period
 
-        uint64_t _value_sum{ 0 };   /// Accumulating sum of values in period
-        uint64_t _value_count{ 0 }; /// Number of values in period
+        uint64_t value_sum{ 0 };   /// Accumulating sum of values in period
+        uint64_t value_count{ 0 }; /// Number of values in period
 
 #if __cplusplus >= 202002L
         constexpr auto operator<=>(const MinMaxAvg&) const = default;
 #else
         constexpr bool operator==(const MinMaxAvg& other) const
         {
-            return min == other.min && max == other.max && avg == other.avg && _value_sum == other._value_sum;
+            return min == other.min && max == other.max && avg == other.avg && value_sum == other.value_sum;
         }
         constexpr bool operator!=(const MinMaxAvg& other) const { return !(*this == other); }
 #endif
@@ -34,27 +34,27 @@ namespace qtransport {
          *
          * @param value           The value to add.
          */
-        void addValue(const uint64_t value)
+        void AddValue(const uint64_t value)
         {
             min = min ? std::min(min, value) : value;
             max = std::max(max, value);
 
-            _value_sum += value;
-            _value_count++;
+            value_sum += value;
+            value_count++;
 
-            if (!_value_count)
-                _value_count = 1;
+            if (!value_count)
+                value_count = 1;
 
-            avg = _value_sum / _value_count;
+            avg = value_sum / value_count;
         }
 
-        void clear()
+        void Clear()
         {
             min = 0;
             max = 0;
             avg = 0;
-            _value_sum = 0;
-            _value_count = 0;
+            value_sum = 0;
+            value_count = 0;
         }
     };
 
@@ -63,9 +63,9 @@ namespace qtransport {
      */
     struct QuicConnectionMetrics
     {
-        uint64_t cwin_congested{ 0 };       /// CC: Number of times CWIN is low or zero (congested)
-        uint64_t _prev_cwin_congested{ 0 }; /// Previous number of times CWIN is congested
-        uint64_t tx_congested{ 0 };         /// count of times transmit connection is considered congested
+        uint64_t cwin_congested{ 0 };      /// CC: Number of times CWIN is low or zero (congested)
+        uint64_t prev_cwin_congested{ 0 }; /// Previous number of times CWIN is congested
+        uint64_t tx_congested{ 0 };        /// count of times transmit connection is considered congested
 
         MinMaxAvg tx_rate_bps;         /// Rate in bits per second in period
         MinMaxAvg rx_rate_bps;         /// Estimated rate in bits per second in period
@@ -94,9 +94,9 @@ namespace qtransport {
         constexpr bool operator==(const QuicConnectionMetrics& other) const
         {
             return this->cwin_congested == other.cwin_congested &&
-                   this->_prev_cwin_congested == other._prev_cwin_congested &&
-                   this->tx_congested == other.tx_congested && this->tx_rate_bps == other.tx_rate_bps &&
-                   this->rx_rate_bps == other.rx_rate_bps && this->tx_cwin_bytes == other.tx_cwin_bytes &&
+                   this->prev_cwin_congested == other.prev_cwin_congested && this->tx_congested == other.tx_congested &&
+                   this->tx_rate_bps == other.tx_rate_bps && this->rx_rate_bps == other.rx_rate_bps &&
+                   this->tx_cwin_bytes == other.tx_cwin_bytes &&
                    this->tx_in_transit_bytes == other.tx_in_transit_bytes && this->rtt_us == other.rtt_us &&
                    this->srtt_us == other.srtt_us && this->tx_retransmits == other.tx_retransmits &&
                    this->tx_lost_pkts == other.tx_lost_pkts && this->tx_timer_losses == other.tx_timer_losses &&
@@ -111,14 +111,14 @@ namespace qtransport {
         /**
          * @brief Reset metrics for period
          */
-        void resetPeriod()
+        void ResetPeriod()
         {
-            tx_rate_bps.clear();
-            rx_rate_bps.clear();
-            tx_cwin_bytes.clear();
-            tx_in_transit_bytes.clear();
-            rtt_us.clear();
-            srtt_us.clear();
+            tx_rate_bps.Clear();
+            rx_rate_bps.Clear();
+            tx_cwin_bytes.Clear();
+            tx_in_transit_bytes.Clear();
+            rtt_us.Clear();
+            srtt_us.Clear();
         }
     };
 
@@ -133,12 +133,12 @@ namespace qtransport {
         uint64_t tx_queue_discards{ 0 }; /// count of objects discarded due to TTL expiry or clear
         uint64_t tx_queue_expired{ 0 };  /// count of objects expired before pop/front
 
-        uint64_t tx_delayed_callback{ 0 };       /// Count of times transmit callbacks were delayed
-        uint64_t _prev_tx_delayed_callback{ 0 }; /// Previous transmit delayed callback value, set each interval
-        uint64_t tx_reset_wait{ 0 };             /// count of times data context performed a reset and wait
-        MinMaxAvg tx_queue_size;                 /// TX queue size in period
-        MinMaxAvg tx_callback_ms;                /// Callback time in milliseconds in period
-        MinMaxAvg tx_object_duration_us;         /// TX object time in queue duration in microseconds
+        uint64_t tx_delayed_callback{ 0 };      /// Count of times transmit callbacks were delayed
+        uint64_t prev_tx_delayed_callback{ 0 }; /// Previous transmit delayed callback value, set each interval
+        uint64_t tx_reset_wait{ 0 };            /// count of times data context performed a reset and wait
+        MinMaxAvg tx_queue_size;                /// TX queue size in period
+        MinMaxAvg tx_callback_ms;               /// Callback time in milliseconds in period
+        MinMaxAvg tx_object_duration_us;        /// TX object time in queue duration in microseconds
 
         uint64_t tx_dgrams{ 0 };       /// count of datagrams sent
         uint64_t tx_dgrams_bytes{ 0 }; /// count of datagrams sent bytes
@@ -157,7 +157,7 @@ namespace qtransport {
                    this->tx_queue_discards == other.tx_queue_discards &&
                    this->tx_queue_expired == other.tx_queue_expired &&
                    this->tx_delayed_callback == other.tx_delayed_callback &&
-                   this->_prev_tx_delayed_callback == other._prev_tx_delayed_callback &&
+                   this->prev_tx_delayed_callback == other.prev_tx_delayed_callback &&
                    this->tx_reset_wait == other.tx_reset_wait && this->tx_queue_size == other.tx_queue_size &&
                    this->tx_callback_ms == other.tx_callback_ms &&
                    this->tx_object_duration_us == other.tx_object_duration_us && this->tx_dgrams == other.tx_dgrams &&
@@ -170,11 +170,11 @@ namespace qtransport {
         /**
          * @brief Reset metrics for period
          */
-        void resetPeriod()
+        void ResetPeriod()
         {
-            tx_queue_size.clear();
-            tx_callback_ms.clear();
-            tx_object_duration_us.clear();
+            tx_queue_size.Clear();
+            tx_callback_ms.Clear();
+            tx_object_duration_us.Clear();
         }
     };
 
@@ -213,11 +213,11 @@ namespace qtransport {
         uint64_t tx_discard_objects{ 0 }; /// count of discard objects sent
     };
 
-    using time_stamp_us = std::chrono::time_point<std::chrono::steady_clock, std::chrono::microseconds>;
+    using TimeStampUs = std::chrono::time_point<std::chrono::steady_clock, std::chrono::microseconds>;
 
     struct MetricsConnSample
     {
-        time_stamp_us sample_time; /// Sample time
+        TimeStampUs sample_time;   /// Sample time
         uint64_t conn_ctx_id{ 0 }; /// Conn context ID
         std::optional<UdpConnectionMetrics> udp_sample;
         std::optional<QuicConnectionMetrics> quic_sample;
@@ -234,9 +234,7 @@ namespace qtransport {
         {
         }
 
-        MetricsConnSample(const time_stamp_us sample_time,
-                          const uint64_t conn_id,
-                          const UdpConnectionMetrics udp_sample)
+        MetricsConnSample(const TimeStampUs sample_time, const uint64_t conn_id, const UdpConnectionMetrics udp_sample)
           : sample_time(sample_time)
           , conn_ctx_id(conn_id)
           , udp_sample(udp_sample)
@@ -250,7 +248,7 @@ namespace qtransport {
         {
         }
 
-        MetricsConnSample(const time_stamp_us sample_time,
+        MetricsConnSample(const TimeStampUs sample_time,
                           const uint64_t conn_id,
                           const QuicConnectionMetrics quic_sample)
           : sample_time(sample_time)
@@ -262,7 +260,7 @@ namespace qtransport {
 
     struct MetricsDataSample
     {
-        time_stamp_us sample_time; /// Sample time
+        TimeStampUs sample_time;   /// Sample time
         uint64_t conn_ctx_id{ 0 }; /// Conn context ID
         uint64_t data_ctx_id{ 0 }; /// Data context ID
         std::optional<UdpDataContextMetrics> udp_sample;
@@ -281,7 +279,7 @@ namespace qtransport {
         {
         }
 
-        MetricsDataSample(const time_stamp_us sample_time,
+        MetricsDataSample(const TimeStampUs sample_time,
                           const uint64_t conn_id,
                           const uint64_t data_id,
                           const UdpDataContextMetrics udp_sample)
@@ -300,7 +298,7 @@ namespace qtransport {
         {
         }
 
-        MetricsDataSample(const time_stamp_us sample_time,
+        MetricsDataSample(const TimeStampUs sample_time,
                           const uint64_t conn_id,
                           const uint64_t data_id,
                           const QuicDataContextMetrics quic_sample)
@@ -312,7 +310,7 @@ namespace qtransport {
         }
     };
 
-    constexpr uint64_t METRICS_INTERVAL_US = 5'000'000; /// Metrics interval for samples in microseconds
-    constexpr size_t MAX_METRICS_SAMPLES_QUEUE = 500;   /// Max metric samples pending to be written
+    constexpr uint64_t kMetricsIntervalUs = 5'000'000; /// Metrics interval for samples in microseconds
+    constexpr size_t kMaxMetricsSamplesQueue = 500;    /// Max metric samples pending to be written
 
 } // end namespace qtransport

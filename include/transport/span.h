@@ -1,3 +1,5 @@
+// NOLINTBEGIN(readability-identifier-naming)
+
 #pragma once
 
 #if __cplusplus >= 202002L
@@ -336,3 +338,5 @@ Span(const std::array<T, N>&) -> Span<const T, N>;
 template<class R>
 Span(R&&) -> Span<std::remove_reference_t<decltype(*std::declval<decltype(std::begin(std::declval<R&>()))&>())>>;
 #endif
+
+// NOLINTEND(readability-identifier-naming)

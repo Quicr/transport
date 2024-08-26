@@ -13,12 +13,12 @@
  */
 
 namespace qtransport {
-    namespace UdpProtocol {
+    namespace udp_protocol {
         /* ------------------------------------------------------------------------
          * Wire messages
          * ------------------------------------------------------------------------
          */
-        constexpr uint8_t PROTOCOL_VERSION = 1;
+        constexpr uint8_t kProtocolVersion = 1;
 
         /**
          * @brief UDP Protocol Types
@@ -26,13 +26,13 @@ namespace qtransport {
          */
         enum class ProtocolType : uint8_t
         {
-            CONNECT = 0,
-            CONNECT_OK = 1,
-            DISCONNECT = 2,
-            REPORT = 3,
-            KEEPALIVE = 4,
+            kConnect = 0,
+            kConnectOk = 1,
+            kDisconnect = 2,
+            kReport = 3,
+            kKeepalive = 4,
 
-            DATA = 10,
+            kData = 10,
         };
 
         /**
@@ -41,7 +41,7 @@ namespace qtransport {
          */
         struct CommonHeader
         {
-            uint8_t version{ PROTOCOL_VERSION }; /// Protocol version
+            uint8_t version{ kProtocolVersion }; /// Protocol version
             ProtocolType type;                   /// Indicates this is a peering message
         };
 
@@ -53,7 +53,7 @@ namespace qtransport {
          */
         struct ConnectMsg : CommonHeader
         {
-            ConnectMsg() { type = ProtocolType::CONNECT; }
+            ConnectMsg() { type = ProtocolType::kConnect; }
 
             uint16_t idle_timeout{ 120 }; /// Idle timeout in seconds. Must not be zero
 
@@ -64,7 +64,7 @@ namespace qtransport {
          */
         struct ConnectOkMsg : CommonHeader
         {
-            ConnectOkMsg() { type = ProtocolType::CONNECT_OK; }
+            ConnectOkMsg() { type = ProtocolType::kConnectOk; }
         } __attribute__((__packed__, aligned(1)));
 
         /**
@@ -74,7 +74,7 @@ namespace qtransport {
          */
         struct DisconnectMsg : CommonHeader
         {
-            DisconnectMsg() { type = ProtocolType::DISCONNECT; }
+            DisconnectMsg() { type = ProtocolType::kDisconnect; }
         } __attribute__((__packed__, aligned(1)));
 
         /**
@@ -84,7 +84,7 @@ namespace qtransport {
          */
         struct KeepaliveMsg : CommonHeader
         {
-            KeepaliveMsg() { type = ProtocolType::KEEPALIVE; }
+            KeepaliveMsg() { type = ProtocolType::kKeepalive; }
 
             uint16_t ticks_ms{
                 0
@@ -101,7 +101,7 @@ namespace qtransport {
          */
         struct DataMsg : CommonHeader
         {
-            DataMsg() { type = ProtocolType::DATA; }
+            DataMsg() { type = ProtocolType::kData; }
 
             struct
             {
@@ -146,7 +146,7 @@ namespace qtransport {
          */
         struct ReportMessage : CommonHeader
         {
-            ReportMessage() { type = ProtocolType::REPORT; }
+            ReportMessage() { type = ProtocolType::kReport; }
 
             uint16_t report_id{ 0 }; /// Report ID of this report
             ReportMetrics metrics;
