@@ -1,11 +1,11 @@
+#include <spdlog/sinks/stdout_color_sinks.h>
+#include <spdlog/spdlog.h>
+#include <transport/transport.h>
+
 #include <iomanip>
 #include <iostream>
 #include <sstream>
 #include <thread>
-
-#include <transport/transport.h>
-#include <spdlog/spdlog.h>
-#include <spdlog/sinks/stdout_color_sinks.h>
 
 #include "object.h"
 
@@ -14,41 +14,30 @@ using namespace qtransport;
 bool done = false;
 using bytes = std::vector<uint8_t>;
 
-struct Delegate : public ITransport::TransportDelegate
-{
-  private:
+struct Delegate : public ITransport::TransportDelegate {
+   private:
     std::shared_ptr<ITransport> client;
     TransportConnId conn_id;
     std::shared_ptr<spdlog::logger> logger;
     Object _rx_object{logger};
 
-  public:
-    Delegate()
-      : logger(spdlog::stderr_color_mt("CDLG"))
-    {
-        conn_id = 0;
-    }
+   public:
+    Delegate() : logger(spdlog::stderr_color_mt("CDLG")) { conn_id = 0; }
 
-    void stop() {
-        client.reset();
-    }
+    void stop() { client.reset(); }
 
     void setClientTransport(std::shared_ptr<ITransport> client) { this->client = client; }
 
     TransportConnId getContextId() const { return conn_id; }
 
-    void OnConnectionStatus(const TransportConnId& conn_id, const TransportStatus status)
-    {
+    void OnConnectionStatus(const TransportConnId& conn_id, const TransportStatus status) {
         SPDLOG_LOGGER_INFO(logger, "Connection state change conn_id: {0}, {1}", conn_id, int(status));
     }
 
-    void OnNewConnection(const TransportConnId& , const TransportRemote&) {}
+    void OnNewConnection(const TransportConnId&, const TransportRemote&) {}
 
-    void OnRecvStream(const TransportConnId& conn_id,
-                        uint64_t stream_id,
-                        std::optional<DataContextId> data_ctx_id,
-                        [[maybe_unused]] const bool is_bidir)
-    {
+    void OnRecvStream(const TransportConnId& conn_id, uint64_t stream_id, std::optional<DataContextId> data_ctx_id,
+                      [[maybe_unused]] const bool is_bidir) {
         auto stream_buf = client->GetStreamBuffer(conn_id, stream_id);
 
         while (true) {
@@ -70,10 +59,8 @@ struct Delegate : public ITransport::TransportDelegate
         }
     }
 
-    void OnRecvDgram(const TransportConnId& conn_id,
-                       std::optional<DataContextId> data_ctx_id)
-    {
-        for (int i=0; i < 50; i++) {
+    void OnRecvDgram(const TransportConnId& conn_id, std::optional<DataContextId> data_ctx_id) {
+        for (int i = 0; i < 50; i++) {
             auto data = client->Dequeue(conn_id, data_ctx_id);
 
             if (data) {
@@ -88,31 +75,26 @@ struct Delegate : public ITransport::TransportDelegate
 auto logger = spdlog::stderr_color_mt("CLIENT");
 Delegate d;
 
-int
-main()
-{
+int main() {
     char* envVar;
 
     logger->set_level(spdlog::level::debug);
 
-    TransportRemote server = TransportRemote{ "127.0.0.1", 1234, TransportProtocol::kQuic };
+    TransportRemote server = TransportRemote{"127.0.0.1", 1234, TransportProtocol::kQuic};
 
-    TransportConfig tconfig{ .tls_cert_filename = "",
-                             .tls_key_filename = "",
-                             .time_queue_init_queue_size = 1000,
-                             .time_queue_max_duration = 1000,
-                             .time_queue_bucket_interval = 1,
-                             .debug = true };
+    TransportConfig tconfig{.tls_cert_filename = "",
+                            .tls_key_filename = "",
+                            .time_queue_init_queue_size = 1000,
+                            .time_queue_max_duration = 1000,
+                            .time_queue_bucket_interval = 1,
+                            .debug = true};
 
-    if ((envVar = getenv("RELAY_HOST")))
-        server.host_or_ip = envVar;
+    if ((envVar = getenv("RELAY_HOST"))) server.host_or_ip = envVar;
 
-    if ((envVar = getenv("RELAY_PORT")))
-        server.port = atoi(envVar);
+    if ((envVar = getenv("RELAY_PORT"))) server.port = atoi(envVar);
 
     bool bidir = false;
-    if (getenv("RELAY_UNIDIR"))
-        bidir = false;
+    if (getenv("RELAY_UNIDIR")) bidir = false;
 
     auto client = ITransport::MakeClientTransport(server, tconfig, d, logger);
 
@@ -137,7 +119,8 @@ main()
 
     int period_count = 0;
 
-    ITransport::EnqueueFlags encode_flags { .use_reliable = use_reliable, .new_stream = true, .clear_tx_queue = true, .use_reset = true};
+    ITransport::EnqueueFlags encode_flags{
+        .use_reliable = use_reliable, .new_stream = true, .clear_tx_queue = true, .use_reset = true};
 
     auto tx_object = Object(logger);
 
@@ -147,7 +130,8 @@ main()
             auto obj = tx_object.encode();
 
             std::vector<MethodTraceItem> trace;
-            const auto start_time = std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::steady_clock::now());
+            const auto start_time =
+                std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::steady_clock::now());
             trace.push_back({"client:publish", start_time});
 
             if (encode_flags.use_reliable) {
@@ -163,24 +147,15 @@ main()
                 }
             }
 
-            client->Enqueue(conn_id,
-                            data_ctx_id,
-                            std::move(obj),
-                            std::move(trace),
-                            1,
-                            350,
-                            0,
-                            encode_flags);
+            client->Enqueue(conn_id, data_ctx_id, std::move(obj), std::move(trace), 1, 350, 0, encode_flags);
         }
 
         // Increase delay if using UDP, need to pace more
         if (server.proto == TransportProtocol::kUdp) {
-            std::this_thread::sleep_for(std::chrono::milliseconds (10));
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
         } else {
             std::this_thread::sleep_for(std::chrono::milliseconds(2));
         }
-
-
     }
 
     client->DeleteDataContext(conn_id, data_ctx_id);
