@@ -14,7 +14,8 @@ namespace qtransport {
     std::shared_ptr<ITransport> ITransport::MakeClientTransport(const TransportRemote& server,
                                                                 const TransportConfig& tcfg,
                                                                 TransportDelegate& delegate,
-                                                                std::shared_ptr<spdlog::logger> logger) {
+                                                                std::shared_ptr<spdlog::logger> logger)
+    {
         switch (server.proto) {
             case TransportProtocol::kUdp:
                 return std::make_shared<UDPTransport>(server, tcfg, delegate, false, std::move(logger));
@@ -33,7 +34,8 @@ namespace qtransport {
     std::shared_ptr<ITransport> ITransport::MakeServerTransport(const TransportRemote& server,
                                                                 const TransportConfig& tcfg,
                                                                 TransportDelegate& delegate,
-                                                                std::shared_ptr<spdlog::logger> logger) {
+                                                                std::shared_ptr<spdlog::logger> logger)
+    {
         switch (server.proto) {
             case TransportProtocol::kUdp:
                 return std::make_shared<UDPTransport>(server, tcfg, delegate, true, std::move(logger));
@@ -50,4 +52,4 @@ namespace qtransport {
         return nullptr;
     }
 
-}  // namespace qtransport
+} // namespace qtransport

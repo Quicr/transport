@@ -18,17 +18,25 @@
 
 namespace qtransport {
 
-    using TransportConnId = uint64_t;  ///< Connection Id is a 64bit number that is used as a key to maps
-    using DataContextId = uint64_t;    ///< Data Context 64bit number that identifies a data flow/track/stream
+    using TransportConnId = uint64_t; ///< Connection Id is a 64bit number that is used as a key to maps
+    using DataContextId = uint64_t;   ///< Data Context 64bit number that identifies a data flow/track/stream
     /**
      * Transport status/state values
      */
-    enum class TransportStatus : uint8_t { kReady = 0, kConnecting, kRemoteRequestClose, kDisconnected, kShutdown };
+    enum class TransportStatus : uint8_t
+    {
+        kReady = 0,
+        kConnecting,
+        kRemoteRequestClose,
+        kDisconnected,
+        kShutdown
+    };
 
     /**
      * Transport errors
      */
-    enum class TransportError : uint8_t {
+    enum class TransportError : uint8_t
+    {
         kNone = 0,
         kQueueFull,
         kUnknownError,
@@ -44,64 +52,76 @@ namespace qtransport {
     /**
      * Transport Protocol to use
      */
-    enum class TransportProtocol : uint8_t { kUdp = 0, kQuic };
+    enum class TransportProtocol : uint8_t
+    {
+        kUdp = 0,
+        kQuic
+    };
 
     /**
      * @brief Remote/Destination endpoint address info.
      *
      * @details Remote destination is either a client or server hostname/ip and port
      */
-    struct TransportRemote {
-        std::string host_or_ip;   /// IPv4/v6 or FQDN (user input)
-        uint16_t port;            /// Port (user input)
-        TransportProtocol proto;  /// Protocol to use for the transport
+    struct TransportRemote
+    {
+        std::string host_or_ip;  /// IPv4/v6 or FQDN (user input)
+        uint16_t port;           /// Port (user input)
+        TransportProtocol proto; /// Protocol to use for the transport
     };
 
     /**
      * Transport configuration parameters
      */
-    struct TransportConfig {
-        std::string tls_cert_filename;              /// QUIC TLS certificate to use
-        std::string tls_key_filename;               /// QUIC TLS private key to use
-        uint32_t time_queue_init_queue_size{1000};  /// Initial queue size to reserve upfront
-        uint32_t time_queue_max_duration{1000};     /// Max duration for the time queue in milliseconds
-        uint32_t time_queue_bucket_interval{1};     /// The bucket interval in milliseconds
-        uint32_t time_queue_rx_size{1000};          /// Receive queue size
-        bool debug{false};                          /// Enable debug logging/processing
-        uint64_t quic_cwin_minimum{131072};         /// QUIC congestion control minimum size (default is 128k)
-        uint32_t quic_wifi_shadow_rtt_us{20000};    /// QUIC wifi shadow RTT in microseconds
+    struct TransportConfig
+    {
+        std::string tls_cert_filename;               /// QUIC TLS certificate to use
+        std::string tls_key_filename;                /// QUIC TLS private key to use
+        uint32_t time_queue_init_queue_size{ 1000 }; /// Initial queue size to reserve upfront
+        uint32_t time_queue_max_duration{ 1000 };    /// Max duration for the time queue in milliseconds
+        uint32_t time_queue_bucket_interval{ 1 };    /// The bucket interval in milliseconds
+        uint32_t time_queue_rx_size{ 1000 };         /// Receive queue size
+        bool debug{ false };                         /// Enable debug logging/processing
+        uint64_t quic_cwin_minimum{ 131072 };        /// QUIC congestion control minimum size (default is 128k)
+        uint32_t quic_wifi_shadow_rtt_us{ 20000 };   /// QUIC wifi shadow RTT in microseconds
 
-        uint64_t pacing_decrease_threshold_bps{16000};  /// QUIC pacing rate decrease threshold for notification in Bps
-        uint64_t pacing_increase_threshold_bps{16000};  /// QUIC pacing rate increase threshold for notification in Bps
+        uint64_t pacing_decrease_threshold_bps{ 16000 }; /// QUIC pacing rate decrease threshold for notification in Bps
+        uint64_t pacing_increase_threshold_bps{ 16000 }; /// QUIC pacing rate increase threshold for notification in Bps
 
-        uint64_t idle_timeout_ms{30000};      /// Idle timeout for transport connection(s) in milliseconds
-        bool use_reset_wait_strategy{false};  /// Use Reset and wait strategy for congestion control
-        bool use_bbr{true};                   /// Use BBR if true, NewReno if false
-        std::string quic_qlog_path;           /// If present, log QUIC LOG file to this path
-        uint8_t quic_priority_limit{0};       /// Lowest priority that will not be bypassed from pacing/CC in picoquic
+        uint64_t idle_timeout_ms{ 30000 };     /// Idle timeout for transport connection(s) in milliseconds
+        bool use_reset_wait_strategy{ false }; /// Use Reset and wait strategy for congestion control
+        bool use_bbr{ true };                  /// Use BBR if true, NewReno if false
+        std::string quic_qlog_path;            /// If present, log QUIC LOG file to this path
+        uint8_t quic_priority_limit{ 0 };      /// Lowest priority that will not be bypassed from pacing/CC in picoquic
     };
 
     using TimeStampUs = std::chrono::time_point<std::chrono::steady_clock, std::chrono::microseconds>;
 
-    struct MethodTraceItem {
-        std::string method;      /// Name of the method
-        TimeStampUs start_time;  /// Original start time of the call
-        uint32_t delta;          /// Delta is calculated based on start_time and now time of constructor
+    struct MethodTraceItem
+    {
+        std::string method;     /// Name of the method
+        TimeStampUs start_time; /// Original start time of the call
+        uint32_t delta;         /// Delta is calculated based on start_time and now time of constructor
 
         MethodTraceItem()
-            : method("root"),
-              start_time(std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::steady_clock::now())),
-              delta(0) {}
+          : method("root")
+          , start_time(std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::steady_clock::now()))
+          , delta(0)
+        {
+        }
 
         MethodTraceItem(const std::string& method, const TimeStampUs start_time)
-            : method(method), start_time(start_time) {
+          : method(method)
+          , start_time(start_time)
+        {
             delta =
-                (std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::steady_clock::now()) - start_time)
-                    .count();
+              (std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::steady_clock::now()) - start_time)
+                .count();
         }
     };
 
-    struct ConnData {
+    struct ConnData
+    {
         TransportConnId conn_id;
         DataContextId data_ctx_id;
         uint8_t priority;
@@ -127,13 +147,15 @@ namespace qtransport {
      * 	in such cases applications needs to
      * 	take the burden of non-blocking flows.
      */
-    class ITransport {
-       public:
+    class ITransport
+    {
+      public:
         /**
          * @brief Async Callback API on the transport
          */
-        class TransportDelegate {
-           public:
+        class TransportDelegate
+        {
+          public:
             virtual ~TransportDelegate() = default;
 
             /**
@@ -185,8 +207,10 @@ namespace qtransport {
              * @param[in] data_ctx_id	If known, Data context id that the data was received on
              * @param[in] is_bidir      True if the message is from a bidirectional stream
              */
-            virtual void OnRecvStream(const TransportConnId& conn_id, uint64_t stream_id,
-                                      std::optional<DataContextId> data_ctx_id, bool is_bidir = false) = 0;
+            virtual void OnRecvStream(const TransportConnId& conn_id,
+                                      uint64_t stream_id,
+                                      std::optional<DataContextId> data_ctx_id,
+                                      bool is_bidir = false) = 0;
         };
 
         /* Factory APIs */
@@ -202,7 +226,8 @@ namespace qtransport {
          * @return shared_ptr for the under lining transport.
          */
         static std::shared_ptr<ITransport> MakeClientTransport(const TransportRemote& server,
-                                                               const TransportConfig& tcfg, TransportDelegate& delegate,
+                                                               const TransportConfig& tcfg,
+                                                               TransportDelegate& delegate,
                                                                std::shared_ptr<spdlog::logger> logger);
 
         /**
@@ -217,10 +242,11 @@ namespace qtransport {
          * @return shared_ptr for the under lining transport.
          */
         static std::shared_ptr<ITransport> MakeServerTransport(const TransportRemote& server,
-                                                               const TransportConfig& tcfg, TransportDelegate& delegate,
+                                                               const TransportConfig& tcfg,
+                                                               TransportDelegate& delegate,
                                                                std::shared_ptr<spdlog::logger> logger);
 
-       public:
+      public:
         virtual ~ITransport() = default;
 
         /**
@@ -260,8 +286,10 @@ namespace qtransport {
          *
          * @return DataContextId identifying the data context via the connection
          */
-        virtual DataContextId CreateDataContext(TransportConnId conn_id, bool use_reliable_transport,
-                                                uint8_t priority = 1, bool bidir = false) = 0;
+        virtual DataContextId CreateDataContext(TransportConnId conn_id,
+                                                bool use_reliable_transport,
+                                                uint8_t priority = 1,
+                                                bool bidir = false) = 0;
 
         /**
          * @brief Close a transport context
@@ -317,17 +345,19 @@ namespace qtransport {
          * @param data_ctx_id              Local data context ID
          * @param remote_data_ctx_id       Remote data context ID (learned via subscribe/publish)
          */
-        virtual void SetRemoteDataCtxId(TransportConnId conn_id, DataContextId data_ctx_id,
+        virtual void SetRemoteDataCtxId(TransportConnId conn_id,
+                                        DataContextId data_ctx_id,
                                         DataContextId remote_data_ctx_id) = 0;
 
         /**
          * Enqueue flags
          */
-        struct EnqueueFlags {
-            bool use_reliable{false};    /// Indicates if object should use reliable stream or unreliable
-            bool new_stream{false};      /// Indicates that a new stream should be created to replace existing one
-            bool clear_tx_queue{false};  /// Indicates that the TX queue should be cleared before adding new object
-            bool use_reset{false};       /// Indicates new stream created will close the previous using reset/abrupt
+        struct EnqueueFlags
+        {
+            bool use_reliable{ false };   /// Indicates if object should use reliable stream or unreliable
+            bool new_stream{ false };     /// Indicates that a new stream should be created to replace existing one
+            bool clear_tx_queue{ false }; /// Indicates that the TX queue should be cleared before adding new object
+            bool use_reset{ false };      /// Indicates new stream created will close the previous using reset/abrupt
         };
 
         /**
@@ -347,11 +377,14 @@ namespace qtransport {
          *
          * @returns TransportError is returned indicating status of the operation
          */
-        virtual TransportError Enqueue(const TransportConnId& context_id, const DataContextId& data_ctx_id,
+        virtual TransportError Enqueue(const TransportConnId& context_id,
+                                       const DataContextId& data_ctx_id,
                                        std::vector<uint8_t>&& bytes,
-                                       std::vector<MethodTraceItem>&& trace = {MethodTraceItem{}}, uint8_t priority = 1,
-                                       uint32_t ttl_ms = 350, uint32_t delay_ms = 0,
-                                       EnqueueFlags flags = {true, false, false, false}) = 0;
+                                       std::vector<MethodTraceItem>&& trace = { MethodTraceItem{} },
+                                       uint8_t priority = 1,
+                                       uint32_t ttl_ms = 350,
+                                       uint32_t delay_ms = 0,
+                                       EnqueueFlags flags = { true, false, false, false }) = 0;
 
         /**
          * @brief Dequeue datagram application data from transport buffer
@@ -380,4 +413,4 @@ namespace qtransport {
         std::shared_ptr<SafeQueue<MetricsDataSample>> metrics_data_samples;
     };
 
-}  // namespace qtransport
+} // namespace qtransport

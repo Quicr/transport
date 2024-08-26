@@ -29,12 +29,13 @@
 
 namespace qtransport {
 
-    constexpr int kPqLoopMaxDelayUs = 500;     /// The max microseconds that pq_loop will be ran again
-    constexpr int kPqRestWaitMinPriority = 4;  /// Minimum priority value to consider for RESET and WAIT
-    constexpr int kPqCcLowCwin = 4000;         /// Bytes less than this value are considered a low/congested CWIN
+    constexpr int kPqLoopMaxDelayUs = 500;    /// The max microseconds that pq_loop will be ran again
+    constexpr int kPqRestWaitMinPriority = 4; /// Minimum priority value to consider for RESET and WAIT
+    constexpr int kPqCcLowCwin = 4000;        /// Bytes less than this value are considered a low/congested CWIN
 
-    class PicoQuicTransport : public ITransport {
-       public:
+    class PicoQuicTransport : public ITransport
+    {
+      public:
         const char* quicr_alpn = "moq-00";
 
         using BytesT = std::vector<uint8_t>;
@@ -45,36 +46,38 @@ namespace qtransport {
          *      Data context is intended to be a container for metrics and other state that is related to a flow of
          *      data that may use datagram or one or more stream QUIC frames
          */
-        struct DataContext {
-            bool is_bidir{false};            /// Indicates if the stream is bidir (true) or unidir (false)
-            bool mark_stream_active{false};  /// Instructs the stream to be marked active
+        struct DataContext
+        {
+            bool is_bidir{ false };           /// Indicates if the stream is bidir (true) or unidir (false)
+            bool mark_stream_active{ false }; /// Instructs the stream to be marked active
 
-            bool uses_reset_wait{false};        /// Indicates if data context can/uses reset wait strategy
-            bool tx_reset_wait_discard{false};  /// Instructs TX objects to be discarded on POP instead
+            bool uses_reset_wait{ false };       /// Indicates if data context can/uses reset wait strategy
+            bool tx_reset_wait_discard{ false }; /// Instructs TX objects to be discarded on POP instead
 
-            DataContextId data_ctx_id{0};  /// The ID of this context
-            TransportConnId conn_id{0};    /// The connection ID this context is under
+            DataContextId data_ctx_id{ 0 }; /// The ID of this context
+            TransportConnId conn_id{ 0 };   /// The connection ID this context is under
 
-            enum class StreamAction : uint8_t {  /// Stream action that should be done by send/receive processing
+            enum class StreamAction : uint8_t
+            { /// Stream action that should be done by send/receive processing
                 kNoAction = 0,
                 kReplaceStreamUseReset,
                 kReplaceStreamUseFin,
-            } stream_action{StreamAction::kNoAction};
+            } stream_action{ StreamAction::kNoAction };
 
-            std::optional<uint64_t> current_stream_id;  /// Current active stream if the value is >= 4
+            std::optional<uint64_t> current_stream_id; /// Current active stream if the value is >= 4
 
-            uint8_t priority{0};
+            uint8_t priority{ 0 };
 
-            uint64_t in_data_cb_skip_count{0};  /// Number of times callback was skipped due to size
+            uint64_t in_data_cb_skip_count{ 0 }; /// Number of times callback was skipped due to size
 
-            std::unique_ptr<PriorityQueue<ConnData>> tx_data;  /// Pending objects to be written to the network
+            std::unique_ptr<PriorityQueue<ConnData>> tx_data; /// Pending objects to be written to the network
 
-            uint8_t* stream_tx_object{nullptr};  /// Current object that is being sent as a byte stream
-            size_t stream_tx_object_size{0};     /// Size of the tx object
-            size_t stream_tx_object_offset{0};   /// Pointer offset to next byte to send
+            uint8_t* stream_tx_object{ nullptr }; /// Current object that is being sent as a byte stream
+            size_t stream_tx_object_size{ 0 };    /// Size of the tx object
+            size_t stream_tx_object_offset{ 0 };  /// Pointer offset to next byte to send
 
             // The last ticks when TX callback was run
-            uint64_t last_tx_tick{0};
+            uint64_t last_tx_tick{ 0 };
 
             QuicDataContextMetrics metrics;
 
@@ -84,7 +87,8 @@ namespace qtransport {
             DataContext& operator=(const DataContext&) = delete;
             DataContext& operator=(DataContext&&) = delete;
 
-            ~DataContext() {
+            ~DataContext()
+            {
                 // Free the TX object
                 if (stream_tx_object != nullptr) {
                     delete[] stream_tx_object;
@@ -95,7 +99,8 @@ namespace qtransport {
             /**
              * Reset the TX object buffer
              */
-            void ResetTxObject() {
+            void ResetTxObject()
+            {
                 if (stream_tx_object != nullptr) {
                     delete[] stream_tx_object;
                 }
@@ -109,50 +114,56 @@ namespace qtransport {
         /**
          * Connection context information
          */
-        struct ConnectionContext {
-            TransportConnId conn_id{0};        /// This connection ID
-            picoquic_cnx_t* pq_cnx = nullptr;  /// Picoquic connection/path context
-            uint64_t last_stream_id{0};        /// last stream Id
+        struct ConnectionContext
+        {
+            TransportConnId conn_id{ 0 };     /// This connection ID
+            picoquic_cnx_t* pq_cnx = nullptr; /// Picoquic connection/path context
+            uint64_t last_stream_id{ 0 };     /// last stream Id
 
-            bool mark_dgram_ready{false};  /// Instructs datagram to be marked ready/active
+            bool mark_dgram_ready{ false }; /// Instructs datagram to be marked ready/active
 
-            DataContextId next_data_ctx_id{1};  /// Next data context ID; zero is reserved for default context
+            DataContextId next_data_ctx_id{ 1 }; /// Next data context ID; zero is reserved for default context
 
             std::unique_ptr<PriorityQueue<ConnData>>
-                dgram_tx_data;                /// Datagram pending objects to be written to the network
-            SafeQueue<BytesT> dgram_rx_data;  /// Buffered datagrams received from the network
+              dgram_tx_data;                 /// Datagram pending objects to be written to the network
+            SafeQueue<BytesT> dgram_rx_data; /// Buffered datagrams received from the network
 
             /**
              * Active stream buffers for received unidirectional streams
              */
-            struct RxStreamBuffer {
+            struct RxStreamBuffer
+            {
                 std::shared_ptr<StreamBuffer<uint8_t>> buf;
-                bool closed{false};        /// Indicates if stream is active or in closed state
-                bool checked_once{false};  /// True if closed and checked once to close
+                bool closed{ false };       /// Indicates if stream is active or in closed state
+                bool checked_once{ false }; /// True if closed and checked once to close
 
                 RxStreamBuffer() { buf = std::make_shared<StreamBuffer<uint8_t>>(); }
             };
-            std::map<uint64_t, RxStreamBuffer> rx_stream_buffer;  /// Map of stream receive buffers, key is stream_id
+            std::map<uint64_t, RxStreamBuffer> rx_stream_buffer; /// Map of stream receive buffers, key is stream_id
 
             /**
              * Active data contexts (streams bidir/unidir and datagram)
              */
             std::map<qtransport::DataContextId, DataContext> active_data_contexts;
 
-            char peer_addr_text[45]{0};
-            uint16_t peer_port{0};
+            char peer_addr_text[45]{ 0 };
+            uint16_t peer_port{ 0 };
             sockaddr_storage peer_addr;
 
             // States
-            bool is_congested{false};
-            uint16_t not_congested_gauge{0};  /// Interval gauge count of consecutive not congested checks
+            bool is_congested{ false };
+            uint16_t not_congested_gauge{ 0 }; /// Interval gauge count of consecutive not congested checks
 
             // Metrics
             QuicConnectionMetrics metrics;
 
             ConnectionContext() {}
 
-            ConnectionContext(picoquic_cnx_t* cnx) : ConnectionContext() { pq_cnx = cnx; }
+            ConnectionContext(picoquic_cnx_t* cnx)
+              : ConnectionContext()
+            {
+                pq_cnx = cnx;
+            }
         };
 
         /*
@@ -164,28 +175,35 @@ namespace qtransport {
         /*
          * Exceptions
          */
-        struct Exception : public std::runtime_error {
+        struct Exception : public std::runtime_error
+        {
             using std::runtime_error::runtime_error;
         };
 
-        struct InvalidConfigException : public Exception {
+        struct InvalidConfigException : public Exception
+        {
             using Exception::Exception;
         };
 
-        struct PicoQuicException : public Exception {
+        struct PicoQuicException : public Exception
+        {
             using Exception::Exception;
         };
 
-        static void PicoQuicLogging(const char* message, void* argp) {
+        static void PicoQuicLogging(const char* message, void* argp)
+        {
             auto instance = reinterpret_cast<PicoQuicTransport*>(argp);
             if (!instance->stop_ && instance->logger) {
                 instance->logger->info(message);
             }
         }
 
-       public:
-        PicoQuicTransport(const TransportRemote& server, const TransportConfig& tcfg, TransportDelegate& delegate,
-                          bool is_server_mode, std::shared_ptr<spdlog::logger> logger);
+      public:
+        PicoQuicTransport(const TransportRemote& server,
+                          const TransportConfig& tcfg,
+                          TransportDelegate& delegate,
+                          bool is_server_mode,
+                          std::shared_ptr<spdlog::logger> logger);
 
         virtual ~PicoQuicTransport();
 
@@ -196,22 +214,30 @@ namespace qtransport {
 
         virtual bool GetPeerAddrInfo(const TransportConnId& conn_id, sockaddr_storage* addr) override;
 
-        DataContextId CreateDataContext(TransportConnId conn_id, bool use_reliable_transport, uint8_t priority,
+        DataContextId CreateDataContext(TransportConnId conn_id,
+                                        bool use_reliable_transport,
+                                        uint8_t priority,
                                         bool bidir) override;
 
         void DeleteDataContext(const TransportConnId& conn_id, DataContextId data_ctx_id) override;
         void DeleteDataContextInternal(TransportConnId conn_id, DataContextId data_ctx_id);
 
-        TransportError Enqueue(const TransportConnId& conn_id, const DataContextId& data_ctx_id,
-                               std::vector<uint8_t>&& bytes, std::vector<qtransport::MethodTraceItem>&& trace,
-                               uint8_t priority, uint32_t ttl_ms, uint32_t delay_ms, EnqueueFlags flags) override;
+        TransportError Enqueue(const TransportConnId& conn_id,
+                               const DataContextId& data_ctx_id,
+                               std::vector<uint8_t>&& bytes,
+                               std::vector<qtransport::MethodTraceItem>&& trace,
+                               uint8_t priority,
+                               uint32_t ttl_ms,
+                               uint32_t delay_ms,
+                               EnqueueFlags flags) override;
 
         std::optional<std::vector<uint8_t>> Dequeue(TransportConnId conn_id,
                                                     std::optional<DataContextId> data_ctx_id) override;
 
         std::shared_ptr<StreamBuffer<uint8_t>> GetStreamBuffer(TransportConnId conn_id, uint64_t stream_id) override;
 
-        void SetRemoteDataCtxId(TransportConnId conn_id, DataContextId data_ctx_id,
+        void SetRemoteDataCtxId(TransportConnId conn_id,
+                                DataContextId data_ctx_id,
                                 DataContextId remote_data_ctx_id) override;
 
         void SetStreamIdDataCtxId(TransportConnId conn_id, DataContextId data_ctx_id, uint64_t stream_id) override;
@@ -245,7 +271,10 @@ namespace qtransport {
 
         void OnNewConnection(TransportConnId conn_id);
         void OnRecvDatagram(ConnectionContext* conn_ctx, uint8_t* bytes, size_t length);
-        void OnRecvStreamBytes(ConnectionContext* conn_ctx, DataContext* data_ctx, uint64_t stream_id, uint8_t* bytes,
+        void OnRecvStreamBytes(ConnectionContext* conn_ctx,
+                               DataContext* data_ctx,
+                               uint64_t stream_id,
+                               uint8_t* bytes,
                                size_t length);
 
         void CheckConnsForCongestion();
@@ -266,10 +295,10 @@ namespace qtransport {
          */
         std::shared_ptr<spdlog::logger> logger;
         bool is_server_mode;
-        bool is_unidirectional{false};
-        bool debug{false};
+        bool is_unidirectional{ false };
+        bool debug{ false };
 
-       private:
+      private:
         TransportConnId CreateClient();
         void Shutdown();
 
@@ -321,10 +350,10 @@ namespace qtransport {
         SafeQueue<std::function<void()>> cbNotifyQueue_;
 
         SafeQueue<std::function<void()>>
-            picoquic_runner_queue_;  /// Threads queue functions that picoquic will call via the pq_loop_cb call
+          picoquic_runner_queue_; /// Threads queue functions that picoquic will call via the pq_loop_cb call
 
         std::atomic<bool> stop_;
-        std::mutex state_mutex_;  /// Used for stream/context/state updates
+        std::mutex state_mutex_; /// Used for stream/context/state updates
         std::atomic<TransportStatus> transportStatus_;
         std::thread picoQuicThread_;
         std::thread cbNotifyThread_;
@@ -337,4 +366,4 @@ namespace qtransport {
         std::shared_ptr<TickService> tick_service_;
     };
 
-}  // namespace qtransport
+} // namespace qtransport

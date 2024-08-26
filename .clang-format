@@ -1,6 +1,6 @@
 ---
 Language:      Cpp
-BasedOnStyle:  Google
+BasedOnStyle:  Mozilla
 
 # Overrides
 ColumnLimit: 120
