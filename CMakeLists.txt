@@ -89,4 +89,5 @@ endif()
 
 if(BUILD_TESTING AND QTRANSPORT_BUILD_TESTS)
   add_subdirectory(cmd)
+  add_subdirectory(test)
 endif()
