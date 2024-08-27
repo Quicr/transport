@@ -6,6 +6,10 @@ if (NOT TARGET spdlog)
     add_subdirectory(spdlog)
 endif()
 
+if(BUILD_TESTING AND QTRANSPORT_BUILD_TESTS AND NOT TARGET doctest)
+    add_subdirectory(doctest)
+endif()
+
 if (NOT PLATFORM_ESP_IDF)
     set(BUILD_SHARED_LIBS OFF)
     set(BUILD_STATIC_LIBS ON)

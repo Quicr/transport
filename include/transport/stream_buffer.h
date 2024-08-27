@@ -217,9 +217,9 @@ namespace qtransport {
         std::optional<uint64_t> DecodeUintV()
         {
             if (const auto uv_msb = Front()) {
-                if (Available(uintV_size(*uv_msb))) {
-                    uint64_t uv_len = uintV_size(*uv_msb);
-                    auto val = to_uint64(Front(uv_len));
+                if (Available(UintVSize(*uv_msb))) {
+                    uint64_t uv_len = UintVSize(*uv_msb);
+                    auto val = ToUint64(Front(uv_len));
 
                     Pop(uv_len);
 
@@ -243,14 +243,14 @@ namespace qtransport {
         std::optional<std::vector<uint8_t>> DecodeBytes()
         {
             if (const auto uv_msb = Front()) {
-                if (Available(uintV_size(*uv_msb))) {
-                    uint64_t uv_len = uintV_size(*uv_msb);
-                    auto len = to_uint64(Front(uv_len));
+                if (Available(UintVSize(*uv_msb))) {
+                    uint64_t uv_len = UintVSize(*uv_msb);
+                    auto len = ToUint64(Front(uv_len));
 
                     if (buffer_.size() >= uv_len + len) {
                         Pop(uv_len);
-                        auto v = front(len);
-                        pop(len);
+                        auto v = Front(len);
+                        Pop(len);
 
                         return v;
                     }

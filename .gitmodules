@@ -16,3 +16,6 @@
 	path = dependencies/spdlog
 	url = https://github.com/gabime/spdlog.git
 	tag = v1.14.1
+[submodule "dependencies/doctest"]
+	path = dependencies/doctest
+	url = https://github.com/doctest/doctest.git
