@@ -51,7 +51,11 @@ RELAY_HOST=localhost RELAY_PORT=1234 build/cmd/client
 
 ## Development
 
-This project generally follows Google's C++ styling, specifically enforced for naming and formatting: https://google.github.io/styleguide/cppguide.html
+This project generally follows Google's and Mozilla's C++ styling, specifically enforced for naming and formatting: https://google.github.io/styleguide/cppguide.html
+
+Linting via clang-tidy can be enabled via passing the `-DLINT=ON` option to CMake, which is what CI will enforce.
+
+`clang-format` can be run be run by running `make format`. CI will enforce this. A pre-commit file for clang-format is provided, which you can install using `pre-commit install`.
 
 # Notes
 

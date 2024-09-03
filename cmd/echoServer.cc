@@ -3,9 +3,9 @@
 #include <sstream>
 #include <thread>
 
-#include <transport/transport.h>
-#include <spdlog/spdlog.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
+#include <spdlog/spdlog.h>
+#include <transport/transport.h>
 
 #include "object.h"
 
@@ -17,7 +17,7 @@ struct Delegate : public ITransport::TransportDelegate
     std::shared_ptr<ITransport> server;
     std::shared_ptr<spdlog::logger> logger;
 
-    Object _object{logger};
+    Object _object{ logger };
 
     DataContextId out_data_ctx{ 0 };
 
@@ -43,15 +43,14 @@ struct Delegate : public ITransport::TransportDelegate
         out_data_ctx = this->server->CreateDataContext(conn_id, true, 10);
     }
 
-
     void OnRecvStream(const TransportConnId& conn_id,
-                        uint64_t stream_id,
-                        std::optional<DataContextId> data_ctx_id,
-                        [[maybe_unused]] const bool is_bidir)
+                      uint64_t stream_id,
+                      std::optional<DataContextId> data_ctx_id,
+                      [[maybe_unused]] const bool is_bidir)
     {
         auto stream_buf = server->GetStreamBuffer(conn_id, stream_id);
 
-        while(true) {
+        while (true) {
             if (stream_buf->Available(4)) {
                 auto len_b = stream_buf->Front(4);
                 if (!len_b.size())
@@ -65,7 +64,14 @@ struct Delegate : public ITransport::TransportDelegate
 
                     _object.process(conn_id, data_ctx_id, obj);
 
-                    server->Enqueue(conn_id, out_data_ctx, std::move(obj), { MethodTraceItem{} }, 2, 500, 0, { true, false, false, false });
+                    server->Enqueue(conn_id,
+                                    out_data_ctx,
+                                    std::move(obj),
+                                    { MethodTraceItem{} },
+                                    2,
+                                    500,
+                                    0,
+                                    { true, false, false, false });
                 } else {
                     break;
                 }
@@ -75,10 +81,9 @@ struct Delegate : public ITransport::TransportDelegate
         }
     }
 
-    void OnRecvDgram(const TransportConnId& conn_id,
-                       std::optional<DataContextId> data_ctx_id)
+    void OnRecvDgram(const TransportConnId& conn_id, std::optional<DataContextId> data_ctx_id)
     {
-        for (int i=0; i < 150; i++) {
+        for (int i = 0; i < 150; i++) {
             auto data = server->Dequeue(conn_id, data_ctx_id);
 
             if (data) {

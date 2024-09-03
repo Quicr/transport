@@ -88,6 +88,7 @@ endif()
 ###
 
 if(BUILD_TESTING AND QTRANSPORT_BUILD_TESTS)
+  enable_testing()
   add_subdirectory(cmd)
   add_subdirectory(test)
 endif()

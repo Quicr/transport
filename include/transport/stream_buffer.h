@@ -88,20 +88,11 @@ namespace qtransport {
             parsed_data_type_ = std::nullopt;
         }
 
-        void ResetAnyB()
-        {
-            parsed_dataB_.reset();
-        }
+        void ResetAnyB() { parsed_dataB_.reset(); }
 
-        bool AnyHasValue()
-        {
-            return parsed_data_.has_value();
-        }
+        bool AnyHasValue() { return parsed_data_.has_value(); }
 
-        bool AnyHasValueB()
-        {
-            return parsed_dataB_.has_value();
-        }
+        bool AnyHasValueB() { return parsed_dataB_.has_value(); }
 
         bool Empty() const noexcept { return buffer_.empty(); }
 
@@ -263,8 +254,8 @@ namespace qtransport {
       private:
         BufferT buffer_;
         std::mutex rwLock_;
-        std::any parsed_data_; /// Working buffer for parsed data
-        std::any parsed_dataB_; /// Second Working buffer for parsed data
+        std::any parsed_data_;                     /// Working buffer for parsed data
+        std::any parsed_dataB_;                    /// Second Working buffer for parsed data
         std::optional<uint64_t> parsed_data_type_; /// working buffer type value
     };
 }

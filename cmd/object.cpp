@@ -1,6 +1,8 @@
 #include "object.h"
 
-void Object::process(TransportConnId conn_id, std::optional<DataContextId> data_ctx_id, std::vector<uint8_t>& obj) {
+void
+Object::process(TransportConnId conn_id, std::optional<DataContextId> data_ctx_id, std::vector<uint8_t>& obj)
+{
     msgcount++;
 
     if (msgcount % 2000 == 0 && prev_msgcount != msgcount) {
@@ -44,7 +46,9 @@ void Object::process(TransportConnId conn_id, std::optional<DataContextId> data_
     prev_msg_num = *msg_num;
 }
 
-std::vector<uint8_t> Object::encode() {
+std::vector<uint8_t>
+Object::encode()
+{
     std::vector<uint8_t> obj(1000, 0);
 
     uint32_t* len = (uint32_t*)obj.data();

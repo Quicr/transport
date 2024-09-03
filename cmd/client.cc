@@ -3,9 +3,9 @@
 #include <sstream>
 #include <thread>
 
-#include <transport/transport.h>
-#include <spdlog/spdlog.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
+#include <spdlog/spdlog.h>
+#include <transport/transport.h>
 
 #include "object.h"
 
@@ -20,7 +20,7 @@ struct Delegate : public ITransport::TransportDelegate
     std::shared_ptr<ITransport> client;
     TransportConnId conn_id;
     std::shared_ptr<spdlog::logger> logger;
-    Object _rx_object{logger};
+    Object _rx_object{ logger };
 
   public:
     Delegate()
@@ -29,9 +29,7 @@ struct Delegate : public ITransport::TransportDelegate
         conn_id = 0;
     }
 
-    void stop() {
-        client.reset();
-    }
+    void stop() { client.reset(); }
 
     void setClientTransport(std::shared_ptr<ITransport> client) { this->client = client; }
 
@@ -42,12 +40,12 @@ struct Delegate : public ITransport::TransportDelegate
         SPDLOG_LOGGER_INFO(logger, "Connection state change conn_id: {0}, {1}", conn_id, int(status));
     }
 
-    void OnNewConnection(const TransportConnId& , const TransportRemote&) {}
+    void OnNewConnection(const TransportConnId&, const TransportRemote&) {}
 
     void OnRecvStream(const TransportConnId& conn_id,
-                        uint64_t stream_id,
-                        std::optional<DataContextId> data_ctx_id,
-                        [[maybe_unused]] const bool is_bidir)
+                      uint64_t stream_id,
+                      std::optional<DataContextId> data_ctx_id,
+                      [[maybe_unused]] const bool is_bidir)
     {
         auto stream_buf = client->GetStreamBuffer(conn_id, stream_id);
 
@@ -70,10 +68,9 @@ struct Delegate : public ITransport::TransportDelegate
         }
     }
 
-    void OnRecvDgram(const TransportConnId& conn_id,
-                       std::optional<DataContextId> data_ctx_id)
+    void OnRecvDgram(const TransportConnId& conn_id, std::optional<DataContextId> data_ctx_id)
     {
-        for (int i=0; i < 50; i++) {
+        for (int i = 0; i < 50; i++) {
             auto data = client->Dequeue(conn_id, data_ctx_id);
 
             if (data) {
@@ -137,7 +134,9 @@ main()
 
     int period_count = 0;
 
-    ITransport::EnqueueFlags encode_flags { .use_reliable = use_reliable, .new_stream = true, .clear_tx_queue = true, .use_reset = true};
+    ITransport::EnqueueFlags encode_flags{
+        .use_reliable = use_reliable, .new_stream = true, .clear_tx_queue = true, .use_reset = true
+    };
 
     auto tx_object = Object(logger);
 
@@ -147,8 +146,9 @@ main()
             auto obj = tx_object.encode();
 
             std::vector<MethodTraceItem> trace;
-            const auto start_time = std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::steady_clock::now());
-            trace.push_back({"client:publish", start_time});
+            const auto start_time =
+              std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::steady_clock::now());
+            trace.push_back({ "client:publish", start_time });
 
             if (encode_flags.use_reliable) {
                 if (period_count > 2000) {
@@ -163,24 +163,15 @@ main()
                 }
             }
 
-            client->Enqueue(conn_id,
-                            data_ctx_id,
-                            std::move(obj),
-                            std::move(trace),
-                            1,
-                            350,
-                            0,
-                            encode_flags);
+            client->Enqueue(conn_id, data_ctx_id, std::move(obj), std::move(trace), 1, 350, 0, encode_flags);
         }
 
         // Increase delay if using UDP, need to pace more
         if (server.proto == TransportProtocol::kUdp) {
-            std::this_thread::sleep_for(std::chrono::milliseconds (10));
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
         } else {
             std::this_thread::sleep_for(std::chrono::milliseconds(2));
         }
-
-
     }
 
     client->DeleteDataContext(conn_id, data_ctx_id);
