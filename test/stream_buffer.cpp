@@ -1,15 +1,21 @@
 #include <doctest/doctest.h>
 
 #include "transport/stream_buffer.h"
+#include "transport/uintvar.h"
 
+#include <chrono>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <optional>
+#include <string>
 #include <thread>
 #include <vector>
 
 TEST_CASE("StreamBuffer Reader/Writer")
 {
-    using streamBuf_t = qtransport::StreamBuffer<uint32_t>;
-    std::shared_ptr<streamBuf_t> buf = std::make_shared<streamBuf_t>();
+    using StreamBufType = qtransport::StreamBuffer<std::uint32_t>;
+    std::shared_ptr<StreamBufType> buf = std::make_shared<StreamBufType>();
     bool stop{ false };
     size_t rcount{ 0 }, wcount{ 0 };
 
@@ -50,17 +56,17 @@ TEST_CASE("StreamBuffer Reader/Writer")
  * MOQT Test read using stream buffer
  * **************************************************
  */
-enum class MOQT_MessageType : uint64_t
+enum class MoqMessageType : std::uint8_t
 {
-    SUBSCRIBE = 0x3,
+    kSubscribe = 0x3,
 };
 
-enum class MOQT_FilterType : uint64_t
+enum class MoqFilterType : std::uint8_t
 {
-    LATEST_GROUP = 0x1, //
-    LATEST_OBJECT = 0x2,
-    ABSOLUTE_START = 0x3, // indicates start group/object are present
-    ABSOLUTE_RANGE = 0x4  // indicates start and end group/object are present
+    kLatestGroup = 0x1, //
+    kLatestObject = 0x2,
+    kAbsoluteStart = 0x3, // indicates start group/object are present
+    kAbsoluteRange = 0x4  // indicates start and end group/object are present
 };
 
 struct LenValue
@@ -74,14 +80,14 @@ struct LenValue
     void operator=(const std::vector<uint8_t>& v) { value = v; }
 };
 
-struct MOQT_Subscribe
+struct MoqSubscribe
 {
     // msg_type = 0x3
     uint64_t subscribe_id;
     uint64_t track_alias;
     LenValue name_space;
     LenValue track_name;
-    MOQT_FilterType filter_type;
+    MoqFilterType filter_type;
 
     uint64_t start_group{ 0 };  // optional based on filter type
     uint64_t start_object{ 0 }; // optional based on filter type
@@ -92,7 +98,7 @@ struct MOQT_Subscribe
     // optional track parameters - Not used for this test
 
     // ----- Internals -------------
-    int _pos{ 0 };
+    int pos{ 0 };
 
     /**
      * Decode subscribe from stream buffer
@@ -102,16 +108,16 @@ struct MOQT_Subscribe
      * @return True if successfully read the full subscribe message, false if
      *    more data is needed.
      */
-    bool decode(qtransport::StreamBuffer<uint8_t>& sbuf)
+    bool Decode(qtransport::StreamBuffer<uint8_t>& sbuf)
     {
-        switch (_pos) {
+        switch (pos) {
             case 0: { // subscribe_id
                 const auto val = sbuf.DecodeUintV();
                 if (!val) {
                     return false;
                 }
                 subscribe_id = *val;
-                ++_pos;
+                ++pos;
 
                 [[fallthrough]];
             }
@@ -121,7 +127,7 @@ struct MOQT_Subscribe
                     return false;
                 }
                 track_alias = *val;
-                ++_pos;
+                ++pos;
 
                 [[fallthrough]];
             }
@@ -131,7 +137,7 @@ struct MOQT_Subscribe
                     return false;
                 }
                 name_space = *val;
-                ++_pos;
+                ++pos;
 
                 [[fallthrough]];
             }
@@ -141,7 +147,7 @@ struct MOQT_Subscribe
                     return false;
                 }
                 track_name = *val;
-                ++_pos;
+                ++pos;
 
                 [[fallthrough]];
             }
@@ -151,14 +157,14 @@ struct MOQT_Subscribe
                     return false;
                 }
 
-                filter_type = static_cast<MOQT_FilterType>(*val);
+                filter_type = static_cast<MoqFilterType>(*val);
 
-                ++_pos;
+                ++pos;
 
                 [[fallthrough]];
             }
             case 5: { // start_group
-                if (filter_type == MOQT_FilterType::ABSOLUTE_START || filter_type == MOQT_FilterType::ABSOLUTE_RANGE) {
+                if (filter_type == MoqFilterType::kAbsoluteStart || filter_type == MoqFilterType::kAbsoluteRange) {
                     const auto val = sbuf.DecodeUintV();
                     if (!val) {
                         return false;
@@ -166,12 +172,12 @@ struct MOQT_Subscribe
                     start_group = *val;
                 }
 
-                ++_pos;
+                ++pos;
 
                 [[fallthrough]];
             }
             case 6: { // start_object
-                if (filter_type == MOQT_FilterType::ABSOLUTE_START || filter_type == MOQT_FilterType::ABSOLUTE_RANGE) {
+                if (filter_type == MoqFilterType::kAbsoluteStart || filter_type == MoqFilterType::kAbsoluteRange) {
                     const auto val = sbuf.DecodeUintV();
                     if (!val) {
                         return false;
@@ -179,12 +185,12 @@ struct MOQT_Subscribe
                     start_object = *val;
                 }
 
-                ++_pos;
+                ++pos;
 
                 [[fallthrough]];
             }
             case 7: { // end_group
-                if (filter_type == MOQT_FilterType::ABSOLUTE_RANGE) {
+                if (filter_type == MoqFilterType::kAbsoluteRange) {
                     const auto val = sbuf.DecodeUintV();
                     if (!val) {
                         return false;
@@ -192,12 +198,12 @@ struct MOQT_Subscribe
                     end_group = *val;
                 }
 
-                ++_pos;
+                ++pos;
 
                 [[fallthrough]];
             }
             case 8: { // end_object
-                if (filter_type == MOQT_FilterType::ABSOLUTE_RANGE) {
+                if (filter_type == MoqFilterType::kAbsoluteRange) {
                     const auto val = sbuf.DecodeUintV();
                     if (!val) {
                         return false;
@@ -205,7 +211,7 @@ struct MOQT_Subscribe
                     end_object = *val;
                 }
 
-                ++_pos;
+                ++pos;
 
                 [[fallthrough]];
             }
@@ -216,7 +222,7 @@ struct MOQT_Subscribe
                     return false;
                 }
                 num_params = *val;
-                ++_pos;
+                ++pos;
 
                 [[fallthrough]];
             }
@@ -247,9 +253,9 @@ operator<<(std::vector<uint8_t>& v, const LenValue& lv)
 }
 
 std::vector<std::uint8_t>&
-operator<<(std::vector<uint8_t>& v, const MOQT_Subscribe& moqt_sub)
+operator<<(std::vector<uint8_t>& v, const MoqSubscribe& moqt_sub)
 {
-    v << qtransport::ToUintV(static_cast<uint64_t>(MOQT_MessageType::SUBSCRIBE));
+    v << qtransport::ToUintV(static_cast<uint64_t>(MoqMessageType::kSubscribe));
     v << qtransport::ToUintV(moqt_sub.subscribe_id);
     v << qtransport::ToUintV(moqt_sub.track_alias);
     v << moqt_sub.name_space;
@@ -257,17 +263,17 @@ operator<<(std::vector<uint8_t>& v, const MOQT_Subscribe& moqt_sub)
     v << qtransport::ToUintV(static_cast<uint64_t>(moqt_sub.filter_type));
 
     switch (moqt_sub.filter_type) {
-        case MOQT_FilterType::LATEST_GROUP:
+        case MoqFilterType::kLatestGroup:
             [[fallthrough]];
-        case MOQT_FilterType::LATEST_OBJECT:
+        case MoqFilterType::kLatestObject:
             break;
 
-        case MOQT_FilterType::ABSOLUTE_START:
+        case MoqFilterType::kAbsoluteStart:
             v << qtransport::ToUintV(moqt_sub.start_group);
             v << qtransport::ToUintV(moqt_sub.start_object);
             break;
 
-        case MOQT_FilterType::ABSOLUTE_RANGE:
+        case MoqFilterType::kAbsoluteRange:
             v << qtransport::ToUintV(moqt_sub.start_group);
             v << qtransport::ToUintV(moqt_sub.start_object);
             v << qtransport::ToUintV(moqt_sub.end_group);
@@ -282,16 +288,16 @@ operator<<(std::vector<uint8_t>& v, const MOQT_Subscribe& moqt_sub)
 
 TEST_CASE("StreamBuffer parse MOQT Subscribe")
 {
-    MOQT_Subscribe s_sub{ .subscribe_id = 100,
-                          .track_alias = 1234567,
-                          .name_space = std::string("moq://cisco.com/tim"),
-                          .track_name = std::string("video/primary/best"),
-                          .filter_type = MOQT_FilterType::ABSOLUTE_START,
-                          .start_group = 2002,
-                          .start_object = 3003,
-                          .end_group = 4004,
-                          .end_object = 5005,
-                          .num_params = 9001 };
+    MoqSubscribe s_sub{ .subscribe_id = 100,
+                        .track_alias = 1234567,
+                        .name_space = std::string("moq://cisco.com/tim"),
+                        .track_name = std::string("video/primary/best"),
+                        .filter_type = MoqFilterType::kAbsoluteStart,
+                        .start_group = 2002,
+                        .start_object = 3003,
+                        .end_group = 4004,
+                        .end_object = 5005,
+                        .num_params = 9001 };
 
     qtransport::StreamBuffer<uint8_t> sbuf;
     std::vector<uint8_t> net_data;
@@ -306,18 +312,18 @@ TEST_CASE("StreamBuffer parse MOQT Subscribe")
     }
 
     // Push slices to stream buffer while at the same time try to parse the subscribe
-    std::optional<uint64_t> message_type;
-    MOQT_Subscribe r_sub;
+    std::optional<std::uint64_t> message_type;
+    MoqSubscribe r_sub;
 
     for (auto& v : data_slices) {
         sbuf.Push(v);
 
         if (!message_type) {
             message_type = sbuf.DecodeUintV();
-            CHECK_EQ(*message_type, static_cast<uint64_t>(MOQT_MessageType::SUBSCRIBE));
+            CHECK_EQ(*message_type, static_cast<uint64_t>(MoqMessageType::kSubscribe));
         }
 
-        if (r_sub.decode(sbuf)) {
+        if (r_sub.Decode(sbuf)) {
             CHECK_EQ(s_sub.subscribe_id, r_sub.subscribe_id);
             CHECK_EQ(s_sub.track_alias, r_sub.track_alias);
             CHECK_EQ(s_sub.start_group, r_sub.start_group);
